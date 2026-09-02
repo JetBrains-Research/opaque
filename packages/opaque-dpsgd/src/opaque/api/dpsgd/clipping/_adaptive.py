@@ -207,10 +207,8 @@ def adaptive_clipped_grad(
             consume the gradient pytree for a single example and return
             a new pytree (possibly with different structure). Can be
             used to e.g., scale the leaves of the pytree to accommodate
-            preconditioner clipping, or to unscale fp16-loss-scaled
-            gradients so the adaptive quantile tracker observes the
-            unscaled per-example norms. Does not affect the sensitivity
-            guarantee. Default is identity function.
+            preconditioner clipping. Does not affect the sensitivity guarantee.
+            Default is identity function.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
             (``batch_argnums``, ``normalize_by``, etc).
 

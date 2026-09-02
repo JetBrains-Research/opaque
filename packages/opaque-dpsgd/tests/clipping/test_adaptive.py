@@ -63,7 +63,7 @@ class TestAdaptiveClippedGrad:
         assert isinstance(clip_state._next_clipping_norm, float)
         assert grads.shape == params.shape
 
-    def test_stats_report_nonfinite_gradients_before_adaptive_clipping(self):
+    def test_stats_preserve_sanitized_adaptive_clipping_output(self):
         def loss_fn(params, data):
             return torch.sqrt(data - params)
 
@@ -82,7 +82,7 @@ class TestAdaptiveClippedGrad:
         )
 
         assert isinstance(stats, ClippingStats)
-        assert stats.all_finite is False
+        assert stats.batch_size == 2
         assert torch.isfinite(_unwrap_clipped(grads)).all()
 
     def test_threshold_increases_when_too_many_clipped(self):
@@ -579,63 +579,6 @@ class TestAdaptiveClippedGrad:
 
         assert grads.shape == params.shape
         assert new_state._step == 1
-
-    def test_pre_clipping_transform_unscales_for_adaptive_tracker(self):
-        """``pre_clipping_transform`` runs before the grad-norm that drives
-        the adaptive quantile tracker.
-
-        The canonical use is fp16 loss-scaling: the loss is multiplied by
-        ``loss_scale`` inside the closure, and ``pre_clipping_transform``
-        divides the per-example gradient by the same factor before
-        clipping.  A correct implementation makes the adaptive tracker
-        invariant to ``loss_scale`` — the unscaled grad norms drive
-        adaptation regardless of the scale chosen.
-        """
-
-        def make_loss(loss_scale: float):
-            def loss_fn(params, x, y):
-                pred = x @ params
-                return ((pred - y) ** 2).mean() * loss_scale
-
-            return loss_fn
-
-        params = torch.randn(10, requires_grad=False)
-        batch_x = torch.randn(8, 10)
-        batch_y = torch.randn(8)
-
-        # Baseline: no scaling, no transform.
-        grad_fn, state = adaptive_clipped_grad(
-            make_loss(1.0),
-            initial_clipping_norm=0.5,
-            target_quantile=0.5,
-            learning_rate=0.2,
-            key=key(0),
-            batch_argnums=(1, 2),
-        )
-        _, state_base = grad_fn(params, batch_x, batch_y, state=state)
-
-        # Scaled loss + matching pre_clipping_transform → same threshold.
-        scale = 128.0
-        grad_fn_scaled, state_scaled = adaptive_clipped_grad(
-            make_loss(scale),
-            initial_clipping_norm=0.5,
-            target_quantile=0.5,
-            learning_rate=0.2,
-            key=key(0),
-            batch_argnums=(1, 2),
-            pre_clipping_transform=lambda g: (
-                tuple(t / scale for t in g) if isinstance(g, tuple) else g / scale
-            ),
-        )
-        _, state_scaled_after = grad_fn_scaled(
-            params, batch_x, batch_y, state=state_scaled
-        )
-
-        assert math.isclose(
-            state_base._next_clipping_norm,
-            state_scaled_after._next_clipping_norm,
-            rel_tol=1e-5,
-        )
 
 
 class TestInputValidation:

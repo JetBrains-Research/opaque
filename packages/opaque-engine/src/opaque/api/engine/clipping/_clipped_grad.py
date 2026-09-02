@@ -166,11 +166,9 @@ def clipped_grad(
             the signature of loss_fn is `loss_fn(params, batch)`.
         return_aux: If True, the transformed function will also return a per-example
             aux dataclass containing loss values, gradient norms, and loss aux.
-        return_stats: If True, return aggregate clipping statistics. The returned
-            :class:`~opaque.api.engine.clipping.types.ClippingStats` includes
-            ``all_finite``, measured after ``pre_clipping_transform`` and before
-            clipping sanitizes NaN/Inf values. Cannot be combined with
-            ``return_aux``.
+        return_stats: If True, return aggregate clipping statistics including
+            the number and fraction of clipped examples and the batch size.
+            Cannot be combined with ``return_aux``.
         pre_clipping_transform: An optional function to apply to the per-example
             gradients before clipping. The function should consume the gradient pytree
             for a single example and return a new pytree (possibly with different

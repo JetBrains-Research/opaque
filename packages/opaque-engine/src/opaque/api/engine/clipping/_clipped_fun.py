@@ -10,7 +10,7 @@ from torch.func import vmap as _vmap
 
 from opaque.api.engine.clipping._helpers import normalize_to_tuple
 from opaque.api.engine.clipping._pytree import clip_pytree
-from opaque.api.engine.pytree import global_norm, tree_leaves, tree_map
+from opaque.api.engine.pytree import global_norm, tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
     PerGroup,
@@ -18,7 +18,7 @@ from opaque.api.engine.types import (
     clipped,
 )
 from opaque.api.engine.types import ClipState as _ClipState
-from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -71,8 +71,6 @@ class ClippingStats:
     num_clipped: float | dict[str, float]
     clipping_rate: float | dict[str, float] | None
     batch_size: int = 0
-    all_finite: bool = True
-    """Whether every pre-clipping output in the batch was finite."""
 
 
 def _resolve_compute_dtype(
@@ -94,25 +92,6 @@ def _resolve_compute_dtype(
     ):
         return torch.float32
     return None
-
-
-def _all_finite(value: Any) -> torch.Tensor:
-    """Return whether every floating-point tensor leaf is finite."""
-    result: torch.Tensor | None = None
-    for leaf in tree_leaves(value):
-        if not isinstance(leaf, torch.Tensor):
-            continue
-        finite = (
-            torch.isfinite(leaf).all()
-            if leaf.is_floating_point() or leaf.is_complex()
-            else torch.ones((), dtype=torch.bool, device=leaf.device)
-        )
-        result = finite if result is None else result & finite
-    if result is None:
-        raise InputTypeError(
-            *("Expected at least one tensor leaf when checking finiteness.",)
-        )
-    return result
 
 
 def _sum_clipped_tensor(
@@ -413,8 +392,6 @@ def _microbatch_accumulate_stats_only(
         )
     else:
         total_num_clipped = 0.0
-    all_finite = True
-
     for start_idx in range(0, batch_size, microbatch_size):
         end_idx = min(start_idx + microbatch_size, batch_size)
         microbatch_args = list(args)
@@ -447,10 +424,8 @@ def _microbatch_accumulate_stats_only(
             stats_aux["norms"],
             clipping_norm=clipping_norm,
             group_norms_dict=stats_aux.get("group_norms"),
-            all_finite=stats_aux["all_finite"],
         )
         total_batch_size += stats.batch_size
-        all_finite = all_finite and stats.all_finite
         if isinstance(total_num_clipped, dict):
             assert isinstance(stats.num_clipped, dict)
             for name, count in stats.num_clipped.items():
@@ -475,7 +450,6 @@ def _microbatch_accumulate_stats_only(
             num_clipped=total_num_clipped,
             clipping_rate=clipping_rate,
             batch_size=total_batch_size,
-            all_finite=all_finite,
         ),
     )
 
@@ -485,11 +459,9 @@ def _compute_clipping_stats(
     *,
     clipping_norm: float | PerGroup,
     group_norms_dict: dict[str, torch.Tensor] | None,
-    all_finite: torch.Tensor | None = None,
 ) -> ClippingStats:
     """Compute aggregated clipping statistics from materialized norm tensors."""
     batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
-    finite = bool(all_finite.all().item()) if all_finite is not None else True
     if batch_size == 0:
         if isinstance(clipping_norm, PerGroup):
             empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
@@ -498,13 +470,11 @@ def _compute_clipping_stats(
                 num_clipped=empty_counts,
                 clipping_rate=empty_rates,
                 batch_size=0,
-                all_finite=finite,
             )
         return ClippingStats(
             num_clipped=0.0,
             clipping_rate=0.0,
             batch_size=0,
-            all_finite=finite,
         )
 
     if isinstance(clipping_norm, PerGroup) and group_norms_dict is not None:
@@ -517,7 +487,6 @@ def _compute_clipping_stats(
             num_clipped=counts,
             clipping_rate=rates,
             batch_size=batch_size,
-            all_finite=finite,
         )
 
     effective_cn = (
@@ -530,7 +499,6 @@ def _compute_clipping_stats(
         num_clipped=num_clipped,
         clipping_rate=num_clipped / float(batch_size),
         batch_size=batch_size,
-        all_finite=finite,
     )
 
 
@@ -704,9 +672,6 @@ def clipped_fun(
                         clipped_value, compute_dtype=compute_dtype
                     ).detach(),
                 }
-                if return_stats:
-                    aux_dict["all_finite"] = _all_finite(value)
-
                 # Per-group norms (dict of scalar tensors → dict of 1D tensors after vmap)
                 if norm.group_norms is not None:
                     aux_dict["group_norms"] = {
@@ -882,7 +847,6 @@ def clipped_fun(
             aux_dict.get("norms"),
             clipping_norm=clipping_norm,
             group_norms_dict=aux_dict.get("group_norms"),
-            all_finite=aux_dict.get("all_finite"),
         )
 
     # Wrap function to accept and return state
