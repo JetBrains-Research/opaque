@@ -160,7 +160,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 ## Assumptions and limitations
 
 - **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. Monte Carlo guarantees hold with the confidence reported on the returned PLD.
-- **`lr_schedule` (optional)**: optimization applies the schedule on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\). The strategy remains Toeplitz, while its objective weights each step's squared error by \(\eta_t^2\). Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates.
+- **`lr_schedule` (optional)**: optimization applies the schedule on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\). The strategy remains Toeplitz, while its objective weights each step's squared error by \(\eta_t^2\). Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates. Custom callables must be deterministic, side-effect-free, and immutable for the strategy's lifetime.
 - **Momentum \(\beta=0\)**: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).
 
 ## Code examples
