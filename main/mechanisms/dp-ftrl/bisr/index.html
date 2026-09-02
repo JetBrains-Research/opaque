@@ -3253,7 +3253,8 @@ from the inverse square root of the workload matrix.</p>
 <ul>
 <li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2505.12128">Back to Square Roots: An Optimal Bound on the Matrix Factorization Error for Multi-Epoch Differentially Private SGD</a></li>
 <li><strong>Strategy matrix</strong>: Inverse is banded Toeplitz with bandwidth p</li>
-<li><strong>Memory</strong>: p-1 noise vectors (via PRNG replay or small buffer)</li>
+<li><strong>Memory</strong>: <code>min(p, n_steps) - 1</code> previous iid noise pytrees (bounded,
+  but not memory-free)</li>
 <li><strong>Optimality</strong>: Asymptotically optimal (matches upper and lower bounds)</li>
 <li><strong>Amplification</strong>: Balls-in-Bins (BnB) with MC dominating pair accounting</li>
 </ul>
@@ -3291,7 +3292,7 @@ in one place.</p>
 <tbody>
 <tr>
 <td><code>bandwidth</code></td>
-<td>Number of bands p (≥ 2). Higher = better utility, more PRNG replays.</td>
+<td>Number of bands p (≥ 2). Higher can improve utility, at the cost of more retained noise buffers and convolution work.</td>
 </tr>
 <tr>
 <td><code>momentum</code></td>
@@ -3359,8 +3360,45 @@ not applied a second time as a separate workload operator.</p>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span>
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">)</span>
 </code></pre></div>
-<p>The noise function regenerates p-1 previous noise vectors via PRNG replay
-and computes the linear combination defined by the BISR coefficients.</p>
+<p>At step <code>t</code>, the noise function draws one fresh iid noise pytree and applies the
+signed banded inverse directly:</p>
+<div class="arithmatex">\[
+y_t = d_t \sum_{k=0}^{\min(t,p-1)} q_k z_{t-k}.
+\]</div>
+<p>Here <code>q_k</code> are the inverse coefficients, <code>z_t</code> is the fresh iid draw, and <code>d_t</code>
+is <code>1</code> for unnormalized BISR or the finite-horizon column-normalization factor
+for normalized BISR. Runtime state keeps only the newest
+<code>min(p, n_steps) - 1</code> iid draws. It therefore uses
+<code>O(min(p, n_steps) * model_size)</code> tensor storage and the same asymptotic work
+per step, independent of the training horizon once <code>n_steps &gt;= p</code>.</p>
+<p>This bounded ring is the complete <code>O(p)</code> execution design required by
+<a href="https://github.com/JetBrains-Research/opaque/issues/795">issue #795</a>. It is not
+a zero-buffer design: a large model or bandwidth can still make the retained
+pytrees significant. PRNG replay could trade that persistent tensor storage for
+extra noise generation, but replay and a reusable generic banded-inverse
+executor are follow-up directions rather than requirements for this bounded
+BISR path.</p>
+<p>The full-horizon forward-substitution operator remains available through
+<code>BisrStrategy.streaming_matrix()</code> as a numerical reference, but the public
+noise path does not allocate its <code>n_steps - 1</code> model-shaped history.</p>
+<div class="admonition warning">
+<p class="admonition-title">Checkpoint layout change</p>
+<p>BISR runtime checkpoints written before bounded-state support contain past
+correlated outputs, while current checkpoints contain a versioned window of
+past iid draws. These layouts are not safely interchangeable. Restoring a
+standalone legacy BISR noise state fails with a targeted BISR checkpoint
+error; a full trainer checkpoint may instead fail first at its outer bundle
+version. Resume either form with the Opaque version that created it. This
+rejection is intentional; the bounded-state change does not attempt a
+legacy-state migration.</p>
+<p>Exact continuation from a bounded-layout checkpoint requires the same BISR
+execution identity and base noise scale as the original run, in addition to
+the saved iid window. Open
+<a href="https://github.com/JetBrains-Research/opaque/issues/789">issue #789</a> tracks
+the separate, urgent problem where calibrated DP-FTRL resume can rebuild a
+mechanism with a different noise multiplier. This bounded-state change does
+not fix or relax that resume requirement.</p>
+</div>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>BnB sampling</strong>: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).</li>
@@ -3370,8 +3408,9 @@ and computes the linear combination defined by the BISR coefficients.</p>
 <li>For a high-level comparison of MF mechanisms, see <a href="../../../user-guide/dp-ftrl/">Matrix factorization (MF)</a>.</li>
 </ul>
 <h2 id="bandwidth-selection">Bandwidth selection<a class="headerlink" href="#bandwidth-selection" title="Permanent link">&para;</a></h2>
-<p>Bandwidth <code>p</code> retains <code>p - 1</code> noise vectors. Measure the runtime and utility
-trade-off on your workload.</p>
+<p>Bandwidth <code>p</code> retains up to <code>p - 1</code> noise vectors. That makes memory independent
+of a longer training horizon, not independent of model size or bandwidth.
+Measure the runtime and utility trade-off on your workload.</p>
 
 
 
