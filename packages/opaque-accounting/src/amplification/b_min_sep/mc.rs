@@ -2,17 +2,17 @@
 //!
 //! Implements the likelihood-ratio dynamic program from Dong & Ganesh (2026),
 //! "Privacy Amplification for BandMF via b-Min-Sep Subsampling" (arXiv:2602.09338),
-//! Section 5, Equation (2), and the warm-start correction after Theorem 5.1:
+//! Section 5, Equation (1), and the warm-start corollary after Theorem 5.1:
 //!
-//! `P(y)/Q(y) = f_1(y) + p * sum_{i=2}^{b} f_i(y) / (1 + (b-1)p)`
+//! `P(y)/Q(y) = (f_1(y) + p * sum_{i=2}^{b} f_i(y)) / (1 + (b-1)p)`
 //!
 //! where `f_i` is the backward recursion on iteration index (1-based in the paper).
-//! Privacy loss samples: `L_remove = ln(P/Q)`, `L_add = -ln(P/Q)` with `y ~ Q`,
-//! matching the asymmetric Monte Carlo pattern used by [`crate::amplification::balls_in_bins::bnb_mc_pld`].
+//! Remove samples use `y ~ P` and `ln(P/Q)`; add samples use `y ~ Q` and `ln(Q/P)`.
 
 use crate::amplification::balls_in_bins::monte_carlo::samples_to_pmf;
 use crate::discretization::DiscretizationConfig;
 use crate::error::{PldError, Result};
+use crate::numerics::logspace::{log_add, log_sumexp};
 use crate::pld::PrivacyLossDistribution;
 
 use rand::rngs::StdRng;
@@ -20,59 +20,70 @@ use rand::{Rng, RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
-/// Log-density ratio log N(μ, σ²I)(y) - log N(0, σ²I)(y) for diagonal-covariance isotropic Gaussian.
+/// `log N(μ, σ²I)(y) - log N(0, σ²I)(y)`.
 #[inline]
 fn log_gaussian_ratio_block(mu: &[f64], y: &[f64], sigma2: f64) -> f64 {
     let mut dot = 0.0;
     let mut norm_sq = 0.0;
-    for k in 0..mu.len().min(y.len()) {
-        dot += mu[k] * y[k];
-        norm_sq += mu[k] * mu[k];
+    for (&mean, &value) in mu.iter().zip(y) {
+        dot += mean * value;
+        norm_sq += mean * mean;
     }
     (dot - 0.5 * norm_sq) / sigma2
 }
 
-/// Column `col` of lower-triangular Toeplitz with first column `coef` (length `bands`), padded to length `bands`.
-fn column_mu(coef: &[f64], n: usize, col: usize, bands: usize) -> Vec<f64> {
-    let mut mu = vec![0.0f64; bands];
-    for k in 0..bands {
-        if col + k < n && k < coef.len() {
-            mu[k] = coef[k];
-        }
-    }
-    mu
+/// Evaluates warm-start b-min-sep `ln(P(y)/Q(y))` with reusable storage.
+struct WarmLogLikelihoodRatio<'a> {
+    coef: &'a [f64],
+    sigma2: f64,
+    log_p: f64,
+    log_one_minus_p: f64,
+    log_denominator: f64,
+    log_f: Vec<f64>,
 }
 
-/// `P(y)/Q(y)` for warm-start b-min-sep (paper notation after Theorem 5.1).
-fn likelihood_ratio_warm(
-    y: &[f64],
-    coef: &[f64],
-    n: usize,
-    bands: usize,
-    p: f64,
-    sigma2: f64,
-) -> f64 {
-    if bands < 1 || coef.is_empty() {
-        return 1.0;
+impl<'a> WarmLogLikelihoodRatio<'a> {
+    fn new(coef: &'a [f64], p: f64, sigma2: f64) -> Self {
+        Self {
+            coef,
+            sigma2,
+            log_p: p.ln(),
+            log_one_minus_p: (-p).ln_1p(),
+            log_denominator: ((coef.len().saturating_sub(1)) as f64 * p).ln_1p(),
+            log_f: Vec::new(),
+        }
     }
-    let mut f = vec![0.0f64; n + 1];
-    f[n] = 1.0;
-    for i in (0..n).rev() {
-        let mu = column_mu(coef, n, i, bands);
-        let hi = (i + bands).min(n);
-        let yblk = &y[i..hi];
-        let log_block = log_gaussian_ratio_block(&mu[..yblk.len()], yblk, sigma2);
-        let block_ratio = log_block.exp();
-        let f_skip = if i + bands <= n { f[i + bands] } else { 1.0 };
-        f[i] = (1.0 - p) * f[i + 1] + p * block_ratio * f_skip;
+
+    fn evaluate(&mut self, y: &[f64]) -> f64 {
+        let n = y.len();
+        let bands = self.coef.len();
+        if bands == 0 {
+            return 0.0;
+        }
+
+        self.log_f.resize(n + bands, 0.0);
+        // Boundary: log f_i = 0 for i >= n.
+        self.log_f[n..].fill(0.0);
+
+        for i in (0..n).rev() {
+            let block_len = bands.min(n - i);
+            let log_block = log_gaussian_ratio_block(
+                &self.coef[..block_len],
+                &y[i..i + block_len],
+                self.sigma2,
+            );
+            self.log_f[i] = log_add(
+                self.log_one_minus_p + self.log_f[i + 1],
+                self.log_p + log_block + self.log_f[i + bands],
+            );
+        }
+
+        let log_numerator = log_add(
+            self.log_f[0],
+            self.log_p + log_sumexp(&self.log_f[1..bands]),
+        );
+        log_numerator - self.log_denominator
     }
-    let denom = 1.0 + (bands.saturating_sub(1) as f64) * p;
-    let mut sum_f = f[0];
-    if bands > 1 {
-        let tail: f64 = (1..bands).map(|j| f[j]).sum::<f64>();
-        sum_f += p * tail / denom;
-    }
-    sum_f
 }
 
 fn sample_y_under_q(n: usize, sigma: f64, rng: &mut impl Rng, buf: &mut [f64]) {
@@ -249,7 +260,6 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
             sigma
         )));
     }
-    let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
     let coef = strategy_coef.to_vec();
     let n_threads = rayon::current_num_threads().max(1);
@@ -270,14 +280,14 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                 remainder + tid * samples_per_thread
             };
             let mut yb = vec![0.0f64; n_steps];
+            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
             (0..n_samp)
                 .map(|j| {
                     let s = base + j;
                     let x = &remove_x[s * n_steps..(s + 1) * n_steps];
                     let z = &remove_zeta[s * n_steps..(s + 1) * n_steps];
                     y_from_x_and_zeta(&coef, n_steps, x, z, sigma, &mut yb);
-                    let r = likelihood_ratio_warm(&yb, &coef, n_steps, bands, p, sigma2);
-                    r.ln()
+                    evaluator.evaluate(&yb)
                 })
                 .collect::<Vec<_>>()
         })
@@ -297,6 +307,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                 remainder + tid * samples_per_thread
             };
             let mut yb = vec![0.0f64; n_steps];
+            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
             (0..n_samp)
                 .map(|j| {
                     let s = base + j;
@@ -304,8 +315,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                     for i in 0..n_steps {
                         yb[i] = sigma * eta[i];
                     }
-                    let r = likelihood_ratio_warm(&yb, &coef, n_steps, bands, p, sigma2);
-                    -(r.ln())
+                    -evaluator.evaluate(&yb)
                 })
                 .collect::<Vec<_>>()
         })
@@ -379,6 +389,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
             let mut xb = vec![0.0f64; n_steps];
             let mut zb = vec![0.0f64; n_steps];
             let mut yb = vec![0.0f64; n_steps];
+            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
             (0..n_samp)
                 .map(|_| {
                     sample_x_under_p(n_steps, bands, p, &mut rng, &mut xb);
@@ -386,8 +397,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
                         *v = rng.sample::<f64, _>(StandardNormal);
                     }
                     y_from_x_and_zeta(&coef, n_steps, &xb, &zb, sigma, &mut yb);
-                    let r = likelihood_ratio_warm(&yb, &coef, n_steps, bands, p, sigma2);
-                    r.ln()
+                    evaluator.evaluate(&yb)
                 })
                 .collect::<Vec<_>>()
         })
@@ -403,11 +413,11 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
             };
             let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
             let mut yb = vec![0.0f64; n_steps];
+            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
             (0..n_samp)
                 .map(|_| {
                     sample_y_under_q(n_steps, sigma, &mut rng, &mut yb);
-                    let r = likelihood_ratio_warm(&yb, &coef, n_steps, bands, p, sigma2);
-                    -(r.ln())
+                    -evaluator.evaluate(&yb)
                 })
                 .collect::<Vec<_>>()
         })
@@ -428,6 +438,62 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
 mod tests {
     use super::*;
     use crate::discretization::DiscretizationConfig;
+    use approx::assert_abs_diff_eq;
+
+    fn warm_path_probability(mask: u64, n: usize, bands: usize, p: f64) -> f64 {
+        let denominator = 1.0 + (bands - 1) as f64 * p;
+        (0..bands)
+            .map(|initial_state| {
+                let mut probability = if initial_state == 0 { 1.0 } else { p } / denominator;
+                let mut barred_remaining = initial_state;
+
+                for i in 0..n {
+                    let participates = mask & (1 << i) != 0;
+                    if barred_remaining > 0 {
+                        if participates {
+                            return 0.0;
+                        }
+                        barred_remaining -= 1;
+                    } else if participates {
+                        probability *= p;
+                        barred_remaining = bands - 1;
+                    } else {
+                        probability *= 1.0 - p;
+                    }
+                }
+                probability
+            })
+            .sum()
+    }
+
+    fn exact_warm_ratio(y: &[f64], coef: &[f64], p: f64, sigma2: f64) -> f64 {
+        let n = y.len();
+        assert!(n < u64::BITS as usize);
+
+        (0..1_u64 << n)
+            .map(|mask| {
+                let probability = warm_path_probability(mask, n, coef.len(), p);
+                if probability == 0.0 {
+                    return 0.0;
+                }
+                let mut mean = vec![0.0; n];
+                for col in 0..n {
+                    if mask & (1 << col) != 0 {
+                        for (offset, value) in coef.iter().take(n - col).enumerate() {
+                            mean[col + offset] += *value;
+                        }
+                    }
+                }
+                let log_ratio: f64 = mean
+                    .iter()
+                    .zip(y)
+                    .map(|(mu, value)| mu * value - 0.5 * mu * mu)
+                    .sum::<f64>()
+                    / sigma2;
+                probability * log_ratio.exp()
+            })
+            .sum()
+    }
 
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig {
@@ -438,12 +504,104 @@ mod tests {
     }
 
     #[test]
-    fn likelihood_ratio_positive_finite() {
-        let coef = vec![1.0, 0.0];
-        let n = 20;
-        let y = vec![0.1; n];
-        let r = likelihood_ratio_warm(&y, &coef, n, 2, 0.05, 1.0);
-        assert!(r.is_finite() && r > 0.0);
+    fn privacy_loss_matches_jax_reference() {
+        let loss = WarmLogLikelihoodRatio::new(&[1.0, 0.5], 0.5, 1.0).evaluate(&[1.0, 1.0, 1.0]);
+        assert_abs_diff_eq!(loss, 0.832_939_838_080_925_2, epsilon = 1e-14);
+    }
+
+    #[test]
+    fn privacy_loss_matches_exact_mixture() {
+        let cases = [
+            (
+                vec![0.8, 0.3],
+                vec![-0.7, 0.1, 0.9, -0.2, 0.4, 0.6, -0.5, 0.3],
+                0.17,
+                1.44,
+            ),
+            (
+                vec![0.7, 0.4, 0.2],
+                vec![0.2, -0.4, 0.8, 0.1, -0.6, 0.5, 0.9, -0.3, 0.7],
+                0.5,
+                0.81,
+            ),
+            (
+                vec![0.6, 0.5, 0.4, 0.3],
+                vec![0.2, 0.4, -0.1, 0.8],
+                1.0,
+                1.0,
+            ),
+            (vec![1.0], vec![0.3, -0.2, 0.7, 0.1, -0.4], 0.999, 1.21),
+        ];
+
+        for (coef, y, p, sigma2) in cases {
+            let expected = exact_warm_ratio(&y, &coef, p, sigma2).ln();
+            let actual = WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(&y);
+            assert_abs_diff_eq!(actual, expected, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn zero_signal_has_zero_privacy_loss() {
+        for bands in [2, 4, 8] {
+            let coef = vec![0.0; bands];
+            let y = vec![0.3; 12];
+            assert_abs_diff_eq!(
+                WarmLogLikelihoodRatio::new(&coef, 0.2, 4.0).evaluate(&y),
+                0.0,
+                epsilon = 1e-12
+            );
+        }
+    }
+
+    #[test]
+    fn bandwidth_one_reduces_to_poisson_subsampling() {
+        let y = [0.3, -0.2, 0.7, 0.1, -0.4];
+        let coef = [1.1];
+        let p: f64 = 0.23;
+        let sigma2 = 1.21;
+        let expected = y
+            .iter()
+            .map(|value| {
+                let log_gaussian_ratio = (coef[0] * value - 0.5 * coef[0] * coef[0]) / sigma2;
+                log_add((-p).ln_1p(), p.ln() + log_gaussian_ratio)
+            })
+            .sum::<f64>();
+
+        assert_abs_diff_eq!(
+            WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(&y),
+            expected,
+            epsilon = 1e-14
+        );
+    }
+
+    #[test]
+    fn privacy_loss_remains_finite_when_ratio_overflows() {
+        let n = 1_000;
+        let y = vec![1.0; n];
+        let loss = WarmLogLikelihoodRatio::new(&[1.0, 0.0], 1.0, 0.25).evaluate(&y);
+        assert_abs_diff_eq!(loss, 1_000.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn likelihood_ratio_normalizes_under_q() {
+        let n = 10;
+        let p = 0.2;
+        let sigma = 2.0;
+        let mut rng = StdRng::seed_from_u64(779);
+        let mut y = vec![0.0; n];
+
+        for bands in [2, 4, 8] {
+            let coef = vec![1.0 / (bands as f64).sqrt(); bands];
+            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma * sigma);
+            let mean = (0..20_000)
+                .map(|_| {
+                    sample_y_under_q(n, sigma, &mut rng, &mut y);
+                    evaluator.evaluate(&y).exp()
+                })
+                .sum::<f64>()
+                / 20_000.0;
+            assert_abs_diff_eq!(mean, 1.0, epsilon = 0.02);
+        }
     }
 
     #[test]
