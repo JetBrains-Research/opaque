@@ -61,17 +61,21 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     if is_per_group:
         global_batch_size = reduce_scalar(float(state._batch_size), op="sum")
 
+        current_pg = state._current_clipping_norm
+        assert isinstance(current_pg, PerGroup)
+        group_names = sorted(current_pg.values)
         global_num_clipped: dict[str, float] = {}
-        for gname, local_count in state._num_clipped.items():
-            global_num_clipped[gname] = reduce_scalar(local_count, op="sum")
+        for gname in group_names:
+            global_num_clipped[gname] = reduce_scalar(
+                state._num_clipped[gname], op="sum"
+            )
 
         if global_batch_size == 0:
             return replace(state, _batch_size=global_batch_size)
 
-        current_pg = state._current_clipping_norm
         step_for_noise = max(0, state._step - 1)
         new_values: dict[str, float] = {}
-        for i, gname in enumerate(sorted(current_pg.values.keys())):
+        for i, gname in enumerate(group_names):
             global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
             group_key = fold_in(
                 state._rng_key, ADAPTIVE_CLIPPING_STREAM_FOLD, step_for_noise, i

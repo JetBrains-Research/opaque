@@ -409,7 +409,7 @@ def _microbatch_accumulate_stats_only(
     total_batch_size = 0
     if isinstance(clipping_norm, PerGroup):
         total_num_clipped: float | dict[str, float] = dict.fromkeys(
-            clipping_norm.values, 0.0
+            sorted(clipping_norm.values), 0.0
         )
     else:
         total_num_clipped = 0.0
@@ -492,8 +492,9 @@ def _compute_clipping_stats(
     finite = bool(all_finite.all().item()) if all_finite is not None else True
     if batch_size == 0:
         if isinstance(clipping_norm, PerGroup):
-            empty_counts = dict.fromkeys(clipping_norm.values, 0.0)
-            empty_rates = dict.fromkeys(clipping_norm.values, 0.0)
+            group_names = sorted(clipping_norm.values)
+            empty_counts = dict.fromkeys(group_names, 0.0)
+            empty_rates = dict.fromkeys(group_names, 0.0)
             return ClippingStats(
                 num_clipped=empty_counts,
                 clipping_rate=empty_rates,
@@ -509,8 +510,10 @@ def _compute_clipping_stats(
 
     if isinstance(clipping_norm, PerGroup) and group_norms_dict is not None:
         counts = {
-            gname: float((gnorms > clipping_norm.values[gname]).sum().item())
-            for gname, gnorms in group_norms_dict.items()
+            gname: float(
+                (group_norms_dict[gname] > clipping_norm.values[gname]).sum().item()
+            )
+            for gname in sorted(clipping_norm.values)
         }
         rates = {gname: count / float(batch_size) for gname, count in counts.items()}
         return ClippingStats(
