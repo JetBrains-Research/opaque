@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -70,3 +71,29 @@ def test_unknown_budget_checkpoint_type_reports_registration_requirement() -> No
 
     with pytest.raises(CheckpointError, match="no budget serializer is registered"):
         from_state_dict(acc.Accountant(), serialized)
+
+
+def test_template_budget_is_kept_when_checkpoint_has_none() -> None:
+    budget = acc.epsilon_budget(0.1, delta=1e-5)
+    checkpoint = state_dict(acc.Accountant() | acc.eps_delta(0.5, 1e-5))
+
+    restored = from_state_dict(acc.Accountant(budget=budget), checkpoint)
+
+    assert restored._budget is budget
+    assert restored.budget_exceeded
+
+
+def test_checkpoint_budget_override_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    saved = acc.epsilon_budget(2.0, delta=1e-5)
+    template = acc.epsilon_budget(0.1, delta=1e-5)
+    checkpoint = state_dict(acc.Accountant(budget=saved))
+
+    with caplog.at_level(
+        logging.WARNING, logger="opaque.api.accounting.core._accountant"
+    ):
+        restored = from_state_dict(acc.Accountant(budget=template), checkpoint)
+
+    assert restored._budget == saved
+    assert "template budget is discarded" in caplog.text

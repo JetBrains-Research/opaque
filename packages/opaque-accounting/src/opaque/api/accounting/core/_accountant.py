@@ -19,6 +19,7 @@ identical steps are collapsed using structural equality (``==``), so
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from opaque.api.accounting.core._budgets import (
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from opaque.api.accounting.core._base import DpProcess
 
 __all__ = ["Accountant"]
+
+logger = logging.getLogger(__name__)
 
 
 class Accountant:
@@ -230,10 +233,20 @@ def _accountant_state_dict(acct: Accountant) -> dict[str, Any]:
     return out
 
 
-def _accountant_from_state_dict(state: dict[str, Any]) -> Accountant:
-    budget = None
-    if "budget" in state:
+def _accountant_from_state_dict(
+    template: Accountant, state: dict[str, Any]
+) -> Accountant:
+    """Restore the saved budget, or retain the template's when none was saved."""
+    budget = template._budget
+    if state.get("budget") is not None:
         budget = budget_from_state_dict(dict(state["budget"]))
+        if template._budget is not None and budget != template._budget:
+            logger.warning(
+                "Restoring Accountant: checkpoint budget %r overrides the "
+                "template's budget %r; the template budget is discarded.",
+                budget,
+                template._budget,
+            )
     return Accountant(budget=budget, prefix=_load_dp_process(dict(state["process"])))
 
 
@@ -243,5 +256,5 @@ def _register_accountant_serialization() -> None:
     register_serializer(
         Accountant,
         _accountant_state_dict,
-        lambda _template, sd: _accountant_from_state_dict(dict(sd)),
+        lambda template, sd: _accountant_from_state_dict(template, dict(sd)),
     )
