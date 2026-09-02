@@ -2,6 +2,50 @@
 
 Research snapshot: 2026-08-31 UTC
 
+## Post-research implementation update (2026-09-01 UTC)
+
+The implementation work was rebased on the then-current `origin/main` at
+[`e64846c999701d58095a8800e50434dc922a1de1`](https://github.com/JetBrains-Research/opaque/commit/e64846c999701d58095a8800e50434dc922a1de1).
+This matters because [PR #857](https://github.com/JetBrains-Research/opaque/pull/857)
+had since merged as
+[`e87a0c217728da8a25086359c715d30f0d7d66c1`](https://github.com/JetBrains-Research/opaque/commit/e87a0c217728da8a25086359c715d30f0d7d66c1),
+so the signed-encoder accounting safeguards described below as pending are part
+of the implementation base and must be preserved rather than cherry-picked.
+The typed, namespaced RNG folding work and realized-standard-deviation coverage
+were also already present on this base.
+
+The selected implementation follows the report's focused recommendation: a
+BISR-local, immutable, newest-first window of at most
+`min(p, n_steps) - 1` iid noise pytrees; signed direct FIR convolution; and the
+finite-horizon normalization scale folded into each per-step effective tap
+`d_t q_k` before tensor multiplication. It delegates iid sampling and step-key
+derivation to the generic MF streaming engine, preserving the existing
+`opaque.dpftrl.mf_gaussian` namespace and one fresh draw per call.
+`BisrStrategy.streaming_matrix()` remains unchanged as the dense numerical
+reference.
+
+That ring is a complete solution to #795's stated `O(p)`-buffer and `O(p*d)`
+requirements. It is bounded in the horizon, not memory-free: its persistent
+tensor state still scales with bandwidth and model size. Eliminating those
+buffers through PRNG replay, or consolidating BISR into a reusable generic
+banded-inverse executor, would be useful follow-up work but is not a condition
+for closing #795.
+
+The checkpoint policy is intentional incompatibility, not replay migration.
+The bounded inner state has an explicit layout version and legacy dense BISR
+states fail with a targeted error. Reconstructing a correct ring from an old
+state is not generally safe: the dense state contains correlated outputs rather
+than iid draws, historical per-step scales are not stored in the standalone
+noise state, and older checkpoints do not prove the RNG-layout and internal
+compute-dtype provenance needed for a faithful inversion. New-layout
+checkpoints retain the iid window, but exact continuation additionally requires
+the same BISR execution identity and base noise scale as the original run. The
+layout version prevents an incompatible history restore; it does not prove that
+a rebuilt mechanism uses the same calibrated multiplier. Open
+[issue #789](https://github.com/JetBrains-Research/opaque/issues/789) is the
+separate, urgent calibrated-resume defect. It is not fixed by this bounded-state
+change.
+
 ## Executive conclusion
 
 [Issue #795](https://github.com/JetBrains-Research/opaque/issues/795) is a
@@ -28,6 +72,11 @@ draws gives `O(p*d)` state and work for a gradient with `d` elements. The full
 dense forward-substitution implementation should remain available as the
 reference oracle requested by the issue and for existing low-level consumers;
 the production BISR noise path must stop using it for model-shaped state.
+
+This is the complete conceptual correction requested by #795. A replay
+implementation could reduce persistent model-shaped state further, but it would
+solve a stronger zero-buffer problem than the issue's accepted ring-or-replay
+contract.
 
 The most important facts that change how this should be fixed are:
 
@@ -67,15 +116,14 @@ The most important facts that change how this should be fixed are:
    belong only to conservative privacy accounting; applying `abs()` to runtime
    coefficients would implement a different mechanism.
 
-The best focused mainline fix is therefore to extract the direct inverse
-convolution and its tests from #658/#722 into BISR's existing dedicated raw
-noise factory, while leaving `BisrStrategy.streaming_matrix()` as the dense
-reference. A ring buffer is preferable to replay for normal execution because
-it preserves the current one-draw-per-step stream, handles the raw factory's
-historical per-step scales naturally, and is expected to reduce accelerator
-sampling overhead. That performance claim still needs target-device benchmarks.
-Checkpoint migration or an explicitly versioned incompatibility must be part of
-the change, not discovered after release.
+The focused mainline solution is therefore the direct inverse convolution in
+BISR's existing dedicated raw noise factory, while leaving
+`BisrStrategy.streaming_matrix()` as the dense reference. The selected ring
+preserves the current one-draw-per-step stream and stores each historical draw
+with the base scale that actually produced it. The implementation intentionally
+rejects legacy dense-history state through an explicit layout version. Replay,
+generic executor consolidation, and legacy migration are possible follow-ups,
+not blockers for this solution.
 
 ## Research scope and repository snapshot
 
@@ -559,7 +607,9 @@ if that trade-off is unacceptable.
 ## Ring buffer versus PRNG replay
 
 Both approaches can satisfy the issue's asymptotic criterion, but they are not
-interchangeable operationally.
+interchangeable operationally. Because the issue explicitly accepts either
+one, the selected ring is a complete #795 solution; replay would be a separate
+zero-buffer optimization.
 
 | Property | Ring of prior iid draws | Replay prior iid draws |
 | --- | --- | --- |
@@ -570,7 +620,7 @@ interchangeable operationally.
 | Existing stream compatibility | Natural if generic engine is reused | Requires exact reconstruction of every historical key |
 | Varying raw `stddev` semantics | Stores the actual historical scaled draws | Replaying old draws with the current scale is wrong |
 | Checkpoint state size | `O(p*d)` | Constant |
-| Old-state migration opportunity | Requires version/migration | Template `None` may permit replay from key/step |
+| Legacy-state policy | Explicit rejection or migration is required | Replay still requires an explicit compatibility decision |
 
 The public `mf_gaussian_noise` wrapper latches the first clipping norm and
 rejects later changes, so its base standard deviation is constant. However, the
@@ -582,11 +632,16 @@ would not be the same operator. Replay would need to regenerate standard
 normals and recover the historical scales or formally narrow the raw contract.
 
 On the current Torch path, repeated replay also means repeated random tensor
-generation and potentially repeated CPU-to-device transfer. For the small
-bandwidths BISR targets, a ring is the better default. A hybrid design could
-keep a ring during normal execution and reconstruct it from the immutable key
-and step only during restore, but that adds serialization complexity and should
-be justified by an explicit compatibility requirement.
+generation and potentially repeated CPU-to-device transfer. Given the current
+engine and #795's acceptance criteria, a ring is the lower-risk focused choice.
+A hybrid design could keep a ring during normal execution and reconstruct it
+from the immutable key and step only during restore, but that adds serialization
+complexity and should be justified by a separate compatibility requirement.
+
+The same direct convolution could eventually live in a generic banded-inverse
+executor shared by more strategies. The provider-neutral work in #658/#722 is
+useful prior art for that direction, but importing or recreating that broader
+abstraction is not necessary to fix BISR's horizon-dependent state on `main`.
 
 ## RNG and privacy invariants
 
@@ -626,7 +681,8 @@ only expected numeric difference is floating-point reduction order.
 
 ## Checkpoint and resume compatibility
 
-This is the most important requirement missing from the issue.
+The issue omits checkpoint-layout behavior, so the implementation must make it
+explicit rather than relying on incidental template matching.
 
 Opaque's
 [`Trainer` checkpoint path](https://github.com/JetBrains-Research/opaque/blob/e89e858a31ca5e279f796f2d322d323c8d59665e/packages/opaque-transformers/src/opaque/api/transformers/trainer/_checkpoint.py#L198-L368)
@@ -651,12 +707,17 @@ Even if shapes happen to match, accepting the old tensor would be wrong:
 - old history stores correlated outputs `x` from dense forward substitution;
 - new history stores iid inputs `z` for direct inverse convolution.
 
-The implementation must select and test one policy:
+The implemented policy is intentional, versioned incompatibility: the bounded
+BISR state carries an explicit layout marker, and a legacy dense-history state
+fails with a targeted checkpoint error. This is sufficient for #795 and avoids
+silently interpreting correlated outputs as iid draws. The alternatives
+considered during research were:
 
-1. **Versioned incompatibility.** Bump the relevant checkpoint/bundle version,
-   fail with a targeted BISR state-layout message, and document that pre-fix
-   runs must resume under their original Opaque version. This is simplest and
-   safest, but it is a user-visible breaking change.
+1. **Versioned incompatibility (selected).** Use a mechanism-local layout marker
+   or a broader checkpoint version, fail with a targeted BISR state-layout
+   message, and document that pre-fix runs must resume under their original
+   Opaque version. This is the simplest and safest policy, but it is a
+   user-visible incompatibility.
 2. **Explicit migration.** Reconstruct the last `p_eff - 1` iid draws from the
    saved base key, step counter, restored first clipping norm, configured noise
    multiplier, dtype, and tree shape. This is likely simpler and less
@@ -677,6 +738,16 @@ The implementation must select and test one policy:
 Whichever policy is chosen, do not rely on incidental template shape to detect
 the transition. Add an explicit BISR state-layout/version marker so structural
 changes cannot silently initialize a new history.
+
+For a new bounded-layout checkpoint, restoring the iid window is necessary but
+not sufficient for exact continuation. The rebuilt mechanism must have the same
+BISR execution identity—including its strategy/horizon, RNG derivation, and
+numeric execution choices—and the same base noise scale. Otherwise the retained
+old-scale draws and newly generated draws describe a different process.
+[Issue #789](https://github.com/JetBrains-Research/opaque/issues/789) tracks the
+high-severity case where calibrated DP-FTRL resume can silently choose a new
+noise multiplier and mix scales across the boundary. #795 neither fixes that
+calibration/resume defect nor makes such a resume safe.
 
 PR #658 explicitly treats its changed state/RNG layout as breaking, and #722
 uses a newer checkpoint bundle version in its larger refactor. It therefore
@@ -897,12 +968,16 @@ The issue can safely close when all of the following are true:
    dense reference for every step.
 7. `p > n_steps`, signed custom coefficients, nested pytrees, per-group noise,
    compute dtypes, second-moment streams, and horizon failures are covered.
-8. Old checkpoint behavior is explicitly migrated or intentionally versioned;
-   new-layout checkpoints resume to the exact same future sequence under the
-   same implementation/device/dtype, while migrated old layouts meet a stated
-   numerical tolerance.
-9. The patch is reconciled with both #722 and #857 so it neither duplicates
-   divergent execution logic nor undoes signed-accounting hardening.
+8. Legacy dense-history checkpoints are intentionally rejected through an
+   explicit layout version; new-layout checkpoints resume to the exact same
+   future sequence only under the same BISR execution identity and base noise
+   scale.
+9. The patch preserves #857's signed-accounting hardening and records the
+   overlap with #722. A future generic executor may replace the focused helper,
+   but that consolidation does not block #795.
+
+The calibrated-resume failure in #789 remains urgent, but it is a separate
+acceptance surface: closing #795 must not be represented as fixing #789.
 
 ## Non-goals
 
@@ -915,27 +990,28 @@ The focused fix should not:
 - copy lambda-CGD's current unrooted replay keys;
 - remove or weaken finite-horizon normalization;
 - require the entire provider-neutral backend split to land;
+- claim zero-buffer or memory-free execution—the selected ring is `O(p*d)`;
+- implement PRNG replay or a cross-strategy generic executor;
+- fix or weaken the calibrated-resume guard tracked by #789;
 - claim bitwise cross-version equality when only floating accumulation order
   has changed.
 
 ## Maintainer assessment
 
 The defect is well scoped and the mathematical correction is low ambiguity.
-The risky part is integration, not derivation. A minimal direct FIR operator
-inside BISR's existing raw factory can preserve current public behavior and
-avoid touching accounting or the generic dense solver. The #658/#722 code gives
-a tested reference implementation and has already exposed two edge cases—full
-horizon and `p > n_steps`—that a fresh implementation could easily miss.
+A minimal direct FIR operator inside BISR's existing raw factory preserves the
+current RNG stream and avoids touching accounting or the generic dense solver.
+The bounded iid ring is the selected and complete #795 implementation. The
+#658/#722 code remains useful prior art, but neither the provider-neutral split
+nor generic executor consolidation should delay this focused fix.
 
-The preferred landing sequence is:
-
-1. decide whether #722 or a focused #795 PR owns the implementation;
-2. decide and document pre-fix checkpoint policy;
-3. rebase on or merge #857's BISR validation/accounting changes;
-4. port direct convolution while preserving current mainline RNG derivation;
-5. add deterministic sequence, state-byte, checkpoint, and consumer tests;
-6. update BISR docs so they describe the implementation actually selected
-   (ring versus replay) rather than claiming replay unconditionally.
+The maintainer landing requirements are therefore limited to preserving #857's
+signed runtime/accounting split, retaining the dense equivalence oracle,
+testing bounded state and downstream consumers, documenting the selected ring,
+and intentionally rejecting legacy dense-history state. PRNG replay and a
+generic banded-inverse executor should be tracked as follow-up work. Exact
+resume additionally depends on an unchanged execution identity and base noise
+scale; the urgent enforcement gap is #789, outside this patch.
 
 With those constraints addressed, #795 can be fixed without changing the
 selected strategy or its privacy accounting and with a reduction from
@@ -951,6 +1027,7 @@ selected strategy or its privacy accounting and with a reduction from
 - [Parent issue #766: Correct DP-FTRL mechanism identity, noise streams, and strategy state](https://github.com/JetBrains-Research/opaque/issues/766)
 - [Parent #766 sub-issues](https://api.github.com/repos/JetBrains-Research/opaque/issues/766/sub_issues)
 - [Sibling issue #793: namespace the lambda-CGD noise stream](https://github.com/JetBrains-Research/opaque/issues/793)
+- [Issue #789: stop calibrated DP-FTRL resume from changing sigma](https://github.com/JetBrains-Research/opaque/issues/789)
 - [Issue #360: full-horizon BISR runtime operator](https://github.com/JetBrains-Research/opaque/issues/360)
 - [Issue #355: row-norm setup complexity](https://github.com/JetBrains-Research/opaque/issues/355)
 - [Issue #353: signed Toeplitz accounting](https://github.com/JetBrains-Research/opaque/issues/353)

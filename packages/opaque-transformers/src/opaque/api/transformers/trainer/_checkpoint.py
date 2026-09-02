@@ -37,7 +37,9 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-DP_STATE_BUNDLE_VERSION = 5  # typed fold-in encodings change all derived key streams
+# Version 5 is unreleased and covers both the typed fold-in key streams and the
+# versioned bounded BISR runtime-state layout.
+DP_STATE_BUNDLE_VERSION = 5
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
