@@ -5136,7 +5136,9 @@ with an amplifier-supplied <code>n_steps</code>.</p>
               <div class="doc-md-description">
                 <p>Optional :data:<code>opaque.scheduling.types.Schedule</code>
 (<code>Callable[[int], float]</code>).  Materialised at <code>[0, n_steps)</code>
-when the strategy first sees the amplifier's <code>n_steps</code>.</p>
+when the strategy first sees the amplifier's <code>n_steps</code>. Custom
+schedules must be deterministic, side-effect-free, and remain
+immutable for the strategy's lifetime.</p>
               </div>
             </td>
             <td>
@@ -5199,7 +5201,9 @@ when the strategy first sees the amplifier's <code>n_steps</code>.</p>
 <span class="normal"><a href="#__codelineno-0-166">166</a></span>
 <span class="normal"><a href="#__codelineno-0-167">167</a></span>
 <span class="normal"><a href="#__codelineno-0-168">168</a></span>
-<span class="normal"><a href="#__codelineno-0-169">169</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="k">def</span><span class="w"> </span><span class="nf">band_mf_strategy</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-169">169</a></span>
+<span class="normal"><a href="#__codelineno-0-170">170</a></span>
+<span class="normal"><a href="#__codelineno-0-171">171</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="k">def</span><span class="w"> </span><span class="nf">band_mf_strategy</span><span class="p">(</span>
 <a id="__codelineno-0-143" name="__codelineno-0-143"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-0-144" name="__codelineno-0-144"></a>    <span class="n">bands</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 <a id="__codelineno-0-145" name="__codelineno-0-145"></a>    <span class="n">momentum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -5216,17 +5220,19 @@ when the strategy first sees the amplifier's <code>n_steps</code>.</p>
 <a id="__codelineno-0-156" name="__codelineno-0-156"></a><span class="sd">        momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).</span>
 <a id="__codelineno-0-157" name="__codelineno-0-157"></a><span class="sd">        lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`</span>
 <a id="__codelineno-0-158" name="__codelineno-0-158"></a><span class="sd">            (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``</span>
-<a id="__codelineno-0-159" name="__codelineno-0-159"></a><span class="sd">            when the strategy first sees the amplifier's ``n_steps``.</span>
-<a id="__codelineno-0-160" name="__codelineno-0-160"></a>
-<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="sd">        A :class:`BandMfStrategy` recipe.</span>
-<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">    """</span>
-<a id="__codelineno-0-164" name="__codelineno-0-164"></a>    <span class="c1"># Recipe bounds live in ``BandMfStrategy.__post_init__``.</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a>    <span class="k">return</span> <span class="n">BandMfStrategy</span><span class="p">(</span>
-<a id="__codelineno-0-166" name="__codelineno-0-166"></a>        <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
-<a id="__codelineno-0-167" name="__codelineno-0-167"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
-<a id="__codelineno-0-168" name="__codelineno-0-168"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
-<a id="__codelineno-0-169" name="__codelineno-0-169"></a>    <span class="p">)</span>
+<a id="__codelineno-0-159" name="__codelineno-0-159"></a><span class="sd">            when the strategy first sees the amplifier's ``n_steps``. Custom</span>
+<a id="__codelineno-0-160" name="__codelineno-0-160"></a><span class="sd">            schedules must be deterministic, side-effect-free, and remain</span>
+<a id="__codelineno-0-161" name="__codelineno-0-161"></a><span class="sd">            immutable for the strategy's lifetime.</span>
+<a id="__codelineno-0-162" name="__codelineno-0-162"></a>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        A :class:`BandMfStrategy` recipe.</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">    """</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a>    <span class="c1"># Recipe bounds live in ``BandMfStrategy.__post_init__``.</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a>    <span class="k">return</span> <span class="n">BandMfStrategy</span><span class="p">(</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a>        <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5305,7 +5311,9 @@ context, via a module-level cache shared with the noise side.</p>
               <div class="doc-md-description">
                 <p>Optional :data:<code>opaque.scheduling.types.Schedule</code>
 (<code>Callable[[int], float]</code>).  Materialised at <code>[0, n_steps)</code>
-when the strategy first sees the amplifier's <code>n_steps</code>.</p>
+when the strategy first sees the amplifier's <code>n_steps</code>. Custom
+schedules must be deterministic, side-effect-free, and remain
+immutable for the strategy's lifetime.</p>
               </div>
             </td>
             <td>
@@ -5369,7 +5377,9 @@ when the strategy first sees the amplifier's <code>n_steps</code>.</p>
 <span class="normal"><a href="#__codelineno-0-228">228</a></span>
 <span class="normal"><a href="#__codelineno-0-229">229</a></span>
 <span class="normal"><a href="#__codelineno-0-230">230</a></span>
-<span class="normal"><a href="#__codelineno-0-231">231</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="k">def</span><span class="w"> </span><span class="nf">blt_strategy</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="k">def</span><span class="w"> </span><span class="nf">blt_strategy</span><span class="p">(</span>
 <a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="o">*</span><span class="p">,</span>
 <a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="n">max_buffers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
 <a id="__codelineno-0-206" name="__codelineno-0-206"></a>    <span class="n">momentum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -5387,17 +5397,19 @@ when the strategy first sees the amplifier's <code>n_steps</code>.</p>
 <a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">        momentum: Polyak momentum (default 1.0 = prefix-sum workload).</span>
 <a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">        lr_schedule: Optional :data:`opaque.scheduling.types.Schedule`</span>
 <a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">            (``Callable[[int], float]``).  Materialised at ``[0, n_steps)``</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">            when the strategy first sees the amplifier's ``n_steps``.</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        A :class:`BltStrategy` recipe.</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">    """</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a>    <span class="c1"># max_buffers/momentum bounds live in ``BltStrategy.__post_init__``.</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>    <span class="k">return</span> <span class="n">BltStrategy</span><span class="p">(</span>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a>        <span class="n">max_buffers</span><span class="o">=</span><span class="n">max_buffers</span><span class="p">,</span>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
-<a id="__codelineno-0-231" name="__codelineno-0-231"></a>    <span class="p">)</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">            when the strategy first sees the amplifier's ``n_steps``. Custom</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a><span class="sd">            schedules must be deterministic, side-effect-free, and remain</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">            immutable for the strategy's lifetime.</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">        A :class:`BltStrategy` recipe.</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">    """</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>    <span class="c1"># max_buffers/momentum bounds live in ``BltStrategy.__post_init__``.</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a>    <span class="k">return</span> <span class="n">BltStrategy</span><span class="p">(</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a>        <span class="n">max_buffers</span><span class="o">=</span><span class="n">max_buffers</span><span class="p">,</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a>        <span class="n">momentum</span><span class="o">=</span><span class="n">momentum</span><span class="p">,</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>        <span class="n">lr_schedule</span><span class="o">=</span><span class="n">lr_schedule</span><span class="p">,</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
