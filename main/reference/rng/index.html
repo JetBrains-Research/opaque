@@ -3814,7 +3814,7 @@ threading for deterministic and reproducible DP training.</p>
 <p><strong>Returns:</strong> RngKey with seed from <code>secrets.randbits(64)</code></p>
 <hr />
 <h4 id="splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values">split(rng_key: RngKey, num: int = 2) → tuple of RngKey values<a class="headerlink" href="#splitrng_key-rngkey-num-int-2-tuple-of-rngkey-values" title="Permanent link">&para;</a></h4>
-<p>Split a key into <code>num</code> independent child keys.</p>
+<p>Split a key into <code>num</code> deterministically derived child keys.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">split</span><span class="p">,</span> <span class="n">key</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">k</span> <span class="o">=</span> <span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
@@ -3826,9 +3826,10 @@ threading for deterministic and reproducible DP training.</p>
 <p><strong>Args:</strong>
 - <code>rng_key</code>: Key to split
 - <code>num</code>: Number of child keys (default: 2)</p>
-<p><strong>Returns:</strong> Tuple of <code>num</code> independent RngKeys</p>
+<p><strong>Returns:</strong> Tuple of <code>num</code> derived RngKeys</p>
 <p><strong>Raises:</strong> <code>ConfigurationError</code> if <code>num &lt; 1</code></p>
-<p><strong>Golden Rule:</strong> Never reuse keys. Always split to create independent randomness.</p>
+<p><strong>Rule:</strong> Split keys for separate uses. Each derived key identifies a separate
+PRNG stream, and consuming one does not advance another.</p>
 <hr />
 <h4 id="fold_inrng_key-rngkey-data-int-str-rngkey">fold_in(rng_key: RngKey, *data: int | str) → RngKey<a class="headerlink" href="#fold_inrng_key-rngkey-data-int-str-rngkey" title="Permanent link">&para;</a></h4>
 <p>Deterministically derive a new key by folding in one or more values.</p>
@@ -3888,12 +3889,32 @@ type tag before hashing, so <code>fold_in(k, 1)</code> is never the same key as
 <td>adaptive clipping threshold noise</td>
 </tr>
 <tr>
+<td><code>opaque.dpsgd.poisson</code></td>
+<td>DP-SGD Poisson sampling</td>
+</tr>
+<tr>
+<td><code>opaque.dpsgd.k_out_of_t</code></td>
+<td>DP-SGD k-out-of-t sampling</td>
+</tr>
+<tr>
 <td><code>opaque.dpftrl.mf_gaussian</code></td>
 <td><code>opaque.dpftrl.noise.mf_gaussian_noise</code></td>
 </tr>
 <tr>
 <td><code>opaque.dpftrl.second_moment.first</code> / <code>.second</code></td>
 <td>paired MF second-moment streams</td>
+</tr>
+<tr>
+<td><code>opaque.dpftrl.cyclic_poisson</code></td>
+<td>DP-FTRL cyclic Poisson sampling</td>
+</tr>
+<tr>
+<td><code>opaque.dpftrl.b_min_sep</code></td>
+<td>DP-FTRL b-min-separation sampling</td>
+</tr>
+<tr>
+<td><code>opaque.dpftrl.balls_in_bins</code></td>
+<td>DP-FTRL balls-in-bins sampling</td>
 </tr>
 <tr>
 <td><code>opaque.paired.first</code> / <code>opaque.paired.second</code></td>
@@ -3903,8 +3924,15 @@ type tag before hashing, so <code>fold_in(k, 1)</code> is never the same key as
 <td><code>opaque.auditing.canary_selection</code> / <code>opaque.auditing.coin_flip</code></td>
 <td><code>opaque.auditing.coin_flip</code></td>
 </tr>
+<tr>
+<td><code>opaque.transformers.ignore_data_skip</code></td>
+<td>trainer Poisson restart after skipped sampler state</td>
+</tr>
 </tbody>
 </table>
+<p>A component's stream is deterministic for a given caller key, configuration,
+and call sequence. Split the key or fold in an instance or rank identifier when
+streams must differ.</p>
 <p><strong>Use Cases:</strong>
 - Step counters in loops: <code>fold_in(base, step)</code>
 - Distributed training: <code>fold_in(base, step, rank)</code>
@@ -3926,7 +3954,8 @@ type tag before hashing, so <code>fold_in(k, 1)</code> is never the same key as
 <p><strong>Args:</strong>
 - <code>rng_key</code>: RngKey to convert</p>
 <p><strong>Returns:</strong> torch.Generator seeded with rng_key.seed</p>
-<p><strong>Note:</strong> The Generator is deterministic but independent of Opaque's DP noise. Use for framework-level randomness (e.g., dropout, model initialization) separate from DP operations.</p>
+<p><strong>Note:</strong> The Generator is deterministic. Give framework randomness (for
+example, dropout or initialization) a key derived separately from DP operations.</p>
 <hr />
 <h4 id="set_reproducible_pytorch_seedkey_val-rngkey-none">set_reproducible_pytorch_seed(key_val: RngKey) → None<a class="headerlink" href="#set_reproducible_pytorch_seedkey_val-rngkey-none" title="Permanent link">&para;</a></h4>
 <p>Configure PyTorch and cuDNN for reproducible training from a single RngKey.</p>

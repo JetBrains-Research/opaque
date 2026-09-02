@@ -3550,10 +3550,9 @@ problems for DP-SGD:</p>
    noise (incorrect for centralized DP-SGD) without any visible error.</li>
 </ol>
 <p>Explicit keys solve both problems. The key is a value, not hidden state.
-You pass it explicitly, split it when you need independent randomness, and
-fold in additional data (step counter, rank) to derive new keys
-deterministically. The same key always produces the same output, regardless
-of what other code has run.</p>
+You pass it explicitly, split it for separate uses, and fold in additional data
+(step counter, rank) to derive new keys deterministically. Other code cannot
+advance an immutable key.</p>
 <h2 id="core-primitives">Core primitives<a class="headerlink" href="#core-primitives" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3569,7 +3568,7 @@ of what other code has run.</p>
 </tr>
 <tr>
 <td><code>split(k, num=2)</code></td>
-<td>Derive <code>num</code> independent child keys</td>
+<td>Derive <code>num</code> deterministic child keys</td>
 </tr>
 <tr>
 <td><code>fold_in(k, *data)</code></td>
@@ -3596,8 +3595,8 @@ randomness in Opaque.</p>
 <p>The returned <code>RngKey</code> is a frozen (immutable) dataclass with a <code>seed</code>
 field (uint64) and an <code>impl</code> field identifying the hash function.</p>
 <h3 id="splitk-num2"><code>split(k, num=2)</code><a class="headerlink" href="#splitk-num2" title="Permanent link">&para;</a></h3>
-<p>Derive <code>num</code> independent child keys from a parent key. Use this when you
-need multiple independent sources of randomness.</p>
+<p>Derive <code>num</code> child keys from a parent key. Use this when you need multiple
+separate sources of randomness.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">split</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">k</span> <span class="o">=</span> <span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
@@ -3605,18 +3604,18 @@ need multiple independent sources of randomness.</p>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">k1</span><span class="p">,</span> <span class="n">k2</span><span class="p">,</span> <span class="n">k3</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">num</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 </code></pre></div>
 <p>Each child is deterministically derived via <code>fold_in(k, i)</code> for index <code>i</code>.
-The children are statistically independent: using one does not affect the
-others.</p>
-<p><strong>Golden rule:</strong> never reuse a key for two different purposes. Always split
-first.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Wrong: reusing the same key</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">ns</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>  <span class="c1"># correlated</span>
+Under Opaque's PRNG model, each child identifies a separate stream, and
+consuming one child does not advance another.</p>
+<p>Opaque separates registered component families internally. Split explicitly
+when constructing multiple instances that must use distinct streams.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Same sampler configuration and key: reproducibly identical streams</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">sampler_a</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">sampler_b</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Right: split first</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">k_noise</span><span class="p">,</span> <span class="n">k_sample</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">ns</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k_noise</span><span class="p">)</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k_sample</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Split when the instances require distinct streams</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">k_a</span><span class="p">,</span> <span class="n">k_b</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">sampler_a</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k_a</span><span class="p">)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">sampler_b</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">k_b</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="fold_ink-data"><code>fold_in(k, *data)</code><a class="headerlink" href="#fold_ink-data" title="Permanent link">&para;</a></h3>
 <p>Mix additional data into a key. Variadic — accepts multiple values:</p>
@@ -3624,7 +3623,7 @@ first.</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">k</span> <span class="o">=</span> <span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">step_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span>              <span class="c1"># single int</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">rank_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"rank:</span><span class="si">{</span><span class="n">r</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>        <span class="c1"># single str</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">rank_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">rank</span><span class="p">)</span>               <span class="c1"># single int</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">combined</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">rank</span><span class="p">)</span>         <span class="c1"># multiple values</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">full</span>     <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">worker</span><span class="p">)</span> <span class="c1"># step → rank → worker</span>
 </code></pre></div>
@@ -3635,8 +3634,8 @@ space (<code>split</code>, steps, ranks).
 Strings root a mechanism: fold one unique tag once, then derive steps
 beneath it. Opaque's shipped tags are listed in the
 <a href="../../reference/rng/">RNG reference</a>.</p>
-<p><code>fold_in</code> uses BLAKE2b hashing internally. Different data values produce
-different keys, and <code>int</code> versus <code>str</code> values are distinguished:</p>
+<p><code>fold_in</code> prefixes each typed input and hashes it with BLAKE2b to derive a
+64-bit key:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span> <span class="o">!=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mi">42</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span> <span class="o">!=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="s2">"42"</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span>  <span class="c1"># int vs str distinguished</span>
 </code></pre></div>
@@ -3668,17 +3667,23 @@ For production training, always use <code>key(seed)</code> with a fixed seed.</p
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
 </code></pre></div>
-<p>The noise function manages its own step counter internally. You provide a
-key at construction time; each call to <code>noise_fn</code> derives a new key from
-the mechanism's namespaced root, the base key, and the current step
-counter, then increments the counter. Two mechanisms handed the same base
-key therefore draw independent streams.</p>
+<p>The noise function manages its own step counter internally. Each call derives
+from the mechanism's namespaced root, the base key, and the current step, then
+increments the counter. Different registered components use different domains.
+Instances of one component with the same configuration, key, and call sequence
+remain reproducibly identical.</p>
 <h3 id="sampling">Sampling<a class="headerlink" href="#sampling" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 </code></pre></div>
+<p>Each randomized sampler derives its stream under a stable component-specific
+domain. A sampler's serialized state preserves the stream identity and cursor
+needed to continue its sequence. Instances with the same sampler type,
+configuration, key, dataset ordering, and call sequence reproduce the same
+batches within a compatible NumPy execution environment. Split or derive the
+key when sampler instances require distinct streams.</p>
 <h3 id="adaptive-clipping">Adaptive clipping<a class="headerlink" href="#adaptive-clipping" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
@@ -3689,9 +3694,8 @@ key therefore draw independent streams.</p>
 </code></pre></div>
 <h3 id="auditing">Auditing<a class="headerlink" href="#auditing" title="Permanent link">&para;</a></h3>
 <p><code>coin_flip()</code> derives separate audit subkeys for canary selection and inclusion
-coins. Training mechanisms should use their own RNG domains so their
-randomness remains independent from auditing, even with a shared reproducible
-root seed.</p>
+coins. Training mechanisms use their own RNG domains, so their streams remain
+separated from auditing under a shared reproducible root seed.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.auditing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">auditing</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
@@ -3749,7 +3753,8 @@ models stay in sync. Pass the same <code>key(seed)</code> on every rank:</p>
 <a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="n">step_key</span> <span class="o">=</span> <span class="n">fold_in</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">step</span><span class="p">),</span> <span class="n">rank</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="reproducibility">Reproducibility<a class="headerlink" href="#reproducibility" title="Permanent link">&para;</a></h2>
-<p>Same key produces identical output across runs, platforms, and devices:</p>
+<p>Within a compatible software, build, and execution environment, the same key
+and call sequence reproduce the same output:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
