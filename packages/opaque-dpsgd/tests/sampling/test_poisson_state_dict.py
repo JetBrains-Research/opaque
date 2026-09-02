@@ -14,14 +14,27 @@ from __future__ import annotations
 import torch
 from torch.utils.data import TensorDataset
 
+from opaque.api.dpsgd.sampling._poisson import POISSON_STREAM_FOLD
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.random import key
+from opaque.random import fold_in, key
 from opaque.serialization import from_state_dict, state_dict
 
 
 def _make_sampler(seed: int = 7, n_steps: int = 20) -> PoissonSampler:
     dataset = TensorDataset(torch.arange(200).reshape(-1, 1))
     return PoissonSampler(dataset, sample_rate=0.1, n_steps=n_steps, key=key(seed))
+
+
+def _small_sampler(seed: int) -> PoissonSampler:
+    dataset = TensorDataset(torch.arange(12).reshape(-1, 1))
+    return PoissonSampler(dataset, sample_rate=0.35, n_steps=6, key=key(seed))
+
+
+def _small_stream_sampler(seed: int) -> PoissonSampler:
+    dataset = TensorDataset(torch.arange(12).reshape(-1, 1))
+    return PoissonSampler._from_stream_key(
+        dataset, sample_rate=0.35, n_steps=6, stream_key=key(seed)
+    )
 
 
 class TestPoissonStateDictRoundTrip:
@@ -82,9 +95,8 @@ class TestPoissonStateDictRoundTrip:
             key=key(7),
         )
         snapshot = state_dict(sampler)
-        # Sample-math args (sample_rate, truncated_batch_size, key) come
-        # from the snapshot.  ``n_steps`` comes from the template — the
-        # user may extend the run on resume.
+        # Sampling parameters and the domain-separated stream key come from the
+        # snapshot. The template supplies ``n_steps`` so the run may be extended.
         template = PoissonSampler(dataset, sample_rate=0.5, n_steps=99, key=key(0))
         restored = from_state_dict(template, snapshot)
 
@@ -92,6 +104,57 @@ class TestPoissonStateDictRoundTrip:
         assert restored.truncated_batch_size == 15
         # n_steps follows the template (allows resume + extend).
         assert restored.n_steps == 99
+
+
+class TestPoissonStateCompatibility:
+    def test_pre_domain_snapshot_uses_saved_seed_without_folding(self):
+        snapshot = {
+            "key_seed": 17,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_samples": 12,
+            "sample_rate": 0.35,
+            "n_steps": 6,
+            "truncated_batch_size": None,
+        }
+
+        restored = from_state_dict(_small_sampler(0), snapshot)
+        reference = _small_stream_sampler(17)
+        iterator = iter(reference)
+        for _ in range(2):
+            next(iterator)
+
+        assert list(restored) == list(reference)
+        assert state_dict(restored)["key_seed"] == 17
+        assert state_dict(restored)["key_impl"] == "opaque_threefry_like"
+
+    def test_state_stores_domain_separated_stream_seed(self):
+        sampler = _small_sampler(17)
+        iterator = iter(sampler)
+        for _ in range(2):
+            next(iterator)
+
+        snapshot = state_dict(sampler)
+        expected_seed = fold_in(key(17), POISSON_STREAM_FOLD).seed
+        expected_tail = list(sampler)
+
+        assert snapshot == {
+            "key_seed": expected_seed,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_samples": 12,
+            "sample_rate": 0.35,
+            "n_steps": 6,
+            "truncated_batch_size": None,
+        }
+        assert list(from_state_dict(_small_sampler(0), snapshot)) == expected_tail
+
+        reader = from_state_dict(_small_sampler(0), snapshot)
+        assert next(iter(reader)) == expected_tail[0]
+        resaved = state_dict(reader)
+        assert resaved["key_seed"] == expected_seed
+        assert resaved["key_impl"] == snapshot["key_impl"]
+        assert list(from_state_dict(_small_sampler(0), resaved)) == expected_tail[1:]
 
 
 class TestPoissonLenReflectsRemaining:

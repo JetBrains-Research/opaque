@@ -28,15 +28,17 @@ References:
 """
 
 from collections.abc import Iterator, Mapping, Sized
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.random import fold_in
 from opaque.random.types import RngKey
 
 _MIN_NUM_BINS = 2
+BALLS_IN_BINS_STREAM_FOLD = "opaque.dpftrl.balls_in_bins"
 
 
 class BallsInBinsSampler(Sampler):
@@ -80,6 +82,40 @@ class BallsInBinsSampler(Sampler):
         *,
         key: RngKey,
     ):
+        self._initialize(
+            data_source,
+            num_bins,
+            n_steps,
+            stream_key=fold_in(key, BALLS_IN_BINS_STREAM_FOLD),
+        )
+
+    @classmethod
+    def _from_stream_key(
+        cls,
+        data_source: Sized,
+        num_bins: int,
+        n_steps: int | None = None,
+        *,
+        stream_key: RngKey,
+    ) -> Self:
+        """Construct from an already domain-separated stream key."""
+        sampler = object.__new__(cls)
+        sampler._initialize(
+            data_source,
+            num_bins,
+            n_steps,
+            stream_key=stream_key,
+        )
+        return sampler
+
+    def _initialize(
+        self,
+        data_source: Sized,
+        num_bins: int,
+        n_steps: int | None,
+        *,
+        stream_key: RngKey,
+    ) -> None:
         super().__init__()
 
         if len(data_source) == 0:
@@ -104,9 +140,9 @@ class BallsInBinsSampler(Sampler):
         self.n_steps = n_steps
 
         self._num_samples = len(data_source)
-        self._key = key
+        self._stream_key = stream_key
 
-        generator = np.random.default_rng(key.seed)
+        generator = np.random.default_rng(stream_key.seed)
         # True BnB: each example independently picks a bin.
         assignments = generator.integers(0, num_bins, size=self._num_samples)
         self._bins: list[list[int]] = [[] for _ in range(num_bins)]
@@ -175,16 +211,15 @@ class BallsInBinsSampler(Sampler):
 def _state_dict_balls_in_bins(s: BallsInBinsSampler) -> dict[str, Any]:
     """Serialise ``BallsInBinsSampler`` state.
 
-    Bin assignment is deterministic from ``(key, num_bins, num_samples)``;
-    ``num_samples`` is persisted so the loader can validate the
-    template dataset length before relying on deterministic
-    reconstruction.  Round-robin iteration is deterministic given the
-    assignment, so no Markov-state replay is needed on load — the
+    Bin assignment is deterministic from the domain-separated stream key,
+    ``num_bins``, and ``num_samples``. ``num_samples`` is persisted so load can
+    validate the template length before reconstructing that assignment.
+    Round-robin iteration is deterministic once the bins are fixed, so the
     cursor alone fixes the resume point.
     """
     return {
-        "key_seed": int(s._key.seed),
-        "key_impl": str(s._key.impl),
+        "key_seed": int(s._stream_key.seed),
+        "key_impl": str(s._stream_key.impl),
         "consumed": int(s._consumed),
         "num_samples": int(s._num_samples),
         "num_bins": int(s.num_bins),
@@ -197,15 +232,12 @@ def _from_state_dict_balls_in_bins(
 ) -> BallsInBinsSampler:
     """Rebuild ``BallsInBinsSampler`` at the saved cursor.
 
-    The dataset comes from ``template``; the bin assignment is
-    reconstructed deterministically by the constructor; the cursor is
-    restored so ``__iter__`` resumes at the right round-robin
-    position.
+    The dataset comes from ``template``. The saved domain-separated stream key
+    reconstructs the original bin assignment, and the saved cursor restores the
+    round-robin position.
 
-    Raises ``ValueError`` if the template dataset length differs from
-    the snapshot — the bin assignment depends on ``num_samples`` (each
-    example independently picks a bin), so a mismatched length would
-    silently produce a different assignment.
+    Raises ``ConfigurationError`` if the template dataset length differs from
+    the snapshot because each example's fixed bin depends on ``num_samples``.
     """
     saved_n = int(sd["num_samples"])
     template_n = len(template.data_source)
@@ -219,14 +251,13 @@ def _from_state_dict_balls_in_bins(
                 "accounting (Lemma 3.2 requires fixed assignment across the run).",
             )
         )
-    sampler = BallsInBinsSampler(
+    sampler = BallsInBinsSampler._from_stream_key(
         template.data_source,
         num_bins=int(sd["num_bins"]),
-        # Take ``n_steps`` from the template — caller may extend or
-        # shorten the run on resume; the cursor below fixes the
-        # round-robin resume position.
+        # Use ``template.n_steps`` so callers may extend or shorten the run on
+        # restore; the saved cursor fixes the resume position.
         n_steps=template.n_steps,
-        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+        stream_key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     sampler._consumed = int(sd["consumed"])
     return sampler

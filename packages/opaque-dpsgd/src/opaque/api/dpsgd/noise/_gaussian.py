@@ -63,12 +63,9 @@ from opaque.types import (
 if TYPE_CHECKING:
     from opaque.api.dpsgd.noise._types import GaussianNoiseFn
 
-# Root of every key this mechanism derives.  A mechanism's whole key space
-# hangs off one namespaced string, so a caller who hands the same base key to
-# two mechanisms still gets independent noise from each.  Without a root the
-# obvious derivation — ``fold_in(key, step)`` — is what *every* mechanism
-# writes, and two of them drawing from it produce byte-identical noise with
-# nothing to signal it.  See ``docs/reference/rng.md``.
+# Root of every key this mechanism derives. Distinct registered components use
+# separate domains; instances of this component need distinct caller keys when
+# their streams must differ.
 GAUSSIAN_STREAM_FOLD = "opaque.dpsgd.gaussian"
 
 _SQRT2 = math.sqrt(2.0)

@@ -20,17 +20,16 @@ problems for DP-SGD:
    noise (incorrect for centralized DP-SGD) without any visible error.
 
 Explicit keys solve both problems. The key is a value, not hidden state.
-You pass it explicitly, split it when you need independent randomness, and
-fold in additional data (step counter, rank) to derive new keys
-deterministically. The same key always produces the same output, regardless
-of what other code has run.
+You pass it explicitly, split it for separate uses, and fold in additional data
+(step counter, rank) to derive new keys deterministically. Other code cannot
+advance an immutable key.
 
 ## Core primitives
 
 | Function | Purpose |
 |----------|---------|
 | `key(seed)` | Create a key from an integer seed |
-| `split(k, num=2)` | Derive `num` independent child keys |
+| `split(k, num=2)` | Derive `num` deterministic child keys |
 | `fold_in(k, *data)` | Mix a key with one or more int/str values |
 | `generator_from_key(k)` | Convert to `torch.Generator` |
 | `random_key()` | Non-deterministic key (uses system entropy) |
@@ -52,8 +51,8 @@ field (uint64) and an `impl` field identifying the hash function.
 
 ### `split(k, num=2)`
 
-Derive `num` independent child keys from a parent key. Use this when you
-need multiple independent sources of randomness.
+Derive `num` child keys from a parent key. Use this when you need multiple
+separate sources of randomness.
 
 ```python
 from opaque.random import key, split
@@ -64,21 +63,21 @@ k1, k2, k3 = split(k, num=3)
 ```
 
 Each child is deterministically derived via `fold_in(k, i)` for index `i`.
-The children are statistically independent: using one does not affect the
-others.
+Under Opaque's PRNG model, each child identifies a separate stream, and
+consuming one child does not advance another.
 
-**Golden rule:** never reuse a key for two different purposes. Always split
-first.
+Opaque separates registered component families internally. Split explicitly
+when constructing multiple instances that must use distinct streams.
 
 ```python
-# Wrong: reusing the same key
-noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k)
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)  # correlated
+# Same sampler configuration and key: reproducibly identical streams
+sampler_a = PoissonSampler(dataset, sample_rate=0.01, key=k)
+sampler_b = PoissonSampler(dataset, sample_rate=0.01, key=k)
 
-# Right: split first
-k_noise, k_sample = split(k)
-noise_fn, ns = gaussian_noise(noise_multiplier=1.0, key=k_noise)
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=k_sample)
+# Split when the instances require distinct streams
+k_a, k_b = split(k)
+sampler_a = PoissonSampler(dataset, sample_rate=0.01, key=k_a)
+sampler_b = PoissonSampler(dataset, sample_rate=0.01, key=k_b)
 ```
 
 ### `fold_in(k, *data)`
@@ -90,7 +89,7 @@ from opaque.random import key, fold_in
 
 k = key(42)
 step_key = fold_in(k, step)              # single int
-rank_key = fold_in(k, f"rank:{r}")        # single str
+rank_key = fold_in(k, rank)               # single int
 combined = fold_in(k, step, rank)         # multiple values
 full     = fold_in(k, step, rank, worker) # step → rank → worker
 ```
@@ -104,8 +103,8 @@ Strings root a mechanism: fold one unique tag once, then derive steps
 beneath it. Opaque's shipped tags are listed in the
 [RNG reference](../reference/rng.md).
 
-`fold_in` uses BLAKE2b hashing internally. Different data values produce
-different keys, and `int` versus `str` values are distinguished:
+`fold_in` prefixes each typed input and hashes it with BLAKE2b to derive a
+64-bit key:
 
 ```python
 fold_in(k, 0).seed != fold_in(k, 1).seed
@@ -154,11 +153,11 @@ noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=key(42))
 noisy_grads, state = noise_fn(grads, state)
 ```
 
-The noise function manages its own step counter internally. You provide a
-key at construction time; each call to `noise_fn` derives a new key from
-the mechanism's namespaced root, the base key, and the current step
-counter, then increments the counter. Two mechanisms handed the same base
-key therefore draw independent streams.
+The noise function manages its own step counter internally. Each call derives
+from the mechanism's namespaced root, the base key, and the current step, then
+increments the counter. Different registered components use different domains.
+Instances of one component with the same configuration, key, and call sequence
+remain reproducibly identical.
 
 ### Sampling
 
@@ -168,6 +167,13 @@ from opaque.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ```
+
+Each randomized sampler derives its stream under a stable component-specific
+domain. A sampler's serialized state preserves the stream identity and cursor
+needed to continue its sequence. Instances with the same sampler type,
+configuration, key, dataset ordering, and call sequence reproduce the same
+batches within a compatible NumPy execution environment. Split or derive the
+key when sampler instances require distinct streams.
 
 ### Adaptive clipping
 
@@ -183,9 +189,8 @@ grad_fn, clip_state = adaptive_clipped_grad(
 ### Auditing
 
 `coin_flip()` derives separate audit subkeys for canary selection and inclusion
-coins. Training mechanisms should use their own RNG domains so their
-randomness remains independent from auditing, even with a shared reproducible
-root seed.
+coins. Training mechanisms use their own RNG domains, so their streams remain
+separated from auditing under a shared reproducible root seed.
 
 ```python
 import opaque.auditing as auditing
@@ -263,7 +268,8 @@ step_key = fold_in(fold_in(key(42), step), rank)
 
 ## Reproducibility
 
-Same key produces identical output across runs, platforms, and devices:
+Within a compatible software, build, and execution environment, the same key
+and call sequence reproduce the same output:
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise

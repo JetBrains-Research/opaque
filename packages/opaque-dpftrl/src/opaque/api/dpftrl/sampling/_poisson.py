@@ -27,7 +27,7 @@ References:
 """
 
 from collections.abc import Iterator, Mapping, Sized
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 from torch.utils.data import Sampler
@@ -38,7 +38,10 @@ from opaque.api.dpftrl.sampling._partitions import (
     _independent_partition,
 )
 from opaque.exceptions import ConfigurationError
+from opaque.random import fold_in
 from opaque.random.types import RngKey
+
+CYCLIC_POISSON_STREAM_FOLD = "opaque.dpftrl.cyclic_poisson"
 
 
 class CyclicPoissonSampler(Sampler):
@@ -94,6 +97,52 @@ class CyclicPoissonSampler(Sampler):
         *,
         key: RngKey,
     ):
+        self._initialize(
+            data_source,
+            sample_rate,
+            bands,
+            n_steps,
+            partition_type,
+            truncated_batch_size,
+            stream_key=fold_in(key, CYCLIC_POISSON_STREAM_FOLD),
+        )
+
+    @classmethod
+    def _from_stream_key(
+        cls,
+        data_source: Sized,
+        sample_rate: float,
+        bands: int = 1,
+        n_steps: int = 1,
+        partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
+        truncated_batch_size: int | None = None,
+        *,
+        stream_key: RngKey,
+    ) -> Self:
+        """Construct from an already domain-separated stream key."""
+        sampler = object.__new__(cls)
+        sampler._initialize(
+            data_source,
+            sample_rate,
+            bands,
+            n_steps,
+            partition_type,
+            truncated_batch_size,
+            stream_key=stream_key,
+        )
+        return sampler
+
+    def _initialize(
+        self,
+        data_source: Sized,
+        sample_rate: float,
+        bands: int,
+        n_steps: int,
+        partition_type: PartitionType,
+        truncated_batch_size: int | None,
+        *,
+        stream_key: RngKey,
+    ) -> None:
         super().__init__()
 
         if len(data_source) == 0:
@@ -112,8 +161,8 @@ class CyclicPoissonSampler(Sampler):
             )
 
         self.num_examples = len(data_source)
-        self._key = key
-        self.generator = np.random.default_rng(key.seed)
+        self._stream_key = stream_key
+        self.generator = np.random.default_rng(stream_key.seed)
 
         if partition_type == PartitionType.INDEPENDENT:
             partition_fn = _independent_partition
@@ -201,14 +250,14 @@ class CyclicPoissonSampler(Sampler):
 def _state_dict_cyclic_poisson(s: CyclicPoissonSampler) -> dict[str, Any]:
     """Serialise ``CyclicPoissonSampler`` state.
 
-    Partition is deterministic from ``(key, bands, num_examples,
-    partition_type)``; ``num_examples`` is persisted so the loader can
-    validate the template dataset length before relying on
-    deterministic reconstruction.
+    The partition is deterministic from the domain-separated stream key, ``bands``,
+    ``num_examples``, and ``partition_type``. ``num_examples`` is persisted so
+    the loader can validate the template dataset length before relying on that
+    reconstruction.
     """
     return {
-        "key_seed": int(s._key.seed),
-        "key_impl": str(s._key.impl),
+        "key_seed": int(s._stream_key.seed),
+        "key_impl": str(s._stream_key.impl),
         "consumed": int(s._consumed),
         "num_examples": int(s.num_examples),
         "sample_rate": float(s.sample_rate),
@@ -224,14 +273,13 @@ def _from_state_dict_cyclic_poisson(
 ) -> CyclicPoissonSampler:
     """Rebuild ``CyclicPoissonSampler`` at the saved cursor.
 
-    The dataset comes from ``template``; the partition reconstructs
-    deterministically from the saved key + bands; the generator is
-    fast-forwarded by replaying ``consumed`` discarded ``_sample_step``
-    calls so the next yielded batch matches a continuous run.
+    The dataset comes from ``template``. The saved domain-separated stream key
+    and bands reconstruct the partition; replaying ``consumed`` discarded
+    ``_sample_step`` calls then positions NumPy so the next yielded batch matches
+    a continuous run.
 
-    Raises ``ValueError`` if the template dataset length differs from
-    the snapshot — the partition depends on ``num_examples``, so a
-    mismatched length would silently reconstruct a different stream.
+    Raises ``ConfigurationError`` if the template dataset length differs from
+    the snapshot because the partition depends on ``num_examples``.
     """
     saved_n = int(sd["num_examples"])
     template_n = len(template.data_source)
@@ -244,18 +292,16 @@ def _from_state_dict_cyclic_poisson(
                 "produce a different partition.",
             )
         )
-    sampler = CyclicPoissonSampler(
+    sampler = CyclicPoissonSampler._from_stream_key(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),
         bands=int(sd["bands"]),
-        # Take ``n_steps`` from the template — caller may have
-        # extended or shortened the run on resume; the cursor below
-        # fixes the resume position, ``n_steps`` only bounds the
-        # iterator's stopping point.
+        # Use ``template.n_steps`` so callers may extend or shorten the run on
+        # restore; the saved cursor fixes the resume position.
         n_steps=int(template.n_steps),
         partition_type=PartitionType[sd["partition_type"]],
         truncated_batch_size=sd.get("truncated_batch_size"),
-        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+        stream_key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     consumed = int(sd["consumed"])
     for step_idx in range(consumed):

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import numpy as np
 from torch.utils.data import Sampler
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 _Allocation = Literal["block", "total"]
-_STREAM_FOLD = "opaque.dpsgd.k_out_of_t"
+K_OUT_OF_T_STREAM_FOLD = "opaque.dpsgd.k_out_of_t"
 
 
 class KOutOfTSampler(Sampler):
@@ -47,6 +47,44 @@ class KOutOfTSampler(Sampler):
         allocation: _Allocation,
         key: RngKey,
     ):
+        self._initialize(
+            data_source,
+            k=k,
+            t=t,
+            allocation=allocation,
+            stream_key=fold_in(key, K_OUT_OF_T_STREAM_FOLD, allocation),
+        )
+
+    @classmethod
+    def _from_stream_key(
+        cls,
+        data_source: Sized,
+        *,
+        k: int,
+        t: int,
+        allocation: _Allocation,
+        stream_key: RngKey,
+    ) -> Self:
+        """Construct from an already domain-separated stream key."""
+        sampler = object.__new__(cls)
+        sampler._initialize(
+            data_source,
+            k=k,
+            t=t,
+            allocation=allocation,
+            stream_key=stream_key,
+        )
+        return sampler
+
+    def _initialize(
+        self,
+        data_source: Sized,
+        *,
+        k: int,
+        t: int,
+        allocation: _Allocation,
+        stream_key: RngKey,
+    ) -> None:
         super().__init__()
         if len(data_source) == 0:
             raise ConfigurationError(*("data_source must not be empty",))
@@ -64,12 +102,8 @@ class KOutOfTSampler(Sampler):
         self.t = int(t)
         self.allocation = allocation
         self._num_samples = len(data_source)
-        self._key = key
+        self._stream_key = stream_key
         self._consumed = 0
-
-    @property
-    def _stream_key(self) -> RngKey:
-        return fold_in(self._key, _STREAM_FOLD, self.allocation)
 
     @property
     def consumed(self) -> int:
@@ -144,8 +178,8 @@ class KOutOfTSampler(Sampler):
 
 def _state_dict_k_out_of_t(sampler: KOutOfTSampler) -> dict[str, Any]:
     return {
-        "key_seed": int(sampler._key.seed),
-        "key_impl": str(sampler._key.impl),
+        "key_seed": int(sampler._stream_key.seed),
+        "key_impl": str(sampler._stream_key.impl),
         "consumed": sampler.consumed,
         "num_samples": sampler._num_samples,
         "k": sampler.k,
@@ -166,12 +200,12 @@ def _from_state_dict_k_out_of_t(
                 f"num_samples={state['num_samples']}",
             )
         )
-    restored = KOutOfTSampler(
+    restored = KOutOfTSampler._from_stream_key(
         template.data_source,
         k=int(state["k"]),
         t=int(state["t"]),
         allocation=state["allocation"],
-        key=RngKey(seed=int(state["key_seed"]), impl=str(state["key_impl"])),
+        stream_key=RngKey(seed=int(state["key_seed"]), impl=str(state["key_impl"])),
     )
     restored._consumed = int(state["consumed"])
     return restored

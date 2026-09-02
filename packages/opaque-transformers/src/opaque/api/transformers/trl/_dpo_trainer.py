@@ -824,7 +824,13 @@ class DPOTrainer(DPTrainer):
         Used by both the training augment hook and eval ``prediction_step`` so
         eval scores against the same evolving reference as training, not the
         stale seed columns.
+
+        Poisson rounds can realize an empty batch (like every other DP-SGD
+        batch path in :class:`DPTrainer`); the reference forward is skipped
+        then and the zero-shaped seed columns pass through unchanged.
         """
+        if int(inputs["chosen_input_ids"].shape[0]) == 0:
+            return inputs
         with torch.no_grad():
             refs = self.compute_ref_log_probs(
                 inputs, self._tr_ref, null_ref=False, to_cpu=False

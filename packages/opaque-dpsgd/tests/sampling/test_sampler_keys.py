@@ -5,6 +5,7 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
+from opaque.api.dpsgd.sampling._poisson import POISSON_STREAM_FOLD
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import fold_in, key
 
@@ -140,18 +141,10 @@ class TestCrossValidationWithNumpy:
     def test_poisson_matches_numpy_generator(self):
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler_key = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(42))
-        batches_key = list(sampler_key)
+        sampler = PoissonSampler(dataset, sample_rate=0.1, n_steps=1, key=key(42))
 
-        rng = np.random.default_rng(42)
-        batches_numpy = []
-        for _ in range(1):
-            mask = rng.random(len(dataset)) < 0.1
-            indices = np.where(mask)[0].tolist()
-            if indices:
-                batches_numpy.append(indices)
+        stream_key = fold_in(key(42), POISSON_STREAM_FOLD)
+        rng = np.random.default_rng(stream_key.seed)
+        expected = np.flatnonzero(rng.random(len(dataset)) < 0.1).tolist()
 
-        assert len(batches_key) == len(batches_numpy)
-
-        if len(batches_key) > 0 and len(batches_numpy) > 0:
-            assert abs(len(batches_key[0]) - len(batches_numpy[0])) < 50
+        assert list(sampler) == [expected]
