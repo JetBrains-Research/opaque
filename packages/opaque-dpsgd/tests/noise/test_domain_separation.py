@@ -1,13 +1,4 @@
-"""Mechanisms handed one base key must not draw the same noise.
-
-``fold_in`` puts integers and strings in disjoint spaces, and every Opaque
-mechanism roots its own key space with a namespaced string so that a caller who
-reuses one base key across mechanisms still gets independent streams.  The
-failure this guards against is silent: correlated noise looks correct in
-isolation, and no test, error, or accountant reports it.
-
-The convention these tests pin is published in ``docs/reference/rng.md``.
-"""
+"""Regression tests for mechanism RNG domain separation."""
 
 from __future__ import annotations
 
@@ -30,7 +21,7 @@ def _mechanism_draw(base, *, root: str, step: int, size: int = 6) -> torch.Tenso
 
 
 class TestMechanismRoots:
-    def test_distinct_roots_give_independent_streams(self):
+    def test_distinct_roots_give_distinct_streams(self):
         base = key(1234)
         first = _mechanism_draw(base, root="mylab.rare_events", step=3)
         second = _mechanism_draw(base, root="otherlab.canary_noise", step=3)
@@ -54,12 +45,7 @@ class TestMechanismRoots:
         for shipped in (GAUSSIAN_STREAM_FOLD, ADAPTIVE_CLIPPING_STREAM_FOLD):
             assert not torch.equal(mine, _mechanism_draw(base, root=shipped, step=0))
 
-    def test_caller_integer_derivations_miss_the_gaussian_stream(self):
-        """The keys a caller can reach by ordinary means stay clear of it.
-
-        ``split`` is integer folds, so everything it returns is in the caller's
-        space; the mechanism's root is not reachable from there.
-        """
+    def test_sampled_integer_derivations_miss_the_gaussian_stream(self):
         base = key(1234)
         reachable = {child.seed for child in split(base, 16)}
         reachable |= {fold_in(base, index).seed for index in range(256)}

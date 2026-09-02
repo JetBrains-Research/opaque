@@ -51,6 +51,7 @@ from opaque.api.engine.device import (
     device_capabilities,
     sdpa_autocast_under_vmap_broken,
 )
+from opaque.api.transformers._rng import IGNORE_DATA_SKIP_STREAM_FOLD
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
@@ -3727,7 +3728,7 @@ class DPTrainer:
         # per-epoch re-instantiation; the outer epoch loop is purely a
         # synthetic boundary layer for HF callbacks.
         if ctx.current_sampler is None:
-            from opaque.random import fold_in, key
+            from opaque.random import fold_in
 
             sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
             if ctx.sampler_restart_step is not None:
@@ -3736,7 +3737,7 @@ class DPTrainer:
                 # discarded prefix already spent.
                 sampler_key = fold_in(
                     sampler_key,
-                    "opaque.transformers.ignore_data_skip",
+                    IGNORE_DATA_SKIP_STREAM_FOLD,
                     ctx.sampler_restart_step,
                 )
             # Per-rank independent sampling: fold the rank into the key so

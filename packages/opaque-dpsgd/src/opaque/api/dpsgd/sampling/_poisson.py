@@ -20,15 +20,18 @@ the cursor + RNG.  ``__iter__`` continues from ``self._consumed`` and
 """
 
 from collections.abc import Iterator, Mapping, Sized
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.random import fold_in
 from opaque.random.types import RngKey
 
 from ._helpers import _plain_poisson_step_indices
+
+POISSON_STREAM_FOLD = "opaque.dpsgd.poisson"
 
 
 class PoissonSampler(Sampler):
@@ -74,8 +77,7 @@ class PoissonSampler(Sampler):
         - Use with ``DataLoader``'s ``batch_sampler`` parameter.
         - Resume via :func:`opaque.serialization.state_dict` /
           :func:`opaque.serialization.from_state_dict`: state captures the
-          original ``key`` plus the consumed-step count; load replays the
-          generator forward to the resume position.
+          domain-separated stream key and consumed-step count.
     """
 
     def __init__(
@@ -87,6 +89,44 @@ class PoissonSampler(Sampler):
         *,
         key: RngKey,
     ):
+        self._initialize(
+            data_source,
+            sample_rate,
+            n_steps,
+            truncated_batch_size,
+            stream_key=fold_in(key, POISSON_STREAM_FOLD),
+        )
+
+    @classmethod
+    def _from_stream_key(
+        cls,
+        data_source: Sized,
+        sample_rate: float,
+        n_steps: int | None = None,
+        truncated_batch_size: int | None = None,
+        *,
+        stream_key: RngKey,
+    ) -> Self:
+        """Construct from an already domain-separated stream key."""
+        sampler = object.__new__(cls)
+        sampler._initialize(
+            data_source,
+            sample_rate,
+            n_steps,
+            truncated_batch_size,
+            stream_key=stream_key,
+        )
+        return sampler
+
+    def _initialize(
+        self,
+        data_source: Sized,
+        sample_rate: float,
+        n_steps: int | None,
+        truncated_batch_size: int | None,
+        *,
+        stream_key: RngKey,
+    ) -> None:
         super().__init__()
 
         if not 0 < sample_rate <= 1:
@@ -106,11 +146,8 @@ class PoissonSampler(Sampler):
         self.truncated_batch_size = truncated_batch_size
 
         self._num_samples = len(data_source)
-        # Original key kept for state-dict round-trips; the live
-        # ``generator`` advances each yield and isn't reconstructable
-        # from the key alone after that point.
-        self._key = key
-        self.generator = np.random.default_rng(key.seed)
+        self._stream_key = stream_key
+        self.generator = np.random.default_rng(stream_key.seed)
         self._consumed = 0
 
     def _sample_step(self) -> list[int]:
@@ -173,16 +210,14 @@ class PoissonSampler(Sampler):
 def _state_dict_poisson(s: PoissonSampler) -> dict[str, Any]:
     """Serialise ``PoissonSampler`` state.
 
-    Saves the original ``key`` (so the generator can be reconstructed),
-    ``num_samples`` (so the load validates the template dataset
-    length — Poisson stream depends on it), and a ``consumed`` counter
-    (so the loader can replay the generator forward to the resume
-    position).  The dataset itself is *not* serialised — it's supplied
-    by the ``template`` argument on load.
+    Saves the domain-separated NumPy stream key, ``num_samples`` (so load
+    validates the template dataset length), and a ``consumed`` counter (so the
+    loader can replay the generator to the resume position). The dataset itself
+    is not serialised; it comes from the ``template`` argument on load.
     """
     return {
-        "key_seed": int(s._key.seed),
-        "key_impl": str(s._key.impl),
+        "key_seed": int(s._stream_key.seed),
+        "key_impl": str(s._stream_key.impl),
         "consumed": int(s._consumed),
         "num_samples": int(s._num_samples),
         "sample_rate": float(s.sample_rate),
@@ -196,18 +231,14 @@ def _from_state_dict_poisson(
 ) -> PoissonSampler:
     """Rebuild ``PoissonSampler`` at the saved cursor.
 
-    The dataset *and* ``n_steps`` come from ``template`` (the user may
-    extend or shorten the run on resume; the saved ``n_steps`` is
-    advisory).  ``key``, ``sample_rate``, and ``truncated_batch_size``
-    come from ``sd`` — they drive the per-step sampling math and must
-    match the saved run for the replay to land on a deterministic
-    continuation.  Replay advances the numpy generator by ``consumed``
-    discarded ``_sample_step`` calls so the next yielded batch matches
-    a continuous run.
+    The dataset and ``n_steps`` come from ``template`` so a caller may extend
+    or shorten the run. The domain-separated stream key, ``sample_rate``, and
+    ``truncated_batch_size`` come from ``sd`` and must reproduce the saved
+    sampling math. Replay advances NumPy by ``consumed`` discarded
+    ``_sample_step`` calls so the next batch matches a continuous run.
 
-    Raises ``ValueError`` if the template dataset length differs from
-    the snapshot — Poisson sampling per-step is over the full dataset,
-    so a mismatched length would silently emit a different stream.
+    Raises ``ConfigurationError`` if the template dataset length differs from
+    the snapshot because per-step Poisson sampling covers the full dataset.
     """
     saved_n = int(sd["num_samples"])
     template_n = len(template.data_source)
@@ -220,16 +251,14 @@ def _from_state_dict_poisson(
                 "a different Poisson stream.",
             )
         )
-    sampler = PoissonSampler(
+    sampler = PoissonSampler._from_stream_key(
         template.data_source,
         sample_rate=float(sd["sample_rate"]),
-        # Take ``n_steps`` from the template — the user may have
-        # extended or shortened ``max_steps`` between runs.  The cursor
-        # below is what fixes the resume position; ``n_steps`` only
-        # bounds the iterator's stopping point.
+        # Use ``template.n_steps`` so callers may extend or shorten the run on
+        # restore; the saved cursor fixes the resume position.
         n_steps=template.n_steps,
         truncated_batch_size=sd.get("truncated_batch_size"),
-        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+        stream_key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     consumed = int(sd["consumed"])
     for _ in range(consumed):

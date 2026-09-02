@@ -140,7 +140,7 @@ Useful for prototyping and experiments. For reproducible training, use `key()` w
 
 #### split(rng_key: RngKey, num: int = 2) → tuple of RngKey values
 
-Split a key into `num` independent child keys.
+Split a key into `num` deterministically derived child keys.
 
 ```python
 from opaque.random import split, key
@@ -156,11 +156,12 @@ keys = split(k, num=10)
 - `rng_key`: Key to split
 - `num`: Number of child keys (default: 2)
 
-**Returns:** Tuple of `num` independent RngKeys
+**Returns:** Tuple of `num` derived RngKeys
 
 **Raises:** `ConfigurationError` if `num < 1`
 
-**Golden Rule:** Never reuse keys. Always split to create independent randomness.
+**Rule:** Split keys for separate uses. Each derived key identifies a separate
+PRNG stream, and consuming one does not advance another.
 
 ---
 
@@ -218,10 +219,20 @@ Do not reuse these shipped tags:
 | --- | --- |
 | `opaque.dpsgd.gaussian` | `opaque.dpsgd.noise.gaussian_noise` (both streams) |
 | `opaque.dpsgd.adaptive_clipping` | adaptive clipping threshold noise |
+| `opaque.dpsgd.poisson` | DP-SGD Poisson sampling |
+| `opaque.dpsgd.k_out_of_t` | DP-SGD k-out-of-t sampling |
 | `opaque.dpftrl.mf_gaussian` | `opaque.dpftrl.noise.mf_gaussian_noise` |
 | `opaque.dpftrl.second_moment.first` / `.second` | paired MF second-moment streams |
+| `opaque.dpftrl.cyclic_poisson` | DP-FTRL cyclic Poisson sampling |
+| `opaque.dpftrl.b_min_sep` | DP-FTRL b-min-separation sampling |
+| `opaque.dpftrl.balls_in_bins` | DP-FTRL balls-in-bins sampling |
 | `opaque.paired.first` / `opaque.paired.second` | paired first/second-moment streams |
 | `opaque.auditing.canary_selection` / `opaque.auditing.coin_flip` | `opaque.auditing.coin_flip` |
+| `opaque.transformers.ignore_data_skip` | trainer Poisson restart after skipped sampler state |
+
+A component's stream is deterministic for a given caller key, configuration,
+and call sequence. Split the key or fold in an instance or rank identifier when
+streams must differ.
 
 **Use Cases:**
 - Step counters in loops: `fold_in(base, step)`
@@ -252,7 +263,8 @@ tensor = torch.randn(10, generator=gen)
 
 **Returns:** torch.Generator seeded with rng_key.seed
 
-**Note:** The Generator is deterministic but independent of Opaque's DP noise. Use for framework-level randomness (e.g., dropout, model initialization) separate from DP operations.
+**Note:** The Generator is deterministic. Give framework randomness (for
+example, dropout or initialization) a key derived separately from DP operations.
 
 ---
 

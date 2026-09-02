@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 _Allocation = Literal["block", "total"]
-_STREAM_FOLD = "opaque.dpsgd.k_out_of_t"
+K_OUT_OF_T_STREAM_FOLD = "opaque.dpsgd.k_out_of_t"
 
 
 class KOutOfTSampler(Sampler):
@@ -69,7 +69,7 @@ class KOutOfTSampler(Sampler):
 
     @property
     def _stream_key(self) -> RngKey:
-        return fold_in(self._key, _STREAM_FOLD, self.allocation)
+        return fold_in(self._key, K_OUT_OF_T_STREAM_FOLD, self.allocation)
 
     @property
     def consumed(self) -> int:

@@ -3,7 +3,7 @@
 This module provides explicit, immutable RNG state transitions inspired by JAX:
 
 - ``key(seed)`` creates an initial key
-- ``split(key, n)`` derives independent child keys
+- ``split(key, n)`` derives deterministic child keys
 - ``fold_in(key, data)`` domain-separates by deterministic metadata
 
 The engine is backend-agnostic and can be bridged to PyTorch via
@@ -117,7 +117,7 @@ def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
 
 
 def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:
-    """Split a key into ``num`` independent child keys.
+    """Split a key into ``num`` deterministic child keys.
 
     Defined as ``fold_in(rng_key, i) for i in range(num)``, so the children are
     exactly the integer folds of ``rng_key`` — which is why a mechanism roots

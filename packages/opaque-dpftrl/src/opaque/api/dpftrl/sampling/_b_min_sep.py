@@ -12,16 +12,19 @@ per-example rate ``p_0`` used in cyclic Poisson accounting). For target
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.exceptions import ConfigurationError
+from opaque.random import fold_in
 from opaque.random.types import RngKey
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sized
+
+B_MIN_SEP_STREAM_FOLD = "opaque.dpftrl.b_min_sep"
 
 
 class BMinSepSampler(Sampler):
@@ -55,6 +58,44 @@ class BMinSepSampler(Sampler):
         *,
         key: RngKey,
     ):
+        self._initialize(
+            data_source,
+            bands,
+            sampling_prob,
+            n_steps,
+            stream_key=fold_in(key, B_MIN_SEP_STREAM_FOLD),
+        )
+
+    @classmethod
+    def _from_stream_key(
+        cls,
+        data_source: Sized,
+        bands: int,
+        sampling_prob: float,
+        n_steps: int,
+        *,
+        stream_key: RngKey,
+    ) -> Self:
+        """Construct from an already domain-separated stream key."""
+        sampler = object.__new__(cls)
+        sampler._initialize(
+            data_source,
+            bands,
+            sampling_prob,
+            n_steps,
+            stream_key=stream_key,
+        )
+        return sampler
+
+    def _initialize(
+        self,
+        data_source: Sized,
+        bands: int,
+        sampling_prob: float,
+        n_steps: int,
+        *,
+        stream_key: RngKey,
+    ) -> None:
         super().__init__()
         if len(data_source) == 0:
             raise ConfigurationError(*("data_source must not be empty",))
@@ -72,8 +113,8 @@ class BMinSepSampler(Sampler):
         self.bands = bands
         self.sampling_prob = sampling_prob
         self.n_steps = n_steps
-        self._key = key
-        self.generator = np.random.default_rng(key.seed)
+        self._stream_key = stream_key
+        self.generator = np.random.default_rng(stream_key.seed)
 
         # Warm-start initial cooldown (Algorithm 2, lines 1–2).
         self._bars_left = np.zeros(self.num_examples, dtype=np.int32)
@@ -168,16 +209,15 @@ class BMinSepSampler(Sampler):
 def _state_dict_b_min_sep(s: BMinSepSampler) -> dict[str, Any]:
     """Serialise ``BMinSepSampler`` state.
 
-    The Markov state (``_bars_left`` cooldown array, ``_recent`` deque)
-    is path-dependent — it can't be recomputed from key alone, so the
-    loader replays ``consumed`` steps to reconstruct it.
-    ``num_examples`` is persisted so the loader can validate the
-    template dataset length before relying on deterministic
-    reconstruction of the warm-start cooldown.
+    The Markov state (``_bars_left`` cooldown array and ``_recent`` deque) is
+    path-dependent, so the loader reconstructs it from the domain-separated
+    stream
+    key by replaying ``consumed`` steps. ``num_examples`` is persisted so load
+    can validate the template length before reconstructing the warm start.
     """
     return {
-        "key_seed": int(s._key.seed),
-        "key_impl": str(s._key.impl),
+        "key_seed": int(s._stream_key.seed),
+        "key_impl": str(s._stream_key.impl),
         "consumed": int(s._consumed),
         "num_examples": int(s.num_examples),
         "bands": int(s.bands),
@@ -191,14 +231,12 @@ def _from_state_dict_b_min_sep(
 ) -> BMinSepSampler:
     """Rebuild ``BMinSepSampler`` at the saved cursor.
 
-    The dataset comes from ``template``; the Markov chain is replayed
-    from its initial state by calling ``_sample_step`` ``consumed``
-    times so the cooldown array and recent-batches deque match a
-    continuous run.
+    The dataset comes from ``template``. The saved domain-separated stream key
+    starts the original Markov chain; ``consumed`` calls to ``_sample_step``
+    reconstruct the cooldown array and recent-batch deque.
 
-    Raises ``ValueError`` if the template dataset length differs from
-    the snapshot — both the warm-start cooldown distribution and the
-    replayed eligibility scan depend on ``num_examples``.
+    Raises ``ConfigurationError`` if the template dataset length differs from
+    the snapshot because the warm start and eligibility scan depend on it.
     """
     saved_n = int(sd["num_examples"])
     template_n = len(template.data_source)
@@ -211,15 +249,14 @@ def _from_state_dict_b_min_sep(
                 "reconstruct a different Markov chain.",
             )
         )
-    sampler = BMinSepSampler(
+    sampler = BMinSepSampler._from_stream_key(
         template.data_source,
         bands=int(sd["bands"]),
         sampling_prob=float(sd["sampling_prob"]),
-        # Take ``n_steps`` from the template — caller may extend or
-        # shorten the run on resume.  The cursor + Markov replay below
-        # fix the resume position; ``n_steps`` only bounds iteration.
+        # Use ``template.n_steps`` so callers may extend or shorten the run on
+        # restore; the saved cursor and replay fix the resume position.
         n_steps=int(template.n_steps),
-        key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
+        stream_key=RngKey(seed=int(sd["key_seed"]), impl=str(sd["key_impl"])),
     )
     consumed = int(sd["consumed"])
     for _ in range(consumed):

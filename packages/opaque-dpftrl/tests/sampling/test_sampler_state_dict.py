@@ -17,13 +17,16 @@ from __future__ import annotations
 import torch
 from torch.utils.data import TensorDataset
 
+from opaque.api.dpftrl.sampling._b_min_sep import B_MIN_SEP_STREAM_FOLD
+from opaque.api.dpftrl.sampling._balls_in_bins import BALLS_IN_BINS_STREAM_FOLD
+from opaque.api.dpftrl.sampling._poisson import CYCLIC_POISSON_STREAM_FOLD
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
-from opaque.random import key
+from opaque.random import fold_in, key
 from opaque.serialization import from_state_dict, state_dict
 
 
@@ -71,13 +74,80 @@ class TestCyclicPoissonRoundTrip:
         )
         restored = from_state_dict(template, snapshot)
 
-        # Sample-math args (sample_rate, bands, truncated_batch_size,
-        # key) come from the snapshot.
+        # Sampling parameters and the domain-separated stream key come from the
+        # snapshot.
         assert restored.sample_rate == 0.15
         assert restored.bands == 5
         assert restored.truncated_batch_size == 8
         # ``n_steps`` follows the template (allows resume + extend).
         assert restored.n_steps == 10
+
+    def test_pre_domain_snapshot_uses_saved_seed_without_folding(self):
+        snapshot = {
+            "key_seed": 17,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_examples": 12,
+            "sample_rate": 0.6,
+            "bands": 3,
+            "n_steps": 6,
+            "partition_type": "EQUAL_SPLIT",
+            "truncated_batch_size": None,
+        }
+        template = CyclicPoissonSampler(
+            _ds(12), sample_rate=0.6, bands=3, n_steps=6, key=key(0)
+        )
+
+        restored = from_state_dict(template, snapshot)
+        reference = CyclicPoissonSampler._from_stream_key(
+            _ds(12),
+            sample_rate=0.6,
+            bands=3,
+            n_steps=6,
+            stream_key=key(17),
+        )
+        iterator = iter(reference)
+        for _ in range(2):
+            next(iterator)
+
+        assert list(restored) == list(reference)
+        assert state_dict(restored)["key_seed"] == 17
+        assert state_dict(restored)["key_impl"] == "opaque_threefry_like"
+
+    def test_state_stores_domain_separated_stream_seed(self):
+        sampler = CyclicPoissonSampler(
+            _ds(12), sample_rate=0.6, bands=3, n_steps=6, key=key(17)
+        )
+        iterator = iter(sampler)
+        for _ in range(2):
+            next(iterator)
+
+        snapshot = state_dict(sampler)
+        expected_seed = fold_in(key(17), CYCLIC_POISSON_STREAM_FOLD).seed
+        expected_tail = list(sampler)
+        template = CyclicPoissonSampler(
+            _ds(12), sample_rate=0.6, bands=3, n_steps=6, key=key(0)
+        )
+
+        assert snapshot == {
+            "key_seed": expected_seed,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_examples": 12,
+            "sample_rate": 0.6,
+            "bands": 3,
+            "n_steps": 6,
+            "partition_type": "EQUAL_SPLIT",
+            "truncated_batch_size": None,
+        }
+        assert list(from_state_dict(template, snapshot)) == expected_tail
+
+        reader = from_state_dict(template, snapshot)
+        assert next(iter(reader)) == expected_tail[0]
+        resaved = state_dict(reader)
+        assert resaved["key_seed"] == expected_seed
+        assert resaved["key_impl"] == snapshot["key_impl"]
+        assert list(from_state_dict(template, resaved)) == expected_tail[1:]
 
 
 class TestBMinSepRoundTrip:
@@ -107,6 +177,69 @@ class TestBMinSepRoundTrip:
         # that the remaining batches match exactly.
         assert restored.consumed == K
         assert list(restored) == original_batches[K:]
+
+    def test_pre_domain_snapshot_uses_saved_seed_without_folding(self):
+        snapshot = {
+            "key_seed": 17,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 3,
+            "num_examples": 12,
+            "bands": 3,
+            "sampling_prob": 0.5,
+            "n_steps": 7,
+        }
+        template = BMinSepSampler(
+            _ds(12), bands=3, sampling_prob=0.5, n_steps=7, key=key(0)
+        )
+
+        restored = from_state_dict(template, snapshot)
+        reference = BMinSepSampler._from_stream_key(
+            _ds(12),
+            bands=3,
+            sampling_prob=0.5,
+            n_steps=7,
+            stream_key=key(17),
+        )
+        iterator = iter(reference)
+        for _ in range(3):
+            next(iterator)
+
+        assert list(restored) == list(reference)
+        assert state_dict(restored)["key_seed"] == 17
+        assert state_dict(restored)["key_impl"] == "opaque_threefry_like"
+
+    def test_state_stores_domain_separated_stream_seed(self):
+        sampler = BMinSepSampler(
+            _ds(12), bands=3, sampling_prob=0.5, n_steps=7, key=key(17)
+        )
+        iterator = iter(sampler)
+        for _ in range(3):
+            next(iterator)
+
+        snapshot = state_dict(sampler)
+        expected_seed = fold_in(key(17), B_MIN_SEP_STREAM_FOLD).seed
+        expected_tail = list(sampler)
+        template = BMinSepSampler(
+            _ds(12), bands=3, sampling_prob=0.5, n_steps=7, key=key(0)
+        )
+
+        assert snapshot == {
+            "key_seed": expected_seed,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 3,
+            "num_examples": 12,
+            "bands": 3,
+            "sampling_prob": 0.5,
+            "n_steps": 7,
+        }
+        assert list(from_state_dict(template, snapshot)) == expected_tail
+
+        reader = from_state_dict(template, snapshot)
+        assert next(iter(reader)) == expected_tail[0]
+        resaved = state_dict(reader)
+        assert resaved["key_seed"] == expected_seed
+        assert resaved["key_impl"] == snapshot["key_impl"]
+        assert list(from_state_dict(template, resaved)) == expected_tail[1:]
 
 
 class TestBallsInBinsRoundTrip:
@@ -150,6 +283,57 @@ class TestBallsInBinsRoundTrip:
 
         assert restored.num_bins == 8
         assert restored.n_steps == 24
+
+    def test_pre_domain_snapshot_uses_saved_seed_without_folding(self):
+        snapshot = {
+            "key_seed": 17,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_samples": 12,
+            "num_bins": 3,
+            "n_steps": 6,
+        }
+        template = BallsInBinsSampler(_ds(12), num_bins=3, n_steps=6, key=key(0))
+
+        restored = from_state_dict(template, snapshot)
+        reference = BallsInBinsSampler._from_stream_key(
+            _ds(12), num_bins=3, n_steps=6, stream_key=key(17)
+        )
+        iterator = iter(reference)
+        for _ in range(2):
+            next(iterator)
+
+        assert list(restored) == list(reference)
+        assert state_dict(restored)["key_seed"] == 17
+        assert state_dict(restored)["key_impl"] == "opaque_threefry_like"
+
+    def test_state_stores_domain_separated_stream_seed(self):
+        sampler = BallsInBinsSampler(_ds(12), num_bins=3, n_steps=6, key=key(17))
+        iterator = iter(sampler)
+        for _ in range(2):
+            next(iterator)
+
+        snapshot = state_dict(sampler)
+        expected_seed = fold_in(key(17), BALLS_IN_BINS_STREAM_FOLD).seed
+        expected_tail = list(sampler)
+        template = BallsInBinsSampler(_ds(12), num_bins=3, n_steps=6, key=key(0))
+
+        assert snapshot == {
+            "key_seed": expected_seed,
+            "key_impl": "opaque_threefry_like",
+            "consumed": 2,
+            "num_samples": 12,
+            "num_bins": 3,
+            "n_steps": 6,
+        }
+        assert list(from_state_dict(template, snapshot)) == expected_tail
+
+        reader = from_state_dict(template, snapshot)
+        assert next(iter(reader)) == expected_tail[0]
+        resaved = state_dict(reader)
+        assert resaved["key_seed"] == expected_seed
+        assert resaved["key_impl"] == snapshot["key_impl"]
+        assert list(from_state_dict(template, resaved)) == expected_tail[1:]
 
 
 class TestSequentialRoundTrip:
