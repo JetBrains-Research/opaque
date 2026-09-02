@@ -178,6 +178,20 @@ class TestPerStepAccountant:
         assert cached_step is not step
         assert (cached_step * 5).pld() is proc.pld_at(5)
 
+    def test_cached_correlated_full_horizon_preserves_epsilon(self):
+        n_steps = 128
+        proc = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=16)),
+            sample_rate=0.01,
+            n_steps=n_steps,
+        )
+        step = acc.per_step(proc)
+
+        expected = (step * n_steps).epsilon_at(_DELTA)
+        actual = (acc.cached(step) * n_steps).epsilon_at(_DELTA)
+
+        assert actual == expected
+
     def test_cached_horizon_accountant_warns_and_skips_boundary(self):
         proc = self._proc(10)
         step = acc.per_step(proc)

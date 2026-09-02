@@ -124,14 +124,6 @@ class TestCachedProcess:
         cp = CachedProcess(dpsgd_acc.gaussian(0.8))
         assert "CachedProcess" in repr(cp)
 
-    def test_repeated_pld_forwards_to_inner(self):
-        """CachedProcess.repeated_pld must relay, not self-compose pld()."""
-        inner = dpsgd_acc.gaussian(0.8)
-        cp = CachedProcess(inner)
-        # For Gaussian, default repeated_pld ≡ pld().self_compose(K), so the
-        # relay must still match the uncached path bit-for-bit.
-        assert (cp * 10).epsilon_at(1e-5) == (inner * 10).epsilon_at(1e-5)
-
 
 class TestCachedFunction:
     """acc.cached() convenience function."""
