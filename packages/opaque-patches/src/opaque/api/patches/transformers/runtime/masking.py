@@ -40,12 +40,10 @@ def _safe_seq_length(past_key_values) -> int:
 
 
 def _backend_enforces_sliding_window(attn_impl: str | None) -> bool:
-    """True when the attention backend applies the look-back limit itself.
+    """True when the backend applies the look-back limit in-kernel.
 
-    Flash-attention kernels receive ``sliding_window`` directly and enforce it
-    in-kernel, which is why upstream hands them a padding-only mask. Every
-    mask-consuming backend (eager, SDPA, flex) needs the limit materialized in
-    the additive mask instead.
+    Flash-attention receives ``sliding_window`` directly; every mask-consuming
+    backend (eager, SDPA, flex) needs it materialized in the additive mask.
     """
     return attn_impl is not None and "flash" in attn_impl
 
@@ -80,11 +78,6 @@ def vmap_create_causal_mask(
     Original: inputs_embeds (batch, seq, hidden) -> mask (batch, 1, seq, seq)
     Under vmap with with_batch_dim: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
     Under vmap without with_batch_dim: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
-
-    ``allow_is_causal_skip=False`` forces the mask to be materialized even when
-    the backend could rely on its own causal shortcut — the same escape hatch
-    upstream ``create_causal_mask`` exposes, used by callers that overlay a
-    further constraint (e.g. a sliding window) on top of the causal pattern.
 
     Signature spans v4 and v5: v4 passes ``input_embeds`` + ``cache_position``;
     v5 renames to ``inputs_embeds``, drops ``cache_position``, and may add
@@ -235,12 +228,8 @@ def vmap_create_sliding_window_causal_mask(
     The causal upper-triangle is already blocked by the underlying
     ``vmap_create_causal_mask``; this function only adds the look-back limit.
 
-    A *binding* window (one the key length actually reaches) forces the mask to
-    be materialized: SDPA's ``is_causal`` shortcut expresses causality but not
-    the look-back limit, so skipping the mask would silently widen attention to
-    the whole prefix. This mirrors upstream, whose
-    ``_ignore_causal_mask_sdpa(..., local_attention_size=sliding_window)``
-    refuses to skip once ``kv_length >= sliding_window``.
+    The mask is materialized once the key length reaches the window: SDPA's
+    ``is_causal`` shortcut expresses causality but not the look-back limit.
 
     Signature is version-agnostic: v4 uses ``input_embeds`` + ``cache_position``,
     v5 renames to ``inputs_embeds`` and drops ``cache_position``.
