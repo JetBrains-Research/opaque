@@ -267,15 +267,7 @@ _FAMILY_MODULE_PATCH_NAMES = (
 def parity_model_patches(
     model: torch.nn.Module, apply_model_patches_kwargs: dict | None = None
 ):
-    """Apply model patches without installing global runtime patches.
-
-    Restores both the per-class ``forward`` replacements and the module-level
-    family patches (mask builders, ``repeat_kv``, eager attention, RoPE, and the
-    shared ``ALL_ATTENTION_FUNCTIONS["sdpa"]`` entry) on exit, so an upstream
-    reference forward run after this context is genuinely upstream. The family
-    patches are memoized per family, so the memo is cleared on both ends to let
-    them re-apply inside the context.
-    """
+    """Apply model patches without installing global runtime patches."""
     from opaque.api.patches.transformers._family import _reset_patched_families
     from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
