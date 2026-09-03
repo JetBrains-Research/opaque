@@ -186,7 +186,7 @@ class TestGetTrainingChatTemplate:
             "{% endif %}"
             "{% endfor %}"
         )
-        with pytest.raises(ValueError, match="assistant-only render path"):
+        with pytest.raises(ValueError, match="existing generation markers"):
             get_training_chat_template(tokenizer)
 
     def test_rejects_premarked_system_spans(self) -> None:
@@ -201,7 +201,7 @@ class TestGetTrainingChatTemplate:
             "{% endif %}"
             "{% endfor %}"
         )
-        with pytest.raises(ValueError, match="assistant-only render path"):
+        with pytest.raises(ValueError, match="existing generation markers"):
             get_training_chat_template(tokenizer)
 
     def test_idempotent_double_call(self) -> None:

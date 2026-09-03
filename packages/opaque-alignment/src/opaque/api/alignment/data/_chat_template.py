@@ -219,10 +219,9 @@ def get_training_chat_template(tokenizer: PreTrainedTokenizerBase) -> str:
             return template
         raise ConfigurationError(
             *(
-                "get_training_chat_template: could not identify and validate an "
-                "assistant-only render path in the tokenizer's chat template. "
-                "Provide a template with explicit '{% generation %}' / "
-                "'{% endgeneration %}' markers.",
+                "get_training_chat_template: existing generation markers do not "
+                "identify a validated assistant-only render path in the tokenizer's "
+                "chat template. Ensure they exclude system and user content.",
             )
         )
 
