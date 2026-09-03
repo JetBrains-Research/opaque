@@ -158,19 +158,23 @@ def _scoring_loader(
     """Validate scoring arguments and build the canary loader."""
     dataset_size = len(dataset)
     if coin_flip.dataset_size is not None and dataset_size != coin_flip.dataset_size:
-        raise ValueError(
-            f"dataset length ({dataset_size}) does not match the dataset size "
-            f"({coin_flip.dataset_size}) the CoinFlip was constructed from; "
-            "scoring requires the full concatenated dataset, not a training "
-            "subset or split"
+        raise ConfigurationError(
+            *(
+                f"dataset length ({dataset_size}) does not match the dataset size "
+                f"({coin_flip.dataset_size}) the CoinFlip was constructed from; "
+                "scoring requires the full concatenated dataset, not a training "
+                "subset or split",
+            )
         )
     if np.any(coin_flip.canary_indices < 0) or np.any(
         coin_flip.canary_indices >= dataset_size
     ):
-        raise ValueError(
-            f"canary indices must be within dataset bounds [0, {dataset_size}); "
-            "scoring requires the full concatenated dataset used to construct "
-            "the CoinFlip"
+        raise ConfigurationError(
+            *(
+                f"canary indices must be within dataset bounds [0, {dataset_size}); "
+                "scoring requires the full concatenated dataset used to construct "
+                "the CoinFlip",
+            )
         )
     if isinstance(batch_size, bool) or not isinstance(batch_size, int):
         raise InputTypeError(
