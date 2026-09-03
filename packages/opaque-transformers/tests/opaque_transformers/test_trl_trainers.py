@@ -1911,7 +1911,19 @@ def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
     assert labels is not None
 
 
+@pytest.fixture
+def _isolated_process_group():
+    assert not torch.distributed.is_initialized(), (
+        "a process group is already live before the test"
+    )
+    yield
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+
+
 @pytest.mark.slow
+@pytest.mark.distributed
+@pytest.mark.usefixtures("_isolated_process_group")
 def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypatch):
     """The reference forward must find a live process group, or it cannot shard.
 
@@ -1932,8 +1944,6 @@ def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypat
         or not torch.distributed.is_gloo_available()
     ):
         pytest.skip("gloo backend is not available")
-    if torch.distributed.is_initialized():
-        pytest.skip("a process group is already live in this worker")
 
     # What torchrun gives a rank: a multi-rank launcher env, no group yet.
     monkeypatch.setenv("WORLD_SIZE", "2")
@@ -1969,18 +1979,14 @@ def test_dpo_brings_up_the_process_group_before_precomputing(tmp_path, monkeypat
 
     monkeypatch.setattr(_precompute, "_reference_forward", _observing_forward)
 
-    try:
-        torch.manual_seed(0)
-        DPOTrainer(
-            model=_tiny_model(),
-            ref_model=_tiny_model(),
-            args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
-            train_dataset=_pref_dataset(),
-            processing_class=_stub_tokenizer(),
-        )
-    finally:
-        if torch.distributed.is_initialized():
-            torch.distributed.destroy_process_group()
+    torch.manual_seed(0)
+    DPOTrainer(
+        model=_tiny_model(),
+        ref_model=_tiny_model(),
+        args=_args(DPOConfig, tmp_path, max_length=8, loss_type="sigmoid"),
+        train_dataset=_pref_dataset(),
+        processing_class=_stub_tokenizer(),
+    )
 
     assert init_attempts, "trainer never brought up the process group"
     assert group_live_at_forward, "the reference forward never ran"
