@@ -189,7 +189,7 @@ class CoinFlip:
         size = self.dataset_size if dataset_size is None else dataset_size
         if size is None:
             raise ValueError(
-                "dataset_size must be provided when not recorded on CoinFlip"
+                *("dataset_size must be provided when not recorded on CoinFlip",)
             )
         excluded = set(self.out_indices.tolist())
         return [i for i in range(size) if i not in excluded]
