@@ -253,12 +253,7 @@ def build_patched_model_pair(
     return model, copy.deepcopy(model)
 
 
-# Module-level names the family patches rebind in
-# ``transformers.models.<family>.modeling_<family>``. Unlike the per-class
-# ``forward`` replacements these are plain module attributes, so they outlive the
-# patching context unless explicitly restored — which would leave every later
-# "unpatched" reference model running Opaque's implementations and make parity
-# assertions compare Opaque against itself.
+# Module attributes the family patches rebind; restored on context exit.
 _FAMILY_MODULE_PATCH_NAMES = (
     "create_causal_mask",
     "create_sliding_window_causal_mask",
