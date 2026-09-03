@@ -533,16 +533,34 @@ def test_register_family_routes_via_apply_transformers_model_patches():
     assert calls[0]["kwargs"]["foo"] == "bar"
 
 
-def test_unregistered_family_silently_skips():
-    """An unknown family doesn't crash the dispatcher — it just doesn't
-    apply any opaque patches."""
+def test_non_hf_model_without_registered_family_warns_and_skips(caplog):
+    """Custom non-HF modules remain supported without model-level patches."""
     from opaque.api.patches.transformers._router import apply_transformers_model_patches
 
-    class _Cfg:
+    class _Model:
+        pass
+
+    apply_transformers_model_patches(_Model())
+
+    assert "no registered apply function" in caplog.text
+    assert any(record.levelname == "WARNING" for record in caplog.records)
+
+
+def test_unregistered_hf_family_raises_when_compat_is_enabled(caplog):
+    """HF models cannot silently skip the default vmap-safety patches."""
+    from transformers import PretrainedConfig, PreTrainedModel
+
+    from opaque.api.patches.transformers._router import apply_transformers_model_patches
+    from opaque.exceptions import ConfigurationError
+
+    class _Config(PretrainedConfig):
         model_type = "definitely-not-registered-xyz"
 
-    class _Model:
-        config = _Cfg()
+    class _Model(PreTrainedModel):
+        config_class = _Config
 
-    # Must not raise.
-    apply_transformers_model_patches(_Model())
+    with pytest.raises(ConfigurationError, match="require a registered"):
+        apply_transformers_model_patches(_Model(_Config()))
+
+    assert "no registered apply function" in caplog.text
+    assert any(record.levelname == "WARNING" for record in caplog.records)

@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from transformers import PretrainedConfig, PreTrainedModel
 
 from opaque.api.transformers.trainer._dp_trainer import (
     _compile_with_fullgraph_fallback,
@@ -50,6 +51,29 @@ def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[DPTrainer, nn.Module]:
         eval_dataset=None,
     )
     return trainer, model
+
+
+class _UnregisteredConfig(PretrainedConfig):
+    model_type = "definitely-not-registered-xyz"
+
+
+class _UnregisteredHFModel(PreTrainedModel):
+    config_class = _UnregisteredConfig
+
+    def __init__(self) -> None:
+        super().__init__(_UnregisteredConfig())
+        self.linear = nn.Linear(4, 2)
+
+
+def test_default_trainer_rejects_unregistered_hf_family(tmp_path):
+    """The default compatibility path must not skip an unknown HF family."""
+    with pytest.raises(ConfigurationError, match="require a registered"):
+        DPTrainer(
+            model=_UnregisteredHFModel(),
+            args=_args(tmp_path),
+            train_dataset=[{"x": torch.zeros(4)}],
+            eval_dataset=None,
+        )
 
 
 # ----------------------------------------------------------------------------
