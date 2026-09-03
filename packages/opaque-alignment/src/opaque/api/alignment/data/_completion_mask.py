@@ -19,6 +19,10 @@ this function checks the template up front and raises a :class:`ValueError`.
 
 from __future__ import annotations
 
+from opaque.api.alignment.data._chat_template import (
+    _has_generation_marker,
+    _resolve_chat_template,
+)
 from opaque.exceptions import ConfigurationError
 
 __all__ = ["apply_chat_template_with_mask"]
@@ -43,15 +47,16 @@ def apply_chat_template_with_mask(
     :func:`opaque.alignment.sft.collator.language_modeling_collator` with
     ``completion_only_loss=True``.
 
-    The tokenizer's chat template **must** carry ``{% generation %}`` /
-    ``{% endgeneration %}`` markers around the assistant content; install them
-    with :func:`opaque.api.alignment.data._chat_template.get_training_chat_template`.
-    Without the markers HF returns no assistant mask and this function raises a
+    The active template (including a selected named template) **must** carry a
+    Transformers-recognized generation tag around assistant content; install
+    canonical markers with
+    :func:`opaque.api.alignment.data._chat_template.get_training_chat_template`.
+    Without the marker HF returns no assistant mask and this function raises a
     :class:`ValueError`.
 
     Args:
-        tokenizer: A tokenizer whose ``chat_template`` carries
-            ``{% generation %}`` markers (see
+        tokenizer: A tokenizer whose active ``chat_template`` carries a
+            Transformers-recognized generation tag (see
             :func:`get_training_chat_template`).
         conversation: A list of chat-message dicts (each with ``"role"`` and
             ``"content"``) for a single conversation.
@@ -80,10 +85,12 @@ def apply_chat_template_with_mask(
     # clear error (pointing at get_training_chat_template) instead of a silently
     # empty mask.  The template passed via kwargs (if any) takes precedence over
     # the tokenizer's own chat_template, matching apply_chat_template.
-    active_template = kwargs.get("chat_template")
-    if active_template is None:
-        active_template = getattr(tokenizer, "chat_template", None)
-    if not active_template or "{% generation %}" not in active_template:
+    active_template = _resolve_chat_template(
+        tokenizer,
+        chat_template=kwargs.get("chat_template"),
+        tools=kwargs.get("tools"),
+    )
+    if not _has_generation_marker(active_template):
         raise ConfigurationError(
             *(
                 "apply_chat_template_with_mask: the active chat template does not "
@@ -104,7 +111,7 @@ def apply_chat_template_with_mask(
     )
 
     assistant_masks = encoded.get("assistant_masks")
-    if not assistant_masks:
+    if not _has_assistant_tokens(assistant_masks):
         raise ConfigurationError(
             *(
                 "apply_chat_template_with_mask: the tokenizer returned no "
@@ -124,3 +131,12 @@ def apply_chat_template_with_mask(
     if attention_mask is not None:
         result["attention_mask"] = attention_mask
     return result
+
+
+def _has_assistant_tokens(assistant_masks: Any) -> bool:
+    """Return whether a list, tensor, or array mask flags any assistant token."""
+    if assistant_masks is None:
+        return False
+    if hasattr(assistant_masks, "any"):
+        return bool(assistant_masks.any())
+    return any(assistant_masks)

@@ -80,6 +80,33 @@ _GEMMA_INLINE_TEMPLATE = (
     "{% endfor %}"
 )
 
+_LLAMA_3_TEMPLATE = (
+    "{% set loop_messages = messages %}"
+    "{% for message in loop_messages %}"
+    "{% set content = '<|start_header_id|>' + message['role'] "
+    "+ '<|end_header_id|>\\n\\n' + message['content'] | trim + '<|eot_id|>' %}"
+    "{% if loop.index0 == 0 %}"
+    "{% set content = bos_token + content %}"
+    "{% endif %}"
+    "{{ content }}"
+    "{% endfor %}"
+    "{% if add_generation_prompt %}"
+    "{{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' }}"
+    "{% endif %}"
+)
+
+_LLAMA_3_EXPLICIT_BRANCH_TEMPLATE = (
+    "{% for message in messages %}"
+    "{% if message['role'] == 'user' %}"
+    "{{ '<|start_header_id|>user<|end_header_id|>\\n\\n' "
+    "+ message['content'] | trim + '<|eot_id|>' }}"
+    "{% elif message['role'] == 'assistant' %}"
+    "{{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' "
+    "+ message['content'] | trim + '<|eot_id|>' }}"
+    "{% endif %}"
+    "{% endfor %}"
+)
+
 
 def _make_fast_tokenizer(
     extra_specials: list[str] | None = None,
@@ -133,6 +160,49 @@ class TestGetTrainingChatTemplate:
         tokenizer.chat_template = _CHATML_WITH_GEN
         result = get_training_chat_template(tokenizer)
         assert result == _CHATML_WITH_GEN
+
+    def test_idempotent_with_whitespace_controlled_markers(self) -> None:
+        """Transformers-recognized whitespace-control tags are preserved."""
+        tokenizer = _make_fast_tokenizer()
+        template = (
+            "{% for message in messages %}"
+            "{% if message['role'] == 'assistant' %}"
+            "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% endif %}"
+            "{% endfor %}"
+        )
+        tokenizer.chat_template = template
+        assert get_training_chat_template(tokenizer) == template
+
+    def test_rejects_premarked_user_spans(self) -> None:
+        """Existing markers must be validated before accepting the template."""
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{% if message['role'] == 'user' %}"
+            "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% elif message['role'] == 'assistant' %}"
+            "{{ message['content'] }}"
+            "{% endif %}"
+            "{% endfor %}"
+        )
+        with pytest.raises(ValueError, match="assistant-only render path"):
+            get_training_chat_template(tokenizer)
+
+    def test_rejects_premarked_system_spans(self) -> None:
+        """Existing markers must not include system prompt content."""
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = (
+            "{% for message in messages %}"
+            "{% if message['role'] == 'system' %}"
+            "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% elif message['role'] == 'assistant' %}"
+            "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% endif %}"
+            "{% endfor %}"
+        )
+        with pytest.raises(ValueError, match="assistant-only render path"):
+            get_training_chat_template(tokenizer)
 
     def test_idempotent_double_call(self) -> None:
         """Calling the function twice on a plain template yields the same output both times."""
@@ -304,6 +374,53 @@ class TestGetTrainingChatTemplate:
         assert "first user probe" not in generated
         assert "second user probe" not in generated
 
+    @pytest.mark.parametrize(
+        "template",
+        [_LLAMA_3_TEMPLATE, _GEMMA_INLINE_TEMPLATE, _CHATML_TEMPLATE],
+        ids=["meta-llama-3-8b-instruct", "gemma-3-1b-it", "shared-chatml"],
+    )
+    def test_representative_templates_render_assistant_only(
+        self, template: str
+    ) -> None:
+        """Llama 3, Gemma 3, and ChatML templates produce assistant-only spans."""
+        from transformers.utils.chat_template_utils import (
+            _compile_jinja_template,
+            _render_with_assistant_indices,
+        )
+
+        tokenizer = _make_fast_tokenizer()
+        if template == _LLAMA_3_TEMPLATE:
+            tokenizer.add_special_tokens({"bos_token": "<bos>"})
+        tokenizer.chat_template = template
+        transformed = get_training_chat_template(tokenizer)
+        rendered, indices = _render_with_assistant_indices(
+            _compile_jinja_template(transformed),
+            [
+                {"role": "user", "content": "user probe"},
+                {"role": "assistant", "content": "assistant probe"},
+            ],
+            None,
+            None,
+            False,
+            **tokenizer.special_tokens_map,
+        )
+
+        generated = "".join(rendered[start:end] for start, end in indices)
+        assert "assistant probe" in generated
+        assert "user probe" not in generated
+
+    def test_resolves_default_template_from_template_mapping(self) -> None:
+        """A template mapping follows Transformers' default-template selection."""
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = {"default": _CHATML_WITH_GEN}
+        assert get_training_chat_template(tokenizer) == _CHATML_WITH_GEN
+
+    def test_llama_explicit_branch_template_remains_supported(self) -> None:
+        """Explicit-branch Llama templates retain their prior transform path."""
+        tokenizer = _make_fast_tokenizer()
+        tokenizer.chat_template = _LLAMA_3_EXPLICIT_BRANCH_TEMPLATE
+        assert _GEN_START in get_training_chat_template(tokenizer)
+
 
 # ---------------------------------------------------------------------------
 # Tests: clone_chat_template
@@ -413,6 +530,51 @@ class TestCloneChatTemplate:
         # Every reported id is a real vocab row inside the resized embedding.
         n_rows = _model.get_input_embeddings().weight.shape[0]
         assert all(0 <= tid < n_rows for tid in added)
+
+    def test_preserves_special_token_roles_and_metadata(self) -> None:
+        """Cloning retains named roles and AddedToken whitespace behavior."""
+        src = _make_fast_tokenizer()
+        src.chat_template = "template"
+        src.add_special_tokens(
+            {
+                "bos_token": AddedToken("<bos>", lstrip=True, special=True),
+                "eos_token": AddedToken("<eos>", rstrip=True, special=True),
+                "pad_token": "<pad>",
+                "additional_special_tokens": [
+                    AddedToken("<extra>", single_word=True, special=True)
+                ],
+            }
+        )
+        dst = _make_fast_tokenizer()
+        model = _make_tiny_model(len(dst))
+
+        _model, dst, added = clone_chat_template(model, dst, src)
+
+        assert dst.bos_token == "<bos>"
+        assert dst.eos_token == "<eos>"
+        assert dst.pad_token == "<pad>"
+        assert "<extra>" in dst.extra_special_tokens
+        assert dst.added_tokens_decoder[dst.bos_token_id].lstrip is True
+        assert dst.added_tokens_decoder[dst.eos_token_id].rstrip is True
+        assert dst.added_tokens_decoder[
+            dst.convert_tokens_to_ids("<extra>")
+        ].single_word
+        assert len(added) == 4
+
+    def test_preserves_model_specific_special_token_roles(self) -> None:
+        """Cloning registers source-specific special-token roles on the target."""
+        src = _make_fast_tokenizer()
+        src.chat_template = "template"
+        image_token = AddedToken("<image>", special=True)
+        src._set_model_specific_special_tokens({"image_token": image_token})
+        src.add_special_tokens({"image_token": image_token})
+        dst = _make_fast_tokenizer()
+        model = _make_tiny_model(len(dst))
+
+        _model, dst, added = clone_chat_template(model, dst, src)
+
+        assert str(dst._special_tokens_map["image_token"]) == "<image>"
+        assert dst.convert_tokens_to_ids("<image>") in added
 
     def test_raises_on_source_without_chat_template(self) -> None:
         """ValueError is raised when the source tokenizer has no chat_template."""
