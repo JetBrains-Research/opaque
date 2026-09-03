@@ -9,6 +9,7 @@ pytest.importorskip("transformers")
 import torch.nn as nn
 
 from opaque.api.patches.transformers.components.dropout import disable_dropout
+from opaque.exceptions import ConfigurationError
 
 
 class _Block(nn.Module):
@@ -62,7 +63,7 @@ def test_disable_dropout_requires_registered_family_for_unknown_model():
     from opaque.patches import apply_model_patches
 
     with pytest.raises(
-        ValueError, match="compatibility/dropout/batchify patches require"
+        ConfigurationError, match="compatibility/dropout/batchify patches require"
     ):
         apply_model_patches(_Unknown(), dropout=True, compat=False, performance=False)
 
@@ -76,7 +77,7 @@ def test_batchify_requires_registered_family_for_unknown_model():
     from opaque.patches import apply_model_patches
 
     with pytest.raises(
-        ValueError, match="compatibility/dropout/batchify patches require"
+        ConfigurationError, match="compatibility/dropout/batchify patches require"
     ):
         apply_model_patches(_Unknown(), batchify=True, compat=False, performance=False)
 
