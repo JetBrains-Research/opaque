@@ -3509,6 +3509,9 @@ single μ̂ across multiple queries:</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">gdp</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">gdp</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 </code></pre></div>
+<p><code>grid_size</code> must be at least <code>1_000</code>. Coarser grids are rejected because
+they can resolve a detectable leak as <code>epsilon=0</code> — silently reporting no
+leakage instead of an inaccurate one.</p>
 <p><code>OneRunEstimate.eps_delta()</code> returns the mechanism-agnostic (ε,δ)-DP
 method object. Use it when:</p>
 <ul>

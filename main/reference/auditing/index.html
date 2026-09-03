@@ -6000,9 +6000,10 @@ auditing. See <a href="#epsdeltamethod">EpsDeltaMethod</a> below.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">gdp</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">grid_size</span><span class="o">=</span><span class="mi">10_000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GdpMethod</span>
 </code></pre></div>
 <p>μ-GDP order-statistics audit method (Xiang et al. 2025) with a tunable
-integration grid. The top-level <code>epsilon_at</code> / <code>delta_at</code> / <code>beta_at</code> /
-<code>advantage</code> are shortcuts for <code>gdp()</code> with the default <code>grid_size</code>. See
-<a href="#gdpmethod">GdpMethod</a> below.</p>
+integration grid. <code>grid_size</code> must be at least <code>1_000</code>: coarser grids can
+resolve a detectable leak as <code>epsilon=0</code>. The top-level <code>epsilon_at</code> /
+<code>delta_at</code> / <code>beta_at</code> / <code>advantage</code> are shortcuts for <code>gdp()</code> with the
+default <code>grid_size</code>. See <a href="#gdpmethod">GdpMethod</a> below.</p>
 <h3 id="attack_auc">attack_auc<a class="headerlink" href="#attack_auc" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">estimate</span><span class="o">.</span><span class="n">attack_auc</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">confidence</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
 </code></pre></div>
@@ -6057,7 +6058,7 @@ single inferred μ̂.</p>
 <td><code>grid_size</code></td>
 <td><code>int</code></td>
 <td><code>10_000</code></td>
-<td>Grid points for the order-statistics integration</td>
+<td>Grid points for the order-statistics integration; minimum <code>1_000</code></td>
 </tr>
 </tbody>
 </table>
