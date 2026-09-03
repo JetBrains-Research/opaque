@@ -14,6 +14,9 @@ import pytest
 import torch
 import torch.nn as nn
 
+from opaque.api.transformers.trainer._dp_trainer import (
+    _compile_with_fullgraph_fallback,
+)
 from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
@@ -99,6 +102,137 @@ def test_torch_compile_with_explicit_no_autofind_accepted(tmp_path):
     )
     assert trainer.args.torch_compile is True
     assert trainer.args.auto_find_microbatch_size is False
+
+
+# ----------------------------------------------------------------------------
+# fullgraph fallback control flow (_compile_with_fullgraph_fallback)
+# ----------------------------------------------------------------------------
+
+
+class _FakeCompiled:
+    """Fake ``torch.compile`` artifact: records calls, can raise."""
+
+    def __init__(self, fullgraph: bool, error: BaseException | None = None):
+        self.fullgraph = fullgraph
+        self.error = error
+        self.calls = 0
+
+    def __call__(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return "ok"
+
+
+def _patch_compile(
+    monkeypatch, errors: list[BaseException | None] | None = None
+) -> list[_FakeCompiled]:
+    """Patch ``torch.compile`` to staged fakes raising ``errors[i]``."""
+    made: list[_FakeCompiled] = []
+    pending = list(errors or [])
+
+    def fake_compile(fn, *, backend, mode, fullgraph):
+        stage = _FakeCompiled(
+            fullgraph=fullgraph, error=pending.pop(0) if pending else None
+        )
+        made.append(stage)
+        return stage
+
+    monkeypatch.setattr(torch, "compile", fake_compile)
+    return made
+
+
+def _grad_step(x):  # placeholder body; never executed by the fakes
+    return x
+
+
+_DYNAMO_FAILURES = {
+    "unsupported": lambda: torch._dynamo.exc.Unsupported("graph break"),
+    "backend-compiler-failed": lambda: torch._dynamo.exc.BackendCompilerFailed(
+        _grad_step, RuntimeError("inductor failed"), None
+    ),
+    "dynamo-exception": lambda: torch._dynamo.exc.TorchDynamoException(
+        "compile failure"
+    ),
+}
+
+
+@pytest.mark.parametrize("failure", list(_DYNAMO_FAILURES), ids=list(_DYNAMO_FAILURES))
+def test_fullgraph_fallback_triggers_on_dynamo_failures(monkeypatch, failure):
+    """Dynamo failures recompile with ``fullgraph=False`` once, then reuse it."""
+    made = _patch_compile(monkeypatch, [_DYNAMO_FAILURES[failure]()])
+    compiled = _compile_with_fullgraph_fallback(
+        _grad_step, backend="aot_eager", mode="default"
+    )
+
+    assert compiled(1) == "ok"
+    assert [stage.fullgraph for stage in made] == [True, False]
+    assert made[0].calls == 1
+
+    compiled(2)
+    compiled(3)
+    assert len(made) == 2
+    assert made[1].calls == 3
+
+
+def test_fullgraph_oom_propagates_without_recompile(monkeypatch):
+    """OOM is a runtime failure, not a compile failure: it propagates as-is."""
+    made = _patch_compile(
+        monkeypatch, [torch.OutOfMemoryError("CUDA out of memory (simulated)")]
+    )
+    compiled = _compile_with_fullgraph_fallback(
+        _grad_step, backend="inductor", mode="default"
+    )
+
+    with pytest.raises(torch.OutOfMemoryError, match="simulated"):
+        compiled(1)
+
+    assert len(made) == 1
+    assert made[0].calls == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "exc_type"),
+    [
+        (RuntimeError("kernel launch failed mid-step"), RuntimeError),
+        (ValueError("shape mismatch in the loss closure"), ValueError),
+        (ConfigurationError("unsupported trainer configuration"), ConfigurationError),
+    ],
+    ids=["runtime", "value", "configuration"],
+)
+def test_non_compile_failure_propagates_without_recompile(monkeypatch, error, exc_type):
+    """Non-Dynamo failures propagate without fallback compilation or retry."""
+    made = _patch_compile(monkeypatch, [error])
+    compiled = _compile_with_fullgraph_fallback(
+        _grad_step, backend="inductor", mode="default"
+    )
+
+    with pytest.raises(exc_type, match=str(error)):
+        compiled(1)
+
+    assert len(made) == 1
+    assert made[0].calls == 1
+
+
+def test_oom_during_fallback_recompile_propagates(monkeypatch):
+    """OOM during the ``fullgraph=False`` re-run propagates, chaining the
+    original Dynamo error as ``__context__``."""
+    made = _patch_compile(
+        monkeypatch,
+        [
+            torch._dynamo.exc.Unsupported("graph break"),
+            torch.OutOfMemoryError("CUDA out of memory (simulated)"),
+        ],
+    )
+    compiled = _compile_with_fullgraph_fallback(
+        _grad_step, backend="inductor", mode="default"
+    )
+
+    with pytest.raises(torch.OutOfMemoryError, match="simulated") as excinfo:
+        compiled(1)
+
+    assert [stage.fullgraph for stage in made] == [True, False]
+    assert isinstance(excinfo.value.__context__, torch._dynamo.exc.Unsupported)
 
 
 # ----------------------------------------------------------------------------
