@@ -370,14 +370,7 @@ def assert_parity_forward(
 ):
     """Compare forward logits between patched and unpatched models.
 
-    ``seq_len`` sizes the probe sequence — raise it above a config's window /
-    chunk size to make such a constraint bind. ``use_attention_mask=False``
-    omits the padding mask entirely, which is the configuration where a
-    mask-consuming backend has to materialize every constraint itself instead of
-    leaning on SDPA's ``is_causal`` shortcut.
-
-    Returns ``(logits_patched, logits_upstream)`` so callers can make further
-    assertions (e.g. that a feature actually changed the output).
+    Returns ``(logits_patched, logits_upstream)``.
     """
     torch.manual_seed(0)
     unpatched, patched = build_patched_model_pair(
@@ -428,14 +421,7 @@ def assert_logits_differ(
     softcapping: bool = False,
     label: str = "",
 ) -> None:
-    """Assert two logit tensors differ by more than parity noise.
-
-    Vacuity guard for feature-variant parity tests: if toggling the feature
-    under test leaves the logits unchanged, the parity assertion beside this one
-    would pass whether or not the feature is applied at all. The margin is the
-    same dtype-specific tolerance the parity assertions use, so a "difference"
-    here is never numerical noise.
-    """
+    """Assert two logit tensors differ by more than parity noise."""
     tolerances = _get_tolerances(logits.dtype, softcapping)
     prefix = f"{label}: " if label else ""
     max_diff = (logits.float() - other.float()).abs().max().item()
