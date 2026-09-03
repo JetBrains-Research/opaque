@@ -37,9 +37,9 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-# Version 6 removes prefix-accounting checkpoint shapes and records complete
-# whole-horizon process provenance for strict resume validation.
-DP_STATE_BUNDLE_VERSION = 6
+# Version 7 records calibration provenance so whole-horizon resumes cannot
+# reinterpret a fixed-noise run as calibrated, or vice versa.
+DP_STATE_BUNDLE_VERSION = 7
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -270,6 +270,8 @@ class RuntimeCheckpoint:
         default=False,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
     )
+    calibration_source: str = "fixed"
+    target_epsilon: float | None = None
     horizon_process_state: dict[str, Any] | None = field(
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
@@ -320,6 +322,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
     total_steps: int,
     mechanism_kind: str = "gaussian",
     is_horizon_process: bool = False,
+    calibration_source: str = "fixed",
+    target_epsilon: float | None = None,
     horizon_process_state: dict[str, Any] | None = None,
     mf_n_steps: int | None = None,
     mf_min_sep: int | None = None,
@@ -355,6 +359,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
         total_steps=int(total_steps),
         mechanism_kind=str(mechanism_kind),
         is_horizon_process=bool(is_horizon_process),
+        calibration_source=str(calibration_source),
+        target_epsilon=(float(target_epsilon) if target_epsilon is not None else None),
         horizon_process_state=horizon_process_state,
         mf_n_steps=int(mf_n_steps) if mf_n_steps is not None else None,
         mf_min_sep=int(mf_min_sep) if mf_min_sep is not None else None,

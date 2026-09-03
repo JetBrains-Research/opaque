@@ -383,7 +383,7 @@ class TestDpFtrlCheckpointRoundTrip:
                 mechanism="mf_identity",
                 max_steps=4,
                 noise_multiplier=None,
-                target_epsilon=20.0,
+                target_epsilon=5.0,
             ),
             train_dataset=ds,
             data_collator=_collate,
@@ -396,6 +396,73 @@ class TestDpFtrlCheckpointRoundTrip:
         assert resumed.metrics["privacy_epsilon"] == pytest.approx(
             original.metrics["privacy_epsilon"]
         )
+
+    def test_calibrated_horizon_resume_rejects_target_drift(self, tmp_path):
+        outdir = tmp_path / "calibrated-target-drift"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=None,
+                target_epsilon=5.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "calibrated-target-drift-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=None,
+                target_epsilon=20.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="privacy_target_epsilon drift"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+    def test_fixed_horizon_resume_rejects_calibrated_mode(self, tmp_path):
+        outdir = tmp_path / "fixed-to-calibrated"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=0.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "fixed-to-calibrated-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=None,
+                target_epsilon=1.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="calibration mode drift"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
 
     def test_fixed_horizon_resume_rejects_noise_multiplier_drift(self, tmp_path):
         outdir = tmp_path / "fixed-noise"

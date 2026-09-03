@@ -167,6 +167,8 @@ class TestDpRuntimeBundle:
             expected_batch_size=32,
             total_steps=30,
             is_horizon_process=True,
+            calibration_source="calibrated",
+            target_epsilon=5.0,
             horizon_process_state={"type": "ExampleHorizon", "n_steps": 30},
         )
         loaded = ckpt.load_dp_runtime_state(path)
@@ -182,6 +184,8 @@ class TestDpRuntimeBundle:
         assert loaded.expected_steps_per_epoch == 10
         assert loaded.total_steps == 30
         assert loaded.is_horizon_process is True
+        assert loaded.calibration_source == "calibrated"
+        assert loaded.target_epsilon == pytest.approx(5.0)
         assert loaded.horizon_process_state == {
             "type": "ExampleHorizon",
             "n_steps": 30,

@@ -1141,6 +1141,7 @@ class DPTrainer:
             runtime_payload, prefix_accountant = self._read_runtime_for_resume(
                 resume_path
             )
+            self._validate_horizon_resume_calibration(runtime_payload)
             trainer_state_json = self._read_trainer_state(resume_path)
             if trainer_state_json is not None:
                 self.state = DPTrainerState.from_json(trainer_state_json)
@@ -5086,6 +5087,8 @@ class DPTrainer:
             total_steps=ctx.total_steps,
             mechanism_kind=ctx.mechanism_kind,
             is_horizon_process=ctx.is_horizon_process,
+            calibration_source=ctx.calibration_source,
+            target_epsilon=a.privacy_target_epsilon,
             horizon_process_state=(
                 opaque_state_dict(ctx.horizon_process)
                 if ctx.horizon_process is not None
@@ -5407,6 +5410,38 @@ class DPTrainer:
             attrs = payload.get("attributes") or {} if isinstance(payload, dict) else {}
             for attr_key, value in attrs.items():
                 setattr(cb, attr_key, value)
+
+    def _validate_horizon_resume_calibration(
+        self, runtime: ckpt.RuntimeCheckpoint
+    ) -> None:
+        """Reject calibration changes before restoring a horizon multiplier."""
+        if not runtime.is_horizon_process:
+            return
+
+        current_source = (
+            "fixed" if self.args.privacy_noise_multiplier is not None else "calibrated"
+        )
+        if runtime.calibration_source != current_source:
+            raise CheckpointError(
+                *(
+                    "Whole-horizon resume forbids calibration mode drift: "
+                    f"saved={runtime.calibration_source!r}, "
+                    f"current={current_source!r}. Restart from scratch to change "
+                    "between fixed and calibrated noise.",
+                )
+            )
+        if current_source == "calibrated" and _drift_differs(
+            runtime.target_epsilon,
+            self.args.privacy_target_epsilon,
+        ):
+            raise CheckpointError(
+                *(
+                    "Whole-horizon resume forbids privacy_target_epsilon drift: "
+                    f"saved={runtime.target_epsilon!r}, "
+                    f"current={self.args.privacy_target_epsilon!r}. Restart from "
+                    "scratch to calibrate against a different privacy budget.",
+                )
+            )
 
     def _warn_on_arg_drift(self, runtime: ckpt.RuntimeCheckpoint) -> None:
         """Surface drift between the saved checkpoint and current ``args``.
