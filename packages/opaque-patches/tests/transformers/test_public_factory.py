@@ -546,7 +546,7 @@ def test_non_hf_model_without_registered_family_warns_and_skips(caplog):
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
-def test_unregistered_hf_family_raises_when_compat_is_enabled(caplog):
+def test_unregistered_hf_family_raises_when_compat_is_enabled():
     """HF models cannot silently skip the default vmap-safety patches."""
     from transformers import PretrainedConfig, PreTrainedModel
 
@@ -561,6 +561,3 @@ def test_unregistered_hf_family_raises_when_compat_is_enabled(caplog):
 
     with pytest.raises(ConfigurationError, match="require a registered"):
         apply_transformers_model_patches(_Model(_Config()))
-
-    assert "no registered apply function" in caplog.text
-    assert any(record.levelname == "WARNING" for record in caplog.records)

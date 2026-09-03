@@ -133,11 +133,6 @@ def apply_transformers_model_patches(
     apply_fn = get_family_apply_fn(family) if family is not None else None
     if family is None or apply_fn is None:
         unknown_hf_family = _is_hf_pretrained_model(model)
-        logger.warning(
-            "opaque: no registered apply function for model family %s; "
-            "no model-level patches applied.",
-            family or type(model).__name__,
-        )
         if (unknown_hf_family and compat) or (
             (dropout_explicit and dropout) or (batchify_explicit and batchify)
         ):
@@ -147,6 +142,11 @@ def apply_transformers_model_patches(
                     f"transformers family; got {family!r} ({type(model).__name__})",
                 )
             )
+        logger.warning(
+            "opaque: no registered apply function for model family %s; "
+            "no model-level patches applied.",
+            family or type(model).__name__,
+        )
         return
 
     apply_fn(
