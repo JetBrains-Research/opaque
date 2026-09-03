@@ -22,8 +22,8 @@ KEY DIFFERENCES FROM DP-SGD (train_dpsgd.py):
   3. LR schedule: Constant by default (--warmup-frac 0); optional linear warmup
      → constant, fully predetermined before training (fixed linear map).
 
-  4. Accounting: Single-shot from MF encoder sensitivity. No per-step
-     epsilon tracking — privacy is computed once at the end.
+  4. Accounting: Single-shot from MF encoder sensitivity. The declared
+     full-horizon epsilon is reported throughout training.
 
   5. Noise: Fixed stddev, correlated across steps via C^{-1} streaming
      multiplication. Cannot change noise level mid-training.
@@ -1971,16 +1971,10 @@ def main():
     reset_peak_memory(device)
     print_memory(device, "Before training")
 
-    # Privacy accountant — same ``acc |= step`` idiom as the DP-SGD trainer.
-    # ``per_step`` wraps the whole-process DP-FTRL accountant so the
-    # :class:`Repeated` node ``step * K`` materialises as the true K-step
-    # PLD (strategy-aware K-prefix bound), not the K-fold composition of
-    # a single-step PLD.
-    if args.mechanism == "none":
-        step_proc = acc.identity()
-    else:
-        step_proc = acc.per_step(acct_mechanism(noise_multiplier))
+    # DP-FTRL accounting covers the complete declared horizon and is charged
+    # once. This remains conservative when --max-steps truncates execution.
     accounting = Accountant()
+    accounting |= acct_mechanism(noise_multiplier)
 
     # Compute reference (untrained) scores for auditing before any training.
     # Paper Algorithm 3: score = loss(w0, x) − loss(wℓ, x), so we need w0 losses.
@@ -2037,9 +2031,6 @@ def main():
                 f"/{args.num_epochs}"
             )
             print("-" * 80)
-
-        # Accounting (data-independent, before execution).
-        accounting |= step_proc
 
         (input_ids,) = batch
         batch_size = len(input_ids)
@@ -2160,9 +2151,6 @@ def main():
         # --- Eval ---
         if global_step % args.eval_steps == 0:
             current_eval_loss = eval_loss(trainable_params)
-            # Keep the correlated N-step MF mechanism intact. PerStep's
-            # Repeated node queries pld_at(global_step), whose horizon cache
-            # memoizes this prefix without splitting correlations at evals.
             epsilon = accounting.epsilon_at(args.target_delta)
             eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
             metrics: dict[str, float] = {
@@ -2224,10 +2212,7 @@ def main():
         print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
         print(f"  Noise multiplier: {noise_multiplier:.4f}")
         print(f"  Final ε (theoretical): {final_epsilon:.4f}")
-        # ``privacy/epsilon`` is logged at every eval step (see the
-        # per-eval block above), so the wandb timeline already shows the
-        # final ε at the last step.  No need to re-log a separate
-        # ``privacy/epsilon_final`` scalar.
+        # Evaluations report this same declared full-horizon bound.
 
     synced = sync(tracker) if is_ddp else tracker
     print("\nPerformance:")

@@ -1,10 +1,4 @@
-"""Memoisation contract for the random-allocation native primitives (#802).
-
-The epoch and prefix transforms are O(G²) and were rebuilt on every distinct
-step count; the cached wrappers must hit on repeated identical keys, stay
-bit-identical to the direct native calls, separate entries per key, and
-never cache errors.
-"""
+"""Memoisation contract for the random-allocation native primitive (#802)."""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._random_allocation_cache import (
     clear_random_allocation_caches,
     epoch_pld,
-    prefix_pld,
 )
 from opaque.api.accounting.core.discretization import DiscretizationConfig
 
@@ -54,29 +47,10 @@ def test_epoch_pld_separates_keys():
     assert epoch_pld.cache_info().misses == 5
 
 
-def test_prefix_pld_is_memoised_and_matches_native():
-    first = prefix_pld(1.0, 8, 3, _CFG)
-    direct = _native.random_allocation_gaussian_prefix_pld(1.0, 8, 3, _CFG.to_native())
-    assert first.epsilon_at(_DELTA) == direct.epsilon_at(_DELTA)
-
-    again = prefix_pld(1.0, 8, 3, _CFG)
-    assert again is first
-    info = prefix_pld.cache_info()
-    assert info.misses == 1
-    assert info.hits == 1
-
-
 def test_errors_are_not_cached():
     for _ in range(2):
         with pytest.raises(ValueError, match="noise_multiplier"):
             epoch_pld(0.0, 8, 1, _CFG)
     info = epoch_pld.cache_info()
     assert info.misses == 2  # recomputed, never stored
-    assert info.currsize == 0
-
-    for _ in range(2):
-        with pytest.raises(ValueError, match="released_steps"):
-            prefix_pld(1.0, 8, 9, _CFG)
-    info = prefix_pld.cache_info()
-    assert info.misses == 2
     assert info.currsize == 0

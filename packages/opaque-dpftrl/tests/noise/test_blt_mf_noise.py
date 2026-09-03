@@ -137,7 +137,7 @@ class TestBltPld:
 
         monkeypatch.setattr(_balls_in_bins, "_native", CapturingNative())
 
-        assert proc.pld_at(10) is sentinel
+        assert proc.pld() is sentinel
 
         coefs = s.coefficients(
             n_steps=proc.n_steps,

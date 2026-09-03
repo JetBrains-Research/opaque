@@ -615,7 +615,25 @@ class TestArgDriftWarnings:
         runtime.mechanism_kind = "mf_band"
         runtime.total_steps = 5  # saved=5, current=10 — DP-FTRL extension
 
-        with pytest.raises(CheckpointError, match="DP-FTRL resume forbids drift"):
+        with pytest.raises(CheckpointError, match="Whole-horizon resume forbids drift"):
+            trainer._warn_on_arg_drift(runtime)
+
+    def test_total_steps_drift_raises_for_k_out_of_t(
+        self, lora_model, tiny_dataset, tmp_path
+    ):
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(tmp_path, per_device_train_batch_size=2, max_steps=10),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        runtime.is_horizon_process = True
+        runtime.total_steps = 5
+
+        with pytest.raises(CheckpointError, match="Whole-horizon resume forbids drift"):
             trainer._warn_on_arg_drift(runtime)
 
     def test_shape_drift_warns_on_lr_scheduler(

@@ -40,10 +40,10 @@ class Composed(DpProcess):
 
         return iter_repr(self)
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+    def _pld_cache_key(self) -> tuple[object, ...]:
         from ._iter_cache_key import iter_cache_key
 
-        return iter_cache_key(self, n_steps=n_steps)
+        return iter_cache_key(self)
 
     @pld_cache(maxsize=8)
     def pld(

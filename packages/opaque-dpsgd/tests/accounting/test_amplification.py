@@ -454,23 +454,6 @@ class TestKOutOfTTightness:
         ]
         assert eps[0] > eps[1] > eps[2]
 
-    @pytest.mark.slow
-    def test_prefix_is_monotone_and_one_step_matches_poisson(self):
-        process = dpsgd_acc.k_out_of_t(
-            dpsgd_acc.gaussian(1.0),
-            k=2,
-            t=16,
-            allocation="block",
-        )
-        # These representative prefixes cover the first step, an interior
-        # horizon, and the declared horizon without repeatedly rebuilding
-        # the expensive random-allocation PLD for every prefix.
-        prefixes = (1, 8, 12)
-        values = [process.pld_at(k).epsilon_at(1e-8) for k in prefixes]
-        assert values == sorted(values)
-        poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), 1 / 8)
-        assert values[0] == pytest.approx(poisson.epsilon_at(1e-8), abs=2e-3)
-
 
 # ── Deterministic regression vectors ──────────────────────────────────
 
@@ -574,18 +557,3 @@ class TestDeterministicAmplificationVectors:
             f"{name}, delta={delta}: epsilon drifted; "
             f"committed={expected:.17g}, observed={actual:.17g}"
         )
-
-
-def test_k_out_of_t_short_prefix_matches_poisson():
-    process = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=1,
-        t=2,
-        allocation="block",
-    )
-    poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.5)
-
-    assert process.pld_at(1).epsilon_at(1e-8) == pytest.approx(
-        poisson.epsilon_at(1e-8),
-        abs=2e-3,
-    )

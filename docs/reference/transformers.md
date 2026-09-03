@@ -171,7 +171,7 @@ Dataclass surface.  Every field listed here exists on
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `privacy_target_epsilon` | `float \| None` | `None` | User target ε.  When set, calibration searches for the smallest noise multiplier that achieves this. |
+| `privacy_target_epsilon` | `float \| None` | `None` | User target ε. When set alone, calibration searches for the smallest noise multiplier that achieves this. With fixed σ, privacy early stopping is available only for independent DP-SGD and is rejected for horizon mechanisms. |
 | `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / dataset_size**1.1` when unset. |
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
@@ -179,7 +179,7 @@ Dataclass surface.  Every field listed here exists on
 | `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
-| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
+| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ. When unset (and `privacy_target_epsilon` is set), calibration searches. Horizon mechanisms report the conservative declared full-horizon ε throughout training. |
 | `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
 | `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.11, "max": 10.0, "tolerance": 1e-3}`. |
 

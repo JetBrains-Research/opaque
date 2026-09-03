@@ -39,7 +39,6 @@ from opaque.api.accounting.core.calibration import CalibrateResult
 from opaque.api.accounting.core.composition.types import (
     CachedProcess,
     Composed,
-    PerStep,
     Repeated,
 )
 from opaque.api.accounting.core.discretization import DiscretizationConfig
@@ -71,7 +70,6 @@ __all__ = [
     "NonPrivate",
     # Composition
     "Composed",
-    "PerStep",
     "Repeated",
     "CachedProcess",
 ]

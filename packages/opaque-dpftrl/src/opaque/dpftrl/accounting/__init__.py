@@ -28,8 +28,7 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
   (must be a positive multiple of ``num_bins``).
 
 Cross-cutting primitives (composition, calibration) live at
-:mod:`opaque.accounting`, including :func:`opaque.accounting.per_step` for
-adapting a whole-horizon process to ``acc |= step`` loops.
+:mod:`opaque.accounting`.
 
 The amplification dataclass is named ``CyclicPoisson`` (rather than ``Poisson``)
 to avoid a class-name collision with
@@ -47,15 +46,12 @@ Example::
     from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
 
     band_s = band_mf_strategy(bands=10)
-    step = ftrl_acc.poisson(
+    process = ftrl_acc.poisson(
         ftrl_acc.mf_gaussian(1.0, band_s), sample_rate=0.01, n_steps=1000,
     )
-    eps = step.epsilon_at(1e-5)
+    eps = process.epsilon_at(1e-5)
 """
 
-from opaque.api.accounting.core.composition._per_step import (
-    per_step as per_step,
-)
 from opaque.api.accounting.dpftrl import (
     b_min_sep,
     balls_in_bins,
@@ -67,6 +63,5 @@ __all__ = [
     "b_min_sep",
     "balls_in_bins",
     "mf_gaussian",
-    "per_step",
     "poisson",
 ]

@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import gc
 import weakref
-from typing import TYPE_CHECKING
 
 import pytest
 
 import opaque.accounting as acc
-from opaque.api.accounting.core._pld_cache import horizon_pld_cache, pld_cache
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from opaque.api.accounting.core._pld_cache import pld_cache
 
 
 class _CachedProcess:
@@ -24,21 +20,6 @@ class _CachedProcess:
 
     @pld_cache(maxsize=2)
     def pld(self) -> object:
-        self.calls += 1
-        return object()
-
-
-class _CachedHorizonProcess:
-    n_steps = 3
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def _pld_cache_key(self, *, n_steps: int) -> tuple[str, int]:
-        return ("cached-horizon-process", n_steps)
-
-    @horizon_pld_cache(maxsize=2)
-    def pld_at(self, n_steps: int) -> object:
         self.calls += 1
         return object()
 
@@ -136,17 +117,6 @@ def test_pld_cache_reuses_entries_for_equal_processes() -> None:
     assert second.calls == 0
 
 
-def test_horizon_pld_cache_reuses_entries_and_evicts_lru_entry() -> None:
-    process = _CachedHorizonProcess()
-
-    first = process.pld_at(1)
-    assert process.pld_at(1) is first
-    process.pld_at(2)
-    process.pld_at(3)
-    assert process.pld_at(1) is not first
-    assert process.calls == 4
-
-
 def test_pld_cache_supports_unbounded_entries() -> None:
     process = _UnboundedCachedProcess()
 
@@ -157,19 +127,9 @@ def test_pld_cache_supports_unbounded_entries() -> None:
     assert process.calls == 2
 
 
-@pytest.mark.parametrize(
-    ("process_type", "query"),
-    [
-        (_CachedProcess, lambda process: process.pld()),
-        (_CachedHorizonProcess, lambda process: process.pld_at(1)),
-    ],
-)
-def test_pld_caches_do_not_retain_queried_processes(
-    process_type: type[_CachedProcess] | type[_CachedHorizonProcess],
-    query: Callable[[_CachedProcess | _CachedHorizonProcess], object],
-) -> None:
-    process = process_type()
-    query(process)
+def test_pld_caches_do_not_retain_queried_processes() -> None:
+    process = _CachedProcess()
+    process.pld()
     process_ref = weakref.ref(process)
 
     del process

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting.types import DpHorizonProcess
 
@@ -32,37 +31,6 @@ def test_factory_returns_horizon_process():
 
 
 @pytest.mark.slow
-def test_block_prefixes_are_exact_and_full_matches_pld():
-    process = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=3,
-        t=10,
-        allocation="block",
-    )
-    step = acc.per_step(process)
-    values = [(step * count).epsilon_at(_DELTA) for count in range(1, 11)]
-
-    assert all(value > 0 for value in values)
-    assert values == sorted(values)
-    assert values[-1] == pytest.approx(process.epsilon_at(_DELTA), rel=1e-12, abs=0)
-
-
-@pytest.mark.slow
-def test_first_step_matches_poisson_at_the_epoch_rate():
-    process = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=2,
-        t=16,
-        allocation="block",
-    )
-    poisson = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=1 / 8)
-
-    assert process.pld_at(1).epsilon_at(1e-8) == pytest.approx(
-        poisson.epsilon_at(1e-8), abs=2e-3
-    )
-
-
-@pytest.mark.slow
 def test_total_full_horizon_uses_the_block_upper_bound():
     block = dpsgd_acc.k_out_of_t(
         dpsgd_acc.gaussian(1.0),
@@ -79,40 +47,6 @@ def test_total_full_horizon_uses_the_block_upper_bound():
 
     assert total.epsilon_at(_DELTA) == pytest.approx(
         block.epsilon_at(_DELTA), rel=1e-12, abs=0
-    )
-
-
-@pytest.mark.slow
-def test_total_prefix_uses_the_full_horizon_bound_for_k_greater_than_one():
-    total = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=3,
-        t=10,
-        allocation="total",
-    )
-
-    assert total.pld_at(4).epsilon_at(_DELTA) == pytest.approx(
-        total.epsilon_at(_DELTA), rel=1e-12, abs=0
-    )
-
-
-@pytest.mark.slow
-def test_total_k_one_prefix_is_exact():
-    block = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=1,
-        t=8,
-        allocation="block",
-    )
-    total = dpsgd_acc.k_out_of_t(
-        dpsgd_acc.gaussian(1.0),
-        k=1,
-        t=8,
-        allocation="total",
-    )
-
-    assert total.pld_at(4).epsilon_at(_DELTA) == pytest.approx(
-        block.pld_at(4).epsilon_at(_DELTA), rel=1e-12, abs=0
     )
 
 

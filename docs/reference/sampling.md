@@ -113,9 +113,9 @@ participation schedule.
 
 Account block allocation with
 `dpsgd_acc.k_out_of_t(mechanism, k=k, t=t, allocation="block")`.
-The process computes exact prefix privacy. Total allocation uses the same
-factory with `allocation="total"` and currently receives the conservative
-block bound; its `k > 1` prefixes carry the full-horizon bound.
+This accounts the complete declared horizon once. Total allocation uses the
+same factory with `allocation="total"` and currently receives the conservative
+block bound.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 
