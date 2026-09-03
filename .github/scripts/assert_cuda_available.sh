@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Prove that a CUDA test lane can run CUDA tests before it reports a result.
-#
-# conftest.py skips every `cuda`-marked test when torch reports no device, so a
-# CUDA lane on a host that lost CUDA collects its tests, skips all of them, and
-# exits 0 — the lane goes green while validating nothing. Asserting the
-# capability up front turns that silent pass into a loud failure.
-#
-# The lane is recognised by its pytest marker expression rather than by the
-# runner label. A lane whose green light means "CUDA tests passed" has to prove
-# CUDA works whichever runner it was scheduled on, a CUDA lane accidentally
-# pointed at a CPU runner fails loudly instead of skipping quietly, and a new
-# GPU runner label inherits the check without touching this script.
+# Fail a CUDA test lane that cannot run CUDA tests: conftest.py skips every
+# `cuda`-marked test when torch reports no device, so pytest exits 0 and the
+# lane goes green having validated nothing. Keyed on the marker expression
+# rather than the runner label, so a CUDA lane on a CPU runner also fails.
 
 set -euo pipefail
 
 : "${PYTEST_MARKER:?PYTEST_MARKER must be set}"
 
-# Every non-CUDA lane spells its exclusion `not cuda`, so dropping the negative
-# terms first leaves a bare `cuda` only in the expressions that positively
-# select CUDA-marked tests. The word boundaries keep an unrelated marker that
-# merely starts with `cuda` from matching.
+# Drop `not cuda` first, so a bare `cuda` remains only in expressions that
+# positively select CUDA tests; the word boundaries stop `cudagraphs` matching.
 positive_marker_terms="${PYTEST_MARKER//not cuda/}"
 if [[ ! "$positive_marker_terms" =~ (^|[^[:alnum:]_])cuda([^[:alnum:]_]|$) ]]; then
   echo "Marker expression '$PYTEST_MARKER' does not select CUDA tests; no CUDA preflight needed."
