@@ -430,11 +430,14 @@ class TestQueryTimeMcParams:
         # The explicit query and equivalent global setting resolve to the same
         # DiscretizationConfig. ``horizon_pld_cache`` keys PLDs by that config,
         # the process cache key, and the horizon, so both calls reuse one PLD.
+        pld_per_call = proc.pld(**_MC_KW)
         e_per_call = proc.epsilon_at(_MC_DELTA, **_MC_KW)
         prev = asdict(acc.get_discretization())
         acc.set_discretization(**_MC_KW)
         try:
+            pld_global = proc.pld()
             e_global = proc.epsilon_at(_MC_DELTA)
         finally:
             acc.set_discretization(**prev)
+        assert pld_per_call is pld_global
         assert e_per_call == e_global
