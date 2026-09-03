@@ -77,13 +77,8 @@ Linux amd64 tests, minimum and latest dependency boundaries, and macOS arm64,
 Linux arm64, and CUDA platform coverage. Main and release include slow tests in
 platform lanes. Fork pull requests never receive the self-hosted CUDA runner.
 
-A lane whose marker expression positively selects `cuda` runs
-`.github/scripts/assert_cuda_available.sh` after dependency synchronization and
-again inside `.github/scripts/run_python_test_package.sh`. Both invocations fail
-the lane when the host has no usable CUDA device, because `conftest.py` skips
-every CUDA-marked test on such a host and pytest then exits successfully — a GPU
-lane must never report green without running the tests it exists to run. Lanes
-that exclude `cuda` skip the assertion.
+Lanes selecting `cuda` run `.github/scripts/assert_cuda_available.sh` and fail
+when the host has no usable CUDA device; lanes excluding `cuda` skip it.
 
 ### `.github/workflows/rust-tests.yml`
 
