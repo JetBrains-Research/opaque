@@ -52,7 +52,7 @@ def apply_chat_template_with_mask(
     canonical markers with
     :func:`opaque.api.alignment.data._chat_template.get_training_chat_template`.
     Without the marker HF returns no assistant mask and this function raises a
-    :class:`ValueError`.
+    :class:`ConfigurationError`.
 
     Args:
         tokenizer: A tokenizer whose active ``chat_template`` carries a
