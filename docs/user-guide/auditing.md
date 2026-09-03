@@ -110,6 +110,10 @@ gdp.epsilon_at(delta=1e-5)
 gdp.beta_at(alpha=0.01)
 ```
 
+`grid_size` must be at least `1_000`. Coarser grids are rejected because
+they can resolve a detectable leak as `epsilon=0` — silently reporting no
+leakage instead of an inaccurate one.
+
 `OneRunEstimate.eps_delta()` returns the mechanism-agnostic (ε,δ)-DP
 method object. Use it when:
 
