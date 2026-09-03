@@ -10,6 +10,9 @@ set -euo pipefail
 : "${TEST_PATH:?TEST_PATH must be set}"
 : "${TEST_RESULTS_FILE:?TEST_RESULTS_FILE must be set}"
 
+# Guarded here too, so a workflow refactor cannot silently un-guard GPU lanes.
+bash "$(dirname "${BASH_SOURCE[0]}")/assert_cuda_available.sh"
+
 pytest_args=(
   uv run pytest "$TEST_PATH"
   -m "$PYTEST_MARKER"
