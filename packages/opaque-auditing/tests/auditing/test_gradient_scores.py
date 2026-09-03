@@ -191,6 +191,33 @@ class TestGradientScores:
 class TestGradientScoresValidation:
     """Tests for input validation."""
 
+    def test_scoring_with_train_subset_raises(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+
+        with pytest.raises(ValueError, match="full concatenated dataset"):
+            gradient_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=cf.train_subset(dataset),
+            )
+
+    def test_scoring_with_mismatched_dataset_size_raises(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+        mismatched = TensorDataset(*(tensor[:-1] for tensor in dataset.tensors))
+
+        with pytest.raises(ValueError, match="dataset length"):
+            gradient_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=mismatched,
+            )
+
     def test_batch_argnums_includes_zero_raises(self):
         """batch_argnums=(0,) must raise since position 0 is params."""
         torch.manual_seed(42)

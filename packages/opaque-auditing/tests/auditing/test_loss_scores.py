@@ -35,6 +35,33 @@ def linear_setup():
 class TestLossScores:
     """Tests for auditing.loss_scores."""
 
+    def test_scoring_with_train_subset_raises(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+
+        with pytest.raises(ValueError, match="full concatenated dataset"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=cf.train_subset(dataset),
+            )
+
+    def test_scoring_with_mismatched_dataset_size_raises(self, linear_setup):
+        params, dataset, loss_fn = linear_setup
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+        mismatched = TensorDataset(*(tensor[:-1] for tensor in dataset.tensors))
+
+        with pytest.raises(ValueError, match="dataset length"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1, 2),
+                coin_flip=cf,
+                dataset=mismatched,
+            )
+
     @pytest.mark.parametrize(
         ("batch_argnums", "message"),
         [

@@ -334,6 +334,13 @@ class TestCoinFlip:
         for idx in non_canary:
             assert idx in train_set
 
+    def test_factory_records_dataset_size_for_train_indices(self):
+        dataset = list(range(30))
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(42))
+
+        assert cf.dataset_size == len(dataset)
+        assert cf.train_indices() == cf.train_indices(len(dataset))
+
     def test_split_scores(self):
         canary_idx = np.arange(100)
         cf = _flip(canary_idx, key=key(42))
