@@ -15,6 +15,7 @@ import scipy.stats
 from opaque.api.auditing.one_run._eps_delta import _p_value as _eps_delta_p_value
 from opaque.api.auditing.one_run._gdp import (
     GdpMethod,
+    _compute_v_k,
     _gdp_base_pair_grid,
     _gdp_to_eps_delta,
     _p_value,
@@ -140,6 +141,24 @@ class TestGdpBasePairGrid:
             _gdp_base_pair_grid(0.0, 100)
 
 
+# ---- v_k grid convergence (Eq. 12 identity) ----------------------------------
+
+
+class TestVKGridConvergence:
+    """At accepted grid sizes the discretised v_k must match closed form.
+
+    For n = 1, Eq. 12 of Xiang et al. (2025) reduces to the Bayes error
+    of the shift test, v_1 = Phi(-mu/2).  The grid floor accepted by
+    ``OneRunEstimate.gdp`` is validated against this identity.
+    """
+
+    @pytest.mark.parametrize("mu", [0.5, 1.0, 2.0])
+    @pytest.mark.parametrize("grid_size", [1_000, 10_000])
+    def test_n_one_matches_bayes_error(self, mu, grid_size):
+        v_1 = _compute_v_k(1, 1, _gdp_base_pair_grid(mu, grid_size))
+        assert abs(float(v_1[0]) - scipy.stats.norm.cdf(-mu / 2)) < 1e-5
+
+
 # ---- _p_value --------------------------------------------------------------
 
 
@@ -192,7 +211,12 @@ class TestPValue:
 
 
 class TestMuAtTermination:
-    """Regression: a strong attack past rank truncation must raise, not hang."""
+    """Regression: a strong attack past rank truncation must raise, not hang.
+
+    These build ``GdpMethod`` directly with deliberately tiny grids to keep
+    the bracket/bisection cap reachable in test time; the public factory
+    enforces ``_MIN_GRID_SIZE`` separately.
+    """
 
     @pytest.mark.parametrize(("n_half", "u"), [(1500, 0), (2500, 1400)])
     def test_strong_attack_past_truncation_raises(self, n_half, u):
@@ -256,6 +280,54 @@ class TestGdpMethod:
         eps_5k = method.epsilon_at(delta=1e-5)
         eps_10k = est.gdp().epsilon_at(delta=1e-5)
         assert abs(eps_5k - eps_10k) < 0.5
+
+    def test_grid_size_below_floor_raises(self):
+        """Public factory rejects grids below the validated floor."""
+        est = _make_estimate(np.arange(50, 100), np.arange(0, 50))
+        with pytest.raises(ValueError, match=r"grid_size must be >= 1000, got 999"):
+            est.gdp(grid_size=999)
+        # The floor itself is accepted.
+        assert est.gdp(grid_size=1_000).grid_size == 1_000
+
+
+class TestCoarseGridCannotEraseLeakage:
+    """Regression #829: a known-leaky config never audits eps=0 at an
+    accepted grid size, even though a coarse grid below the floor did."""
+
+    @staticmethod
+    def _leaky_estimate():
+        """500/500 split whose best threshold makes exactly 250 errors.
+
+        A coarse grid (grid_size=16) resolved this as eps=0 (no leak); the
+        accepted floor must report a positive privacy lower bound.
+        """
+        in_scores = np.concatenate([np.arange(1_000, 1_250), np.arange(500, 750)])
+        out_scores = np.concatenate([np.arange(0, 250), np.arange(500, 750)])
+        n = 1_000
+        idx = np.arange(n)
+        mask = np.array([True] * 500 + [False] * 500)
+        cf = CoinFlip(
+            num_canaries=n,
+            canary_indices=idx,
+            _in_mask=mask,
+            in_indices=idx[mask],
+            out_indices=idx[~mask],
+        )
+        scores = np.empty(n)
+        scores[:500] = in_scores
+        scores[500:] = out_scores
+        return one_run(CanaryScores(scores, canary_indices=idx), coin_flip=cf)
+
+    @pytest.mark.parametrize("grid_size", [1_000, 2_500, 10_000])
+    def test_known_leak_positive_epsilon(self, grid_size):
+        est = self._leaky_estimate()
+        # Confirm this is a leaky config: the order-statistics test sees far
+        # fewer errors than the coin-flip baseline (u << m/2).
+        m, u = est._best_r_u(None)
+        assert m == 1_000
+        assert u == 250
+        eps = est.gdp(grid_size=grid_size).epsilon_at(delta=1e-5)
+        assert eps > 0.0
 
 
 # ---- Pld-mirror surface: delta_at, beta_at, advantage ----------------------

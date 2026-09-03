@@ -32,10 +32,16 @@ if TYPE_CHECKING:
 __all__ = ["OneRunEstimate", "one_run"]
 
 
-# Minimum grid points for the GDP numerical integration.  Below this the
-# grid construction (``z[1] - z[0]``) is degenerate; the smallest useful
-# grid covers each of the two Gaussian humps with a handful of points.
-_MIN_GRID_SIZE = 16
+# Minimum grid points for the GDP numerical integration.  Coarser grids
+# are not merely inaccurate — they can silently erase detectable leakage:
+# at grid_size=16 a fully separable 500/500 canary split audits as
+# eps=0.  The floor is validated against the v_k order-statistic identity
+# (Xiang et al. 2025, Eq. 12): at grid_size=1_000 the n=1 Bayes error
+# v_1 = Phi(-mu/2) is reproduced with absolute error ~1.2e-6, and
+# detected-leak configurations stay well away from the eps=0 collapse.
+# This keeps the accepted-range cost roughly an order of magnitude below
+# the 10_000-point default while remaining numerically meaningful.
+_MIN_GRID_SIZE = 1_000
 
 
 def one_run(scores: CanaryScores, *, coin_flip: CoinFlip) -> OneRunEstimate:
@@ -173,7 +179,16 @@ class OneRunEstimate:
         return EpsDeltaMethod(_estimate=self)
 
     def gdp(self, *, grid_size: int = 10_000) -> GdpMethod:
-        """μ-GDP order-statistics audit method (Xiang et al. 2025)."""
+        """μ-GDP order-statistics audit method (Xiang et al. 2025).
+
+        Args:
+            grid_size: Grid points for the order-statistics integration.
+                Must be at least ``_MIN_GRID_SIZE``; coarser grids can
+                resolve the p-value as if no leakage were present.
+
+        Raises:
+            ConfigurationError: If ``grid_size`` is below the minimum.
+        """
         if grid_size < _MIN_GRID_SIZE:
             raise ConfigurationError(
                 *(f"grid_size must be >= {_MIN_GRID_SIZE}, got {grid_size}",)

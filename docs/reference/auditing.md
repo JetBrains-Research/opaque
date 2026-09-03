@@ -363,9 +363,10 @@ estimate.gdp(*, grid_size=10_000) -> GdpMethod
 ```
 
 μ-GDP order-statistics audit method (Xiang et al. 2025) with a tunable
-integration grid. The top-level `epsilon_at` / `delta_at` / `beta_at` /
-`advantage` are shortcuts for `gdp()` with the default `grid_size`. See
-[GdpMethod](#gdpmethod) below.
+integration grid. `grid_size` must be at least `1_000`: coarser grids can
+resolve a detectable leak as `epsilon=0`. The top-level `epsilon_at` /
+`delta_at` / `beta_at` / `advantage` are shortcuts for `gdp()` with the
+default `grid_size`. See [GdpMethod](#gdpmethod) below.
 
 ### attack_auc
 
@@ -432,7 +433,7 @@ single inferred μ̂.
 
 | Attribute | Type | Default | Description |
 |---|---|---|---|
-| `grid_size` | `int` | `10_000` | Grid points for the order-statistics integration |
+| `grid_size` | `int` | `10_000` | Grid points for the order-statistics integration; minimum `1_000` |
 
 ### epsilon_at
 
