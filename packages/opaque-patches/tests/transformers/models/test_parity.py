@@ -326,12 +326,7 @@ def test_sliding_window_parity(family, use_attention_mask, device):
     except Exception as e:
         raise AssertionError(f"{family} sliding window parity failed") from e
 
-    # Vacuity guard: the same run with a window too wide to bind (the config
-    # this test replaced). Both calls reseed before constructing the model and
-    # the window changes no parameter shape, so weights and inputs are identical
-    # and the window is the only variable. Families that always route through
-    # the sliding mask builder (ministral) reject ``sliding_window=None``, so
-    # widening the window — not removing it — is the portable control.
+    # Vacuity guard: a non-binding window (ministral rejects sliding_window=None).
     logits_open_window, _ = assert_parity_forward(
         model_cls,
         config_cls,
