@@ -13,11 +13,8 @@ modeling module (``mod.repeat_kv``, ``mod.eager_attention_forward``,
 reaches the patched name within that family — once per process,
 regardless of how many model *instances* exist.
 
-An attention-interface override is the one case where the patched name is
-not a plain function: ``mod.ALL_ATTENTION_FUNCTIONS`` is one instance shared
-by every HF modeling module, so it gets *rebound* to a family-private
-``AttentionInterface`` instead of written through (see
-:func:`_scoped_attention_functions`).
+``mod.ALL_ATTENTION_FUNCTIONS`` is shared by every HF modeling module, so it
+is rebound to a family-private instance rather than written through.
 
 Per-class patches (``LlamaMLP.forward``, ``LlamaRMSNorm.forward``, etc.)
 live in :mod:`._factory` and run per-model-instance.
@@ -69,25 +66,10 @@ def _reset_patched_families() -> None:
 def _scoped_attention_functions(
     mod: ModuleType,
 ) -> MutableMapping[str, ForwardFn] | None:
-    """Return ``mod``'s *own* ``ALL_ATTENTION_FUNCTIONS``, installing it if absent.
+    """Return ``mod``'s own ``ALL_ATTENTION_FUNCTIONS``, installing it if absent.
 
-    ``transformers`` ships a single ``AttentionInterface`` instance that every
-    ``modeling_X`` module imports, and ``interface[key] = fn`` writes into that
-    shared instance's local mapping.  Assigning through one family's module
-    therefore reroutes *every* family — including families that forward
-    ``softcap`` into the interface (vaultgemma defaults
-    ``attn_logit_softcapping`` to 50.0) and would land in another family's
-    softcap fallback.
-
-    HF's documented way to override an attention function for a single modeling
-    file is to bind a fresh interface instance in that module; this does exactly
-    that, once per module, and tags the instance so later calls reuse it.  Keys
-    the family does not override still resolve through the class-wide mapping,
-    so later ``AttentionInterface.register(...)`` calls stay visible.
-
-    Returns ``None`` when the module has no interface or it cannot be cloned —
-    the shared registry is then left untouched rather than patched
-    process-wide.
+    Writing to the shared instance would reroute every family. Returns ``None``
+    if the interface is missing or cannot be cloned, leaving it untouched.
     """
     shared = getattr(mod, "ALL_ATTENTION_FUNCTIONS", None)
     if shared is None:
