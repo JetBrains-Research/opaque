@@ -157,6 +157,7 @@ class CoinFlip:
         canary_indices: All canary dataset indices.
         in_indices: Canary indices included in training (coin = heads).
         out_indices: Canary indices excluded from training (coin = tails).
+        dataset_size: Size of the dataset used to create this partition, if known.
     """
 
     num_canaries: int
@@ -164,6 +165,7 @@ class CoinFlip:
     _in_mask: np.ndarray
     in_indices: np.ndarray
     out_indices: np.ndarray
+    dataset_size: int | None = None
 
     def __repr__(self) -> str:
         return (
@@ -171,20 +173,26 @@ class CoinFlip:
             f"n_in={len(self.in_indices)}, n_out={len(self.out_indices)})"
         )
 
-    def train_indices(self, dataset_size: int) -> list[int]:
+    def train_indices(self, dataset_size: int | None = None) -> list[int]:
         """Dataset indices to use for training.
 
         Returns all indices in ``range(dataset_size)`` except the excluded
         canaries (coin = tails).
 
         Args:
-            dataset_size: Total number of examples in the full dataset.
+            dataset_size: Total number of examples in the full dataset. Defaults
+                to the size recorded when this partition was created.
 
         Returns:
             Sorted list of training indices.
         """
+        size = self.dataset_size if dataset_size is None else dataset_size
+        if size is None:
+            raise ValueError(
+                "dataset_size must be provided when not recorded on CoinFlip"
+            )
         excluded = set(self.out_indices.tolist())
-        return [i for i in range(dataset_size) if i not in excluded]
+        return [i for i in range(size) if i not in excluded]
 
     def train_subset(self, dataset: Any) -> Subset:
         """Return a ``Subset`` containing all training examples.
@@ -386,4 +394,5 @@ def coin_flip(
         _in_mask=in_mask,
         in_indices=canary_indices[in_mask],
         out_indices=canary_indices[~in_mask],
+        dataset_size=dataset_size,
     )
