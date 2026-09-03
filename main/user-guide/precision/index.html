@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#mixed-precision" class="md-skip">
+        <a href="#numerical-precision" class="md-skip">
           Skip to content
         </a>
       
@@ -958,10 +958,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-dp-critical-invariant" class="md-nav__link">
+  <a href="#recommended-bfloat16-training" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The DP-critical invariant
+        Recommended bfloat16 training
       
     </span>
   </a>
@@ -969,10 +969,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recipe-bfloat16-training" class="md-nav__link">
+  <a href="#float32-training" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Recipe: bfloat16 training
+        float32 training
       
     </span>
   </a>
@@ -980,21 +980,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recipe-float16-training-with-loss-scaling" class="md-nav__link">
+  <a href="#the-fp16-boundary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Recipe: float16 training (with loss scaling)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#recipe-float32-training-everything-disabled" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recipe: float32 training (everything disabled)
+        The fp16 boundary
       
     </span>
   </a>
@@ -1013,10 +1002,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#whats-compatible-with-torchamp-and-what-isnt" class="md-nav__link">
+  <a href="#compatibility-with-torchamp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What's compatible with torch.amp and what isn't
+        Compatibility with torch.amp
       
     </span>
   </a>
@@ -3124,10 +3113,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-dp-critical-invariant" class="md-nav__link">
+  <a href="#recommended-bfloat16-training" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The DP-critical invariant
+        Recommended bfloat16 training
       
     </span>
   </a>
@@ -3135,10 +3124,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recipe-bfloat16-training" class="md-nav__link">
+  <a href="#float32-training" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Recipe: bfloat16 training
+        float32 training
       
     </span>
   </a>
@@ -3146,21 +3135,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recipe-float16-training-with-loss-scaling" class="md-nav__link">
+  <a href="#the-fp16-boundary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Recipe: float16 training (with loss scaling)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#recipe-float32-training-everything-disabled" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Recipe: float32 training (everything disabled)
+        The fp16 boundary
       
     </span>
   </a>
@@ -3179,10 +3157,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#whats-compatible-with-torchamp-and-what-isnt" class="md-nav__link">
+  <a href="#compatibility-with-torchamp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What's compatible with torch.amp and what isn't
+        Compatibility with torch.amp
       
     </span>
   </a>
@@ -3209,12 +3187,11 @@
   
 
 
-<h1 id="mixed-precision">Mixed Precision<a class="headerlink" href="#mixed-precision" title="Permanent link">&para;</a></h1>
-<p>Opaque supports <code>bfloat16</code>, <code>float16</code>, and <code>float32</code> training. Three knobs
-control what runs at what precision; all three are independent, and the safe
-defaults already cover the common cases. This page documents the contract so
-you can reason about edge cases — especially the <strong>DP-critical</strong> ones — without
-reverse-engineering individual modules.</p>
+<h1 id="numerical-precision">Numerical Precision<a class="headerlink" href="#numerical-precision" title="Permanent link">&para;</a></h1>
+<p>Opaque's recommended training dtypes are <code>bfloat16</code> and <code>float32</code>. Low-level
+primitives can process <code>float16</code> tensors, but Opaque does not provide dynamic
+loss scaling and <code>DPTrainer</code> does not support fp16 training.</p>
+<p>Two independent knobs control numerical precision:</p>
 <table>
 <thead>
 <tr>
@@ -3227,182 +3204,95 @@ reverse-engineering individual modules.</p>
 <tr>
 <td><code>torch.autocast(...)</code></td>
 <td>Around the forward / loss closure</td>
-<td>Op-level dtype dispatch (matmul, conv, …). Standard PyTorch.</td>
-</tr>
-<tr>
-<td><code>loss_scaler</code></td>
-<td><code>opaque.precision.loss_scaler</code></td>
-<td>Dynamic loss scaling for <code>fp16</code> — multiplies loss before backward, unscales grads before clipping.</td>
+<td>Op-level dtype dispatch (matmul, conv, and similar operations). Standard PyTorch.</td>
 </tr>
 <tr>
 <td><code>compute_dtype</code></td>
-<td>Kwarg on clipping + noise factories</td>
-<td>Precision at which sensitivity-bound and noise sampling are computed. <strong>DP-critical</strong>: must be high enough for the privacy accountant to be calibrated to a real C, not a rounded-to-zero one.</td>
+<td>Kwarg on clipping and noise factories</td>
+<td>Precision used for sensitivity-bound reductions, accumulation, and noise sampling. <strong>DP-critical</strong>: it must be high enough for the accountant to be calibrated to the realized mechanism.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="the-dp-critical-invariant">The DP-critical invariant<a class="headerlink" href="#the-dp-critical-invariant" title="Permanent link">&para;</a></h2>
-<p>The privacy accountant is calibrated to <code>noise_multiplier · C</code>, where C is the
-per-example clip-norm threshold passed to <code>clipped_grad</code>. If anything makes the
-gradient norm seen by the clip mechanism differ from the gradient norm that the
-optimizer step actually consumes, the recorded privacy guarantee is wrong.</p>
-<p>There are two places this shows up:</p>
-<ol>
-<li>
-<p><strong>Loss scaling.</strong> When you scale the loss by <code>S</code> before backward (the
-   underflow workaround for <code>fp16</code>), per-example gradients come back at
-   magnitude <code>S · g</code>. Clipping that to C means the <em>effective</em> per-example
-   bound is <code>C/S</code>, not C. The accountant doesn't know about S; it still records
-   "noise calibrated to C". To preserve the invariant, the unscale must run
-   <strong>before</strong> the clip-norm. <code>clipped_grad</code> exposes a <code>pre_clipping_transform</code>
-   slot for exactly this purpose — <code>loss_scaler.unscale_grads</code> is shaped to
-   plug in there.</p>
-</li>
-<li>
-<p><strong>Compute precision.</strong> When per-example L2-norm reductions run in <code>bfloat16</code>
-   (which has 8-bit mantissa), small gradients silently round to zero. The
-   sensitivity bound C the mechanism observes can be much smaller than the
-   geometric truth, and the realized noise stddev is too small for the actual
-   sensitivity. Clipping and noise both default <code>compute_dtype=torch.float32</code>
-   for this reason — even when training is otherwise in <code>bfloat16</code> /
-   <code>float16</code>.</p>
-</li>
-</ol>
-<h2 id="recipe-bfloat16-training">Recipe: <code>bfloat16</code> training<a class="headerlink" href="#recipe-bfloat16-training" title="Permanent link">&para;</a></h2>
-<p>Easiest path. <code>bfloat16</code> has the same 8-bit exponent as <code>float32</code>, so loss
-scaling isn't needed — gradients don't underflow. Just enter an autocast
-context around the loss closure.</p>
+<h2 id="recommended-bfloat16-training">Recommended <code>bfloat16</code> training<a class="headerlink" href="#recommended-bfloat16-training" title="Permanent link">&para;</a></h2>
+<p><code>bfloat16</code> has the same exponent range as <code>float32</code>, so it does not need loss
+scaling. Enter an autocast context around the loss closure:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_example_loss</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">):</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="k">return</span> <span class="n">loss</span><span class="p">(</span><span class="n">model_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">per_example_loss</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">per_example_loss</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 </code></pre></div>
-<p><code>compute_dtype</code> defaults to <code>torch.float32</code> on both <code>clipped_grad</code> and
-<code>gaussian_noise</code>, so the sensitivity-bound and noise sampling run at safe
-precision even though the forward is in <code>bfloat16</code>.</p>
-<h2 id="recipe-float16-training-with-loss-scaling">Recipe: <code>float16</code> training (with loss scaling)<a class="headerlink" href="#recipe-float16-training-with-loss-scaling" title="Permanent link">&para;</a></h2>
-<p><code>float16</code> has a 5-bit exponent, so gradients can underflow. Use
-<code>opaque.precision.loss_scaler</code> to multiply the loss before backward, then wire
-the unscale as <code>pre_clipping_transform</code> so clipping sees the true magnitudes.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.precision</span><span class="w"> </span><span class="kn">import</span> <span class="n">loss_scaler</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">scaler</span><span class="p">,</span> <span class="n">scaler_state</span> <span class="o">=</span> <span class="n">loss_scaler</span><span class="p">()</span>  <span class="c1"># defaults match torch.amp.GradScaler</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">accountant</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">()</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">step_process</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">sample_rate</span><span class="p">,</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">per_example_loss</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="n">device_type</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">):</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">model_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="k">return</span> <span class="n">scaler</span><span class="o">.</span><span class="n">scale_loss</span><span class="p">(</span><span class="n">loss</span><span class="p">,</span> <span class="n">scaler_state</span><span class="p">)</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    <span class="n">per_example_loss</span><span class="p">,</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">C</span><span class="p">,</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    <span class="n">pre_clipping_transform</span><span class="o">=</span><span class="k">lambda</span> <span class="n">g</span><span class="p">:</span> <span class="n">scaler</span><span class="o">.</span><span class="n">unscale_grads</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">scaler_state</span><span class="p">),</span>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    <span class="n">return_stats</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="p">)</span>
-<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>
-<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="c1"># in the step:</span>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">stats</span><span class="p">),</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="n">noisy</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="n">accountant</span> <span class="o">=</span> <span class="n">accountant</span> <span class="o">|</span> <span class="n">step_process</span>
-<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="n">scaler_state</span> <span class="o">=</span> <span class="n">scaler</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">scaler_state</span><span class="p">,</span> <span class="n">stats</span><span class="o">.</span><span class="n">all_finite</span><span class="p">)</span>
-</code></pre></div>
-<p>Every attempted step follows this path, including an empty Poisson batch and
-one whose unscaled gradients overflow. For an overflow, <code>stats.all_finite</code> is
-<code>False</code> before clipping replaces non-finite leaves
-with zero; the zero contribution is still noised, optimized, and composed into
-the accountant. The stats then back off the next loss scale. In distributed
-training, reduce <code>stats.all_finite</code> across ranks (logical AND) before calling
-<code>scaler.update</code> so every rank uses the same scale.</p>
-<h2 id="recipe-float32-training-everything-disabled">Recipe: <code>float32</code> training (everything disabled)<a class="headerlink" href="#recipe-float32-training-everything-disabled" title="Permanent link">&para;</a></h2>
-<p>Pass <code>enabled=False</code> to keep the call sites uniform; the scaler degrades to
-identity functions, the autocast block is just omitted.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">scaler</span><span class="p">,</span> <span class="n">scaler_state</span> <span class="o">=</span> <span class="n">loss_scaler</span><span class="p">(</span><span class="n">enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># the same wiring as the fp16 recipe; scale_loss / unscale_grads / update</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># are no-ops.</span>
-</code></pre></div>
+<p>Clipping defaults to safe accumulation behavior and the noise factories sample
+in <code>float32</code> by default, even though the forward uses <code>bfloat16</code>.</p>
+<h2 id="float32-training"><code>float32</code> training<a class="headerlink" href="#float32-training" title="Permanent link">&para;</a></h2>
+<p>No autocast or precision helper is needed. Clipping preserves float32 reduction
+precision by default, while noise factories also default to
+<code>compute_dtype=torch.float32</code>.</p>
+<h2 id="the-fp16-boundary">The fp16 boundary<a class="headerlink" href="#the-fp16-boundary" title="Permanent link">&para;</a></h2>
+<p><code>float16</code> has a narrow exponent range, so gradients can underflow or overflow.
+Native PyTorch commonly compensates with <code>torch.amp.GradScaler</code>, whose scale
+schedule reacts to an un-noised finiteness check. In private training, that
+data-dependent state can alter later numerical gradient queries without being
+represented in the privacy accountant. Opaque therefore does not expose a loss
+scaler or an aggregate pre-clipping finiteness signal.</p>
+<p>Low-level clipping and noise primitives still accept fp16 tensors and promote
+their privacy-critical reductions by default. This protects the numerical
+sensitivity and noise calculations, but it does not recover gradient
+information already lost during an fp16 forward or backward pass. Prefer bf16
+on supported hardware and float32 otherwise.</p>
 <h2 id="the-compute_dtype-contract">The <code>compute_dtype</code> contract<a class="headerlink" href="#the-compute_dtype-contract" title="Permanent link">&para;</a></h2>
-<p><code>compute_dtype</code> is <strong>not</strong> an autocast surface. Autocast intercepts op dispatch
-inside the forward pass; clipping / noise reductions run <em>outside</em> the autocast
-region (inside <code>vmap</code>, where autocast does not propagate) and produce the
-sensitivity bound the privacy accountant relies on. Three rules:</p>
+<p><code>compute_dtype</code> is <strong>not</strong> an autocast surface. Autocast intercepts operation
+dispatch inside the forward pass; clipping and noise reductions run outside
+that region and produce the sensitivity bound and noise scale the privacy
+accountant relies on.</p>
 <ul>
-<li><strong>Safe defaults on every public knob</strong>, but the precise default differs
-  by primitive. Clipping defaults to <code>compute_dtype=None</code>, which auto-promotes
-  <code>bfloat16</code> / <code>float16</code> inputs to <code>float32</code> for the L2 reduction and leaves
-  <code>float32</code> / <code>float64</code> inputs untouched (so an fp64 forward stays fp64
-  through clipping). Both <code>gaussian_noise(...)</code> and <code>mf_gaussian_noise(...)</code>
-  default to the literal <code>compute_dtype=torch.float32</code> and sample at that
-  precision regardless of the input pytree's dtype. If you want <code>compute_dtype
-  =torch.float64</code> end-to-end, you must pass it explicitly to clipping <em>and</em>
-  noise — the clipping side does not promote upward on its own.</li>
-<li><strong>Don't lower it without recalibrating.</strong> Setting
-  <code>compute_dtype=torch.bfloat16</code> is a numerical regression of the privacy
-  guarantee — the accountant still records <code>noise_multiplier · C</code>, but the
-  realized noise stddev no longer matches.</li>
-<li><strong>You can raise it.</strong> <code>compute_dtype=torch.float64</code> is safe (and
-  occasionally useful for very small clip thresholds or aggressive
-  noise multipliers).</li>
-<li><strong>It does not cover the <em>output</em> dtype.</strong> A scale computed in <code>float32</code> still
-  has to be stored in the leaf dtype and multiplied through, and both steps
-  round to nearest — which can round <em>up</em>, past the bound. Clipping therefore
-  shrinks each leaf's scale by a few ULPs of that leaf's own dtype so that
-  <code>norm(output) &lt;= clipping_norm</code> holds on the values as stored. Clipped values
-  lose ~0.8% of their magnitude at <code>bfloat16</code>, ~0.1% at <code>float16</code> and ~1.2e-7 at
-  <code>float32</code>; a <code>float32</code> leaf sitting beside a <code>bfloat16</code> one pays only the
-  <code>float32</code> cost. The guard widens if <code>compute_dtype</code> is set below <code>float32</code>,
-  since the norm it is measured against is then less accurate.</li>
+<li><strong>Use the safe defaults.</strong> Clipping defaults to <code>compute_dtype=None</code>, which
+  promotes <code>bfloat16</code> and <code>float16</code> inputs to <code>float32</code> for L2 reductions while
+  leaving <code>float32</code> and <code>float64</code> inputs unchanged. Both <code>gaussian_noise(...)</code>
+  and <code>mf_gaussian_noise(...)</code> default to
+  <code>compute_dtype=torch.float32</code>.</li>
+<li><strong>Do not lower precision without a separate numerical argument.</strong> Setting
+  <code>compute_dtype=torch.bfloat16</code> or <code>torch.float16</code> can make the realized
+  sensitivity and noise scale diverge from the accountant's model.</li>
+<li><strong>You can raise it.</strong> Pass <code>compute_dtype=torch.float64</code> explicitly to both
+  clipping and noise when higher-precision reductions and sampling are needed.</li>
+<li><strong>Output dtype is separate.</strong> A scale computed at higher precision must still
+  be stored in each output leaf's dtype. Clipping conservatively shrinks the
+  scale by a few ULPs of that leaf's dtype so the stored value continues to
+  satisfy <code>norm(output) &lt;= clipping_norm</code>.</li>
 </ul>
-<p>Under microbatching the running sum is held at the accumulation precision as
-well, so splitting a batch does not degrade the result — a <code>bfloat16</code> run
-accumulates in <code>float32</code> and casts once at the end. That costs one <code>float32</code>
-copy of the summed output; pass <code>compute_dtype=torch.bfloat16</code> to trade it back.</p>
-<h2 id="whats-compatible-with-torchamp-and-what-isnt">What's compatible with <code>torch.amp</code> and what isn't<a class="headerlink" href="#whats-compatible-with-torchamp-and-what-isnt" title="Permanent link">&para;</a></h2>
+<p>Under microbatching, the running sum is held at the accumulation precision and
+cast once at the end. A <code>bfloat16</code> run therefore uses one model-sized float32
+accumulator by default; explicitly lowering <code>compute_dtype</code> trades away this
+protection.</p>
+<h2 id="compatibility-with-torchamp">Compatibility with <code>torch.amp</code><a class="headerlink" href="#compatibility-with-torchamp" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
 <th><code>torch.amp</code> primitive</th>
-<th>Opaque counterpart</th>
+<th>Opaque behavior</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>torch.amp.autocast(device_type, dtype=...)</code></td>
-<td>Used directly; nothing to wrap. The trainer enters it around the loss closure.</td>
+<td>Used directly around the loss closure.</td>
 </tr>
 <tr>
 <td><code>torch.amp.GradScaler</code></td>
-<td><code>opaque.precision.loss_scaler</code> — functional analog. State is a frozen dataclass; defaults match <code>GradScaler</code> (<code>init_scale=2**16</code>, <code>growth_factor=2.0</code>, <code>backoff_factor=0.5</code>, <code>growth_interval=2000</code>).</td>
+<td>No Opaque counterpart. Data-dependent scale adaptation is outside Opaque's accounting model.</td>
 </tr>
 <tr>
 <td><code>torch.amp.custom_fwd</code> / <code>custom_bwd</code></td>
-<td>Not used — the functional DP step goes through <code>vmap(grad(...))</code>, which does not interact with custom autograd. Triton kernels in <code>opaque-patches</code> consult <code>torch.is_autocast_enabled()</code> directly at the wrapper boundary.</td>
-</tr>
-<tr>
-<td><code>GradScaler.step(optimizer)</code> (fuses inf-check + optimizer.step + skip)</td>
-<td>Caller-owned. <code>loss_scaler</code> returns the schedule and unscale, while the surrounding loop always runs its noised optimizer and accountant steps; raw finiteness only backs off the private scale.</td>
+<td>Not used by the functional DP path, which differentiates per-example losses with <code>vmap(grad(...))</code>.</td>
 </tr>
 </tbody>
 </table>
-<p>The structural gap — the scaler doesn't own the optimizer call — is forced by
-the functional path: per-example gradients are returned as a pytree by
-<code>vmap(grad(...))</code>, never attached to <code>Parameter.grad</code>. There's no
-<code>scaler.unscale_(optimizer)</code> analogue because there's no optimizer to walk
-parameters of. The trade is that the unscale runs <em>inside</em> <code>vmap</code>, per-example,
-before any reduction — which is exactly where DP needs it.</p>
 
 
 
