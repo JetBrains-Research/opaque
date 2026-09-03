@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
+import torch._dynamo.exc
 import torchopt
 from datasets import Dataset
 from torch import Tensor
@@ -203,10 +204,13 @@ def _compile_with_fullgraph_fallback(
     ``torch.compile`` is lazy — the compile failure (graph break under
     ``fullgraph=True``) surfaces only when the compiled function is
     actually executed.  This wrapper catches that first-execution
-    exception, records the fallback, and forwards subsequent calls to
-    the more permissive variant.  ``fullgraph=True`` first catches
-    silent eager-fallback regressions the user explicitly opted into
-    compiling against.
+    Dynamo failure, records the fallback, and forwards subsequent calls
+    to the more permissive variant.  Non-Dynamo exceptions
+    (``torch.OutOfMemoryError`` and friends) are runtime failures of
+    the step, not compile failures: they propagate untouched so the
+    trainer's OOM handling sees them first-hand.  ``fullgraph=True``
+    first catches silent eager-fallback regressions the user explicitly
+    opted into compiling against.
     """
     full = torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
     fallback: Callable | None = None
@@ -218,7 +222,7 @@ def _compile_with_fullgraph_fallback(
             return fallback(*args, **kwargs)
         try:
             return full(*args, **kwargs)
-        except Exception as e:
+        except torch._dynamo.exc.TorchDynamoException as e:
             log.warning(
                 "torch.compile fullgraph=True failed (%s: %s); "
                 "falling back to fullgraph=False for subsequent steps.",
