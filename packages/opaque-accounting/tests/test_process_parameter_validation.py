@@ -4,10 +4,9 @@ deserialization, not only through the factories."""
 import pytest
 
 import opaque.accounting as acc
-from opaque.api.accounting.core.composition._per_step import PerStep
 from opaque.api.accounting.core.composition._repeated import Repeated
 from opaque.api.accounting.core.mechanisms._eps_delta import EpsDelta
-from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.exceptions import ConfigurationError
 from opaque.serialization import from_state_dict
 
 
@@ -43,16 +42,6 @@ class TestRepeated:
     def test_factory_rejects_count_below_one(self, count):
         with pytest.raises(ValueError, match=r"Repeat count must be >= 1"):
             acc.repeat(acc.eps_delta(1.0, 1e-5), count=count)
-
-
-class TestPerStep:
-    def test_rejects_non_horizon_inner(self):
-        with pytest.raises(InputTypeError, match="PerStep requires a DpHorizonProcess"):
-            PerStep(acc.eps_delta(1.0, 1e-5))
-
-    def test_factory_rejects_non_horizon_inner(self):
-        with pytest.raises(InputTypeError, match="PerStep requires a DpHorizonProcess"):
-            acc.per_step(acc.eps_delta(1.0, 1e-5))
 
 
 class TestCodecValidation:

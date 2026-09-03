@@ -46,6 +46,7 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
+from opaque.accounting.types import DpHorizonProcess
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.engine.device import (
     device_capabilities,
@@ -247,8 +248,9 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
-    # Cached per-step ``DpProcess`` reused across step compositions.
-    step_process: Any
+    # Cached process reused across independent step compositions. Whole-horizon
+    # mechanisms are installed in ``accounting`` once and leave this as None.
+    step_process: Any | None
     target_delta: float
     sample_rate: float
     calibration_source: str
@@ -269,11 +271,28 @@ class _TrainingContext:
     # is a marker without per-state fields.
     clip_norm: Any = None
     mechanism_kind: str = "gaussian"
+    is_horizon_process: bool = False
+    horizon_process: DpHorizonProcess | None = None
     mf: _dpftrl.MFContext | None = None
     # Predicted stop-at-ε crossing step (absolute), or ``None`` when the
-    # target is unreachable / unset / the accountant is Monte-Carlo based.
+    # target is unreachable, unset, or the process is whole-horizon.
     # See :func:`predict_stop_step`.
     stop_at_step: int | None = None
+
+
+def _initialize_accounting(
+    process: Any,
+) -> tuple[Accountant, Any | None, DpHorizonProcess | None]:
+    """Build accounting state for a complete horizon or an independent step."""
+    if isinstance(process, DpHorizonProcess):
+        return Accountant(prefix=acc.cached(process)), None, process
+    return Accountant(), acc.cached(process), None
+
+
+def _account_independent_step(ctx: _TrainingContext) -> None:
+    """Compose one step unless the context already holds a complete horizon."""
+    if ctx.step_process is not None:
+        ctx.accounting |= ctx.step_process
 
 
 def predict_stop_step(
@@ -942,10 +961,10 @@ class DPTrainer:
         - **``ignore_data_skip=True``** skips sampler-state restore.
           Poisson resumes use a distinct stream; participation samplers
           require the saved cursor.
-        - **Accountant on resume** preserves heterogeneous composition:
-          the saved ``Accountant`` is loaded as the *prefix* and
-          calibration of the remaining steps targets the original
-          ``privacy_target_epsilon`` against that prefix.  Changing
+        - **Accountant on resume** preserves the mechanism lifecycle:
+          independent releases load the saved ``Accountant`` as a prefix and
+          calibrate remaining steps against it; whole-horizon mechanisms retain
+          their single declared process. Changing
           ``privacy_noise_multiplier`` / ``privacy_target_epsilon`` between
           checkpoint and resume warns but is allowed — the accountant
           composes whatever process the user asks for, and the warning
@@ -1127,6 +1146,7 @@ class DPTrainer:
 
         ctx = self._setup_training(
             prefix_accountant=prefix_accountant,
+            resume_runtime=runtime_payload,
             global_step_already_done=(
                 self.state.global_step if resume_path is not None else 0
             ),
@@ -1154,7 +1174,8 @@ class DPTrainer:
             # exceeds target, skip the training loop.
             a = self.args
             if (
-                a.privacy_noise_multiplier is not None
+                not ctx.is_horizon_process
+                and a.privacy_noise_multiplier is not None
                 and a.privacy_noise_multiplier > 0
                 and a.privacy_target_epsilon is not None
             ):
@@ -1179,14 +1200,12 @@ class DPTrainer:
 
         # Predict the stop-at-ε step once at setup (accounting is
         # deterministic): the crossing step is binary-searchable up front, so
-        # the in-loop check becomes a free integer comparison (#392).  Scoped
-        # to the fixed-NM + target path on deterministic accountants; the
-        # Monte-Carlo PLDs (b_min_sep / balls_in_bins) are non-monotone in k
-        # and thread-count-sensitive, so they keep the log-boundary check as
-        # their stop mechanism.
+        # the in-loop check becomes a free integer comparison (#392). This is
+        # only defined for independently composed step mechanisms.
         a = self.args
         if (
-            a.privacy_noise_multiplier is not None
+            not ctx.is_horizon_process
+            and a.privacy_noise_multiplier is not None
             and a.privacy_noise_multiplier > 0
             and a.privacy_target_epsilon is not None
             and a.sampling_mode not in ("b_min_sep", "balls_in_bins")
@@ -1292,16 +1311,16 @@ class DPTrainer:
         self,
         *,
         prefix_accountant: Accountant | None = None,
+        resume_runtime: ckpt.RuntimeCheckpoint | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
         sampler_restart_step: int | None = None,
     ) -> _TrainingContext:
         """Functional conversion, clipping, calibration, optimizer.
 
-        On resume (``prefix_accountant`` is not None), calibration is performed
-        over the *remaining* steps with the prefix accountant's process composed
-        on the left, so the final ε reaches ``privacy_target_epsilon`` once the run
-        completes.
+        On resume, independent mechanisms calibrate remaining steps with the
+        saved accountant composed on the left. Whole-horizon mechanisms
+        recalibrate their complete declared process without composing a prefix.
         """
         a = self.args
         # --- Gradient checkpointing ---
@@ -1520,6 +1539,11 @@ class DPTrainer:
             total_steps,
             target_delta,
             prefix_accountant=prefix_accountant,
+            resume_horizon_noise_multiplier=(
+                resume_runtime.noise_multiplier
+                if resume_runtime is not None and resume_runtime.is_horizon_process
+                else None
+            ),
             global_step_already_done=global_step_already_done,
         )
         calibration_source = (
@@ -1554,8 +1578,6 @@ class DPTrainer:
             clip_state,
             noise_multiplier,
         )
-        accounting = Accountant()
-
         # --- Noise ---
         # Sensitivity flows through the ``ClippedPytree`` returned by
         # ``clipped_grad`` (its ``.max_norm`` field).  ``noise_fn`` reads
@@ -1587,6 +1609,13 @@ class DPTrainer:
             # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
             _amp = mf.amplifier_factory(noise_multiplier)
+            if int(_amp.n_steps) != total_steps:
+                raise OperationError(
+                    *(
+                        "DP-FTRL amplifier horizon does not match the training "
+                        f"horizon: {_amp.n_steps} != {total_steps}.",
+                    )
+                )
             noise_fn, noise_state = mf_gaussian_noise(
                 trainable_params,
                 mf.strategy,
@@ -1602,6 +1631,10 @@ class DPTrainer:
         # share key validation + device move (no asymmetric crash modes).
         collate_fn = self._resolve_collate_fn()
 
+        accounting, step_process, horizon_process = _initialize_accounting(
+            mechanism(noise_multiplier)
+        )
+
         return _TrainingContext(
             fmodel=fmodel,
             trainable_params=trainable_params,
@@ -1616,7 +1649,7 @@ class DPTrainer:
             lr_schedule=lr_schedule,
             accounting=accounting,
             mechanism=mechanism,
-            step_process=acc.cached(mechanism(noise_multiplier)),
+            step_process=step_process,
             target_delta=target_delta,
             sample_rate=sample_rate,
             calibration_source=calibration_source,
@@ -1635,6 +1668,8 @@ class DPTrainer:
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
             mechanism_kind=mechanism_kind,
+            is_horizon_process=horizon_process is not None,
+            horizon_process=horizon_process,
             mf=mf,
         )
 
@@ -1783,8 +1818,9 @@ class DPTrainer:
                     self.args, self.state, self._control
                 )
 
-                # Privacy accounting (data-independent, before execution).
-                ctx.accounting |= ctx.step_process
+                # Independent mechanisms compose here; horizon contexts carry
+                # no step process because their complete run was attached once.
+                _account_independent_step(ctx)
 
                 # Training step: clip → noise → optimize.  DP-SGD has no
                 # substep concept; each iteration is a full optimizer step
@@ -4015,11 +4051,14 @@ class DPTrainer:
             a = self.args
             if (
                 ctx.stop_at_step is None
+                and not ctx.is_horizon_process
                 and a.privacy_noise_multiplier is not None
                 and a.privacy_noise_multiplier > 0
                 and a.privacy_target_epsilon is not None
                 and epsilon >= a.privacy_target_epsilon
             ):
+                # Horizon configurations cannot reach this fallback: combining
+                # fixed noise with a target is rejected during validation.
                 self.state.privacy_target_epsilon_reached = True
                 self._control.should_training_stop = True
                 log.info(
@@ -4254,16 +4293,9 @@ class DPTrainer:
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
 
-        DP-SGD branch (``privacy_noise_mechanism == "gaussian"``): Poisson
-        amplification covers plain and truncated Poisson; k-out-of-t
-        returns a horizon process adapted through generic ``per_step``.
-
-        DP-FTRL branch (``mf_*`` mechanism): wraps the supplied raw
-        amplifier factory (built in :meth:`_setup_training`) with
-        :func:`opaque.accounting.per_step` so each call returns a
-        per-step composable :class:`DpProcess` that materialises as the
-        true K-step PLD of the deployed N-step mechanism under
-        ``acc |= step`` accumulation.
+        DP-SGD Poisson mechanisms return independently composable steps.
+        DP-SGD k-out-of-t and all DP-FTRL mechanisms return complete
+        whole-horizon processes and must not be composed per step.
         """
         if a.privacy_noise_mechanism != "gaussian":
             if mf_amplifier_factory is None:
@@ -4273,16 +4305,7 @@ class DPTrainer:
                         "amplifier factory; _setup_training should populate it.",
                     )
                 )
-            _ftrl_factory = _dpftrl.build_step_mechanism_factory(mf_amplifier_factory)
-
-            def mechanism(nm, _f=_ftrl_factory):
-                # noise_multiplier == 0 → non-private run: compose the
-                # infinite-loss element so ``epsilon_at(delta) == inf`` falls
-                # out of the accountant with no special-casing downstream
-                # (see ``acc.nonprivate()`` docstring).
-                return acc.nonprivate() if nm == 0.0 else _f(nm)
-
-            return mechanism
+            return mf_amplifier_factory
 
         num_groups = clip_norm.num_groups if isinstance(clip_norm, PerGroup) else 1
 
@@ -4335,13 +4358,11 @@ class DPTrainer:
                 _t=n_steps,
                 _allocation=allocation,
             ):
-                return acc.per_step(
-                    dpsgd_acc.k_out_of_t(
-                        _u(nm),
-                        k=_k,
-                        t=_t,
-                        allocation=_allocation,
-                    )
+                return dpsgd_acc.k_out_of_t(
+                    _u(nm),
+                    k=_k,
+                    t=_t,
+                    allocation=_allocation,
                 )
 
         elif tb_cap is not None:
@@ -4374,14 +4395,33 @@ class DPTrainer:
         target_delta,
         *,
         prefix_accountant: Accountant | None = None,
+        resume_horizon_noise_multiplier: float | None = None,
         global_step_already_done: int = 0,
     ):
         """Calibrate or return fixed noise multiplier.
 
-        When ``prefix_accountant`` is given, calibrates over the *remaining*
-        steps with the saved process composed on the left, so the run's final ε
-        equals ``privacy_target_epsilon``.
+        With a saved accountant, independent mechanisms calibrate over the
+        remaining steps with the saved process composed on the left.
+        Whole-horizon mechanisms calibrate the complete declared process.
         """
+        if resume_horizon_noise_multiplier is not None:
+            if a.privacy_noise_multiplier is not None and _drift_differs(
+                float(a.privacy_noise_multiplier),
+                resume_horizon_noise_multiplier,
+            ):
+                raise CheckpointError(
+                    *(
+                        "Whole-horizon resume forbids privacy_noise_multiplier "
+                        f"drift: saved={resume_horizon_noise_multiplier!r}, "
+                        f"current={a.privacy_noise_multiplier!r}. Restart from "
+                        "scratch to use a different fixed multiplier.",
+                    )
+                )
+            log.info(
+                "Restoring whole-horizon noise multiplier: %.4f",
+                resume_horizon_noise_multiplier,
+            )
+            return resume_horizon_noise_multiplier
         if a.privacy_noise_multiplier is not None:
             log.info("Using fixed noise multiplier: %.4f", a.privacy_noise_multiplier)
             return a.privacy_noise_multiplier
@@ -4394,7 +4434,12 @@ class DPTrainer:
             )
 
             def objective(nm, _mechanism=mechanism, _steps=total_steps):
-                return _mechanism(nm) * _steps
+                process = _mechanism(nm)
+                return (
+                    process
+                    if isinstance(process, DpHorizonProcess)
+                    else process * _steps
+                )
         else:
             remaining_steps = max(1, total_steps - global_step_already_done)
             log.info(
@@ -4408,7 +4453,12 @@ class DPTrainer:
             prefix_process = prefix_accountant.process
 
             def objective(nm, _prefix=prefix_process, _rem=remaining_steps):
-                return _prefix | (mechanism(nm) * _rem)
+                process = mechanism(nm)
+                return (
+                    process
+                    if isinstance(process, DpHorizonProcess)
+                    else _prefix | (process * _rem)
+                )
 
         ecal = a.noise_calibration_kwargs
         param_min = float(ecal["min"])
@@ -5031,6 +5081,12 @@ class DPTrainer:
             expected_batch_size=int(a.train_batch_size),
             total_steps=ctx.total_steps,
             mechanism_kind=ctx.mechanism_kind,
+            is_horizon_process=ctx.is_horizon_process,
+            horizon_process_state=(
+                opaque_state_dict(ctx.horizon_process)
+                if ctx.horizon_process is not None
+                else None
+            ),
             mf_n_steps=mf_n_steps,
             mf_min_sep=mf_min_sep,
             mf_max_participations=mf_max_participations,
@@ -5373,6 +5429,9 @@ class DPTrainer:
         ctx = self._ctx
         current_by_name = self._current_values_for_drift(a, ctx)
         saved_mechanism = runtime.mechanism_kind
+        horizon_resume = runtime.is_horizon_process or (
+            ctx is not None and ctx.is_horizon_process
+        )
 
         for f in dataclasses.fields(runtime):
             if not f.metadata.get("compare_on_resume"):
@@ -5385,17 +5444,24 @@ class DPTrainer:
                 continue
 
             disposition = _resolve_drift_disposition(f.metadata, saved_mechanism)
+            if (
+                f.name == "total_steps"
+                and disposition == "intentional_extend"
+                and horizon_resume
+            ):
+                # Gaussian k-out-of-t shares the "gaussian" mechanism label but
+                # is still defined for one fixed horizon, unlike Poisson DP-SGD.
+                disposition = "dp_relevant"
             if disposition == "intentional_extend":
                 continue
             if disposition == "dp_relevant":
-                if saved_mechanism != "gaussian":
+                if saved_mechanism != "gaussian" or horizon_resume:
                     raise CheckpointError(
                         *(
-                            f"DP-FTRL resume forbids drift on {f.name!r}: "
+                            f"Whole-horizon resume forbids drift on {f.name!r}: "
                             f"saved={saved!r}, current={current!r}. The "
-                            "matrix-factorization strategy is computed for the "
-                            "original composition shape; restart from scratch "
-                            "with the new arg.",
+                            "accounting process is defined for the original "
+                            "declared horizon; restart from scratch with the new arg.",
                         )
                     )
                 log.warning(
@@ -5478,6 +5544,12 @@ class DPTrainer:
             ),
             "mechanism_kind": (
                 ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+            ),
+            "is_horizon_process": (ctx.is_horizon_process if ctx is not None else None),
+            "horizon_process_state": (
+                opaque_state_dict(ctx.horizon_process)
+                if ctx is not None and ctx.horizon_process is not None
+                else None
             ),
             # MF strategy params: live values are derived inside MFContext
             # construction and surfaced via ctx.mf; before ctx exists we

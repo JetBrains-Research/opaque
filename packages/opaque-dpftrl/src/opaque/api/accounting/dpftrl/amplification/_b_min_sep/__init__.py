@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
-from opaque.api.accounting.core._pld_cache import horizon_pld_cache
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -76,14 +76,6 @@ class BMinSep(DpHorizonProcess):
             )
 
     @property
-    def atomic_unit(self) -> int:
-        # b-min-sep enforces one user contribution per ``bands``-row window;
-        # the warm-start MC handles arbitrary ``n_steps`` natively, but the
-        # accounting-meaningful quantum is one band (one full participation
-        # period).  ``per_step(self) * K`` rounds K up to a band boundary.
-        return self.inner.strategy.bands
-
-    @property
     def min_sep(self) -> int:
         # b-min-sep contract: each example participates at most once per
         # ``bands``-row window ⇒ min separation = ``bands``.
@@ -107,7 +99,7 @@ class BMinSep(DpHorizonProcess):
         # callers (runtime sampler builders) never re-derive it.
         return participation_p_from_per_example_rate(self.p0, self.inner.strategy.bands)
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+    def _pld_cache_key(self) -> tuple[object, ...]:
         return (
             "BMinSep",
             self.inner.noise_multiplier,
@@ -116,10 +108,9 @@ class BMinSep(DpHorizonProcess):
             strategy_cache_key(self.inner.strategy, self.n_steps),
         )
 
-    @horizon_pld_cache(maxsize=8)
-    def pld_at(
+    @pld_cache(maxsize=8)
+    def pld(
         self,
-        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -129,16 +120,7 @@ class BMinSep(DpHorizonProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        """K-step warm-start b-min-sep MC PLD using N-tuned coefficients.
-
-        ``n_steps`` is rounded up to the next ``bands`` boundary (capped at
-        ``self.n_steps``) — within an atomic band the PLD plateaus.  The
-        BandMF strategy coefficients and per-example sensitivity are
-        evaluated at ``self.n_steps`` (the N-tuned deployed mechanism);
-        Every nonzero prefix uses the full-horizon confidence-bounded PLD. This
-        preserves monotonicity and boundedness while deliberately giving up
-        prefix tightness.
-        """
+        """Return the full-horizon confidence-bounded Monte Carlo PLD."""
         s = self.inner.strategy
         if not isinstance(s, BandMfStrategy):
             raise InputTypeError(
@@ -154,23 +136,6 @@ class BMinSep(DpHorizonProcess):
                     "BandMfStrategy inner must have non-empty coefficients (bands >= 1).",
                 )
             )
-        if n_steps <= 0 or n_steps > self.n_steps:
-            raise ConfigurationError(
-                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
-            )
-        rounded = min(-(-n_steps // bands) * bands, self.n_steps)
-        if rounded < self.n_steps:
-            return self.pld_at(
-                self.n_steps,
-                discretization=discretization,
-                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                max_grid_size=max_grid_size,
-                max_conv_grid=max_conv_grid,
-                seed=seed,
-                mc_resolution=mc_resolution,
-                mc_failure_probability=mc_failure_probability,
-            )
-
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -180,6 +145,8 @@ class BMinSep(DpHorizonProcess):
             mc_resolution=mc_resolution,
             mc_failure_probability=mc_failure_probability,
         )
+        if self.inner.noise_multiplier == 0:
+            return _native.non_private_pld(config.to_native())
         config.warn_if_large_mc()
         native_cfg = config.to_native()
 
@@ -203,8 +170,7 @@ class BMinSep(DpHorizonProcess):
         # ``_clear_all_native_caches()`` (e.g. from ``calibrate()``'s
         # finally clause on another thread) cannot drop the corpus
         # mid-use; on cache-miss it returns ``None`` and we fall through
-        # to a fresh K-row warm MC (which loses the prefix-projection
-        # property but is still a valid PLD at K).
+        # to a fresh full-horizon warm MC calculation.
         result = _with_transcript_handle(
             tuple(coefs),
             self.n_steps,
@@ -214,7 +180,6 @@ class BMinSep(DpHorizonProcess):
             lambda hid: _native.bandmf_b_min_sep_pld_from_transcript_handle(
                 hid,
                 coefs,
-                rounded,
                 p,
                 effective_nm,
                 native_cfg,
@@ -224,33 +189,10 @@ class BMinSep(DpHorizonProcess):
             return result
         return _native.bandmf_b_min_sep_warm_mc_pld(
             coefs,
-            rounded,
+            self.n_steps,
             p,
             effective_nm,
             native_cfg,
-        )
-
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        max_grid_size: int | None = None,
-        max_conv_grid: int | None = None,
-        seed: int | None = None,
-        mc_resolution: float | None = None,
-        mc_failure_probability: float | None = None,
-    ) -> Pld:
-        """Return the full-horizon confidence-bounded Monte Carlo PLD."""
-        return self.pld_at(
-            self.n_steps,
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            max_grid_size=max_grid_size,
-            max_conv_grid=max_conv_grid,
-            seed=seed,
-            mc_resolution=mc_resolution,
-            mc_failure_probability=mc_failure_probability,
         )
 
 

@@ -197,67 +197,10 @@ def pld_cache(*, maxsize: int | None):
     return decorator
 
 
-def horizon_pld_cache(*, maxsize: int | None):
-    """Cache a horizon ``pld_at`` method by configuration and prefix mechanism."""
-
-    def decorator(method):
-        cache = _WeakIdentityPldCache(maxsize)
-
-        @functools.wraps(method)
-        def wrapper(
-            self,
-            n_steps: int,
-            *,
-            discretization: float | None = None,
-            log_x_mass_truncation_bound: float | None = None,
-            max_grid_size: int | None = None,
-            max_conv_grid: int | None = None,
-            seed: int | None = None,
-            mc_resolution: float | None = None,
-            mc_failure_probability: float | None = None,
-        ) -> Pld:
-            if n_steps <= 0 or n_steps > self.n_steps:
-                return method(
-                    self,
-                    n_steps,
-                    discretization=discretization,
-                    log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                    max_grid_size=max_grid_size,
-                    max_conv_grid=max_conv_grid,
-                    seed=seed,
-                    mc_resolution=mc_resolution,
-                    mc_failure_probability=mc_failure_probability,
-                )
-            config = _resolve_config(
-                discretization=discretization,
-                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                max_grid_size=max_grid_size,
-                max_conv_grid=max_conv_grid,
-                seed=seed,
-                mc_resolution=mc_resolution,
-                mc_failure_probability=mc_failure_probability,
-            )
-            return cache.get_or_compute(
-                self,
-                (config, self._pld_cache_key(n_steps=n_steps), n_steps),
-                lambda: _compute_pld(method, self, config, n_steps=n_steps),
-            )
-
-        wrapper.cache_clear = cache.cache_clear
-        wrapper.cache_info = cache.cache_info
-        return wrapper
-
-    return decorator
-
-
 def _compute_pld(
     method: Callable[..., Pld],
     process: object,
     config: DiscretizationConfig,
-    *,
-    n_steps: int | None = None,
 ) -> Pld:
     with _use_discretization(config):
-        if n_steps is None:
-            return method(process)
-        return method(process, n_steps)
+        return method(process)

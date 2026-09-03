@@ -477,8 +477,8 @@ class TrainingArguments:
 
     # ---- Privacy budget (user targets) ----------------------------------
     # Set ``privacy_noise_multiplier`` (use 0.0 for non-private) or
-    # ``privacy_target_epsilon`` (to calibrate noise).  When both are set,
-    # training halts at the first log boundary where ε ≥ target_epsilon.
+    # ``privacy_target_epsilon`` (to calibrate noise).  For independently
+    # composed mechanisms, setting both enables privacy-budget early stopping.
     privacy_target_epsilon: float | None = None
     privacy_target_delta: float | None = None
 
@@ -1123,6 +1123,23 @@ class TrainingArguments:
                 *(
                     f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
                     f"of {sorted(_SAMPLING_MODES)}.",
+                )
+            )
+        if (
+            self.privacy_noise_multiplier is not None
+            and self.privacy_target_epsilon is not None
+            and (
+                self.privacy_noise_mechanism != "gaussian"
+                or self.sampling_mode == "k_out_of_t"
+            )
+        ):
+            raise ConfigurationError(
+                *(
+                    "privacy_target_epsilon cannot be combined with a fixed "
+                    "privacy_noise_multiplier for whole-horizon mechanisms; "
+                    "incomplete-horizon privacy accounting and early stopping are "
+                    "unsupported. Set only privacy_target_epsilon to calibrate the "
+                    "complete horizon, or set only privacy_noise_multiplier.",
                 )
             )
         elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:

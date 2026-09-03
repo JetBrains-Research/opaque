@@ -169,13 +169,12 @@ process = dpsgd_acc.k_out_of_t(
 eps = process.epsilon_at(1e-5)
 ```
 
-The returned whole-horizon process provides exact prefix accounting; use
-`acc.per_step(process)` in a step-wise loop.
+The returned process accounts the complete declared horizon and must be
+included exactly once.
 
 With `allocation="total"`, each example chooses a uniform `k`-subset of the
 whole horizon. The factory currently reports the block reduction as a valid
-conservative upper bound. For `k > 1`, prefix accounting before the final step
-returns the full-horizon bound.
+conservative upper bound.
 
 ### `dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)`
 
@@ -483,15 +482,11 @@ eps = acct.epsilon_at(delta=1e-5)
 mutating the original. The `budget_exceeded` property checks whether the
 accumulated process exceeds the budget.
 
-### DP-FTRL: step-by-step accounting via `per_step`
+### DP-FTRL: whole-process accounting
 
-DP-FTRL accountants are *whole-process* (`dpftrl_acc.poisson` / `b_min_sep` /
-`balls_in_bins` already cover all `n_steps` rounds), so feeding the bare
-process to `acct |= step` would over-count. Wrap the process with
-`acc.per_step(...)` to get a step-shaped adapter whose
-`per_step(proc) * K` materialises the strategy-aware K-prefix PLD (rather
-than the K-fold composition of a single-step PLD, which would double-count
-the workload coefficients):
+DP-FTRL accountants are whole-process mechanisms: `dpftrl_acc.poisson`,
+`b_min_sep`, and `balls_in_bins` already cover all declared `n_steps`. Include
+the process once rather than once per training step:
 
 ```python
 import opaque.accounting as acc
@@ -500,28 +495,18 @@ from opaque.accounting import Accountant
 from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(bands=64)
-proc = dpftrl_acc.poisson(
+process = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
     sample_rate=0.01,
     n_steps=15_624,
 )
-step = acc.per_step(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
-
-for batch in dataloader:
-    # ... train ...
-    acct |= step
-    if acct.budget_exceeded:
-        break
-
+acct |= process
 eps = acct.epsilon_at(delta=1e-5)
 ```
 
-For analytic DP-FTRL accountants, the K-step ε is bounded above by
-`proc.epsilon_at(delta)` and is monotone non-decreasing in K. For b-min-sep and
-correlated-strategy Balls-in-Bins, every nonzero K conservatively uses the
-full-horizon confidence-bounded PLD. Balls-in-Bins with `identity_strategy()`
-retains its exact prefix path. `K > proc.n_steps` raises `ValueError`.
+The resulting epsilon is the declared full-horizon guarantee. These mechanisms
+do not support prefix privacy queries or privacy-based early stopping.
 
 ### Serialization
 

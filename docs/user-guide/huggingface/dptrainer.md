@@ -52,8 +52,8 @@ construction. No extra setup calls are needed before `train()`.
 At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
 must be set — neither has a silent default; see the
 [Privacy targets](./training-arguments.md#privacy-targets) section of
-the `TrainingArguments` reference for the two valid shapes and the
-stop-at-ε contract that fires when both are set.
+the `TrainingArguments` reference for calibration, fixed-noise accounting,
+and the independent-DP-SGD stop-at-ε contract.
 
 ## Training, evaluation, prediction
 
@@ -70,6 +70,11 @@ loss / step / runtime fields. Evaluation and prediction route through
 the same loop; `predict()` returns the full `EvaluationResult`
 (predictions + labels + metrics) while `evaluate()` returns only the
 metrics dict.
+
+For horizon mechanisms, `privacy_epsilon` is always the conservative epsilon
+for the complete declared `n_steps`, even before the final step. Prefix privacy
+queries and privacy-based early stopping are unsupported, so combining a fixed
+`privacy_noise_multiplier` with `privacy_target_epsilon` is rejected.
 
 `resume_from_checkpoint` accepts a path string, `True` to auto-find
 the latest `checkpoint-*/` under `output_dir`, or `None` for a fresh
@@ -99,8 +104,9 @@ The standard surface from `Trainer` is preserved:
 
 Checkpointing during training is driven by `save_strategy` /
 `save_steps` on `TrainingArguments`; resume from a checkpoint
-preserves the privacy accountant (the saved provenance is the prefix,
-calibration covers the remaining steps).
+preserves the privacy accountant. Independent DP-SGD restores the executed
+composition and calibrates against the remaining steps; horizon mechanisms
+retain their single declared full-horizon process.
 
 ## Callbacks
 

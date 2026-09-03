@@ -357,7 +357,8 @@ def _build_privacy_summary(trainer: DPTrainer) -> dict[str, float | str]:
         if epsilon != "unknown":
             break
 
-    # Fall back to live training context values (mid-training push).
+    # Fall back to live training context values. For a whole-horizon process
+    # this is the declared full-run epsilon, not an incomplete-prefix value.
     if epsilon == "unknown" and trainer._ctx is not None:
         ctx = trainer._ctx
         epsilon = round(ctx.accounting.epsilon_at(ctx.target_delta), 4)

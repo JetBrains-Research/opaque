@@ -166,6 +166,8 @@ class TestDpRuntimeBundle:
             expected_steps_per_epoch=10,
             expected_batch_size=32,
             total_steps=30,
+            is_horizon_process=True,
+            horizon_process_state={"type": "ExampleHorizon", "n_steps": 30},
         )
         loaded = ckpt.load_dp_runtime_state(path)
 
@@ -179,6 +181,11 @@ class TestDpRuntimeBundle:
         assert loaded.noise_multiplier == pytest.approx(1.1)
         assert loaded.expected_steps_per_epoch == 10
         assert loaded.total_steps == 30
+        assert loaded.is_horizon_process is True
+        assert loaded.horizon_process_state == {
+            "type": "ExampleHorizon",
+            "n_steps": 30,
+        }
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
@@ -338,6 +345,8 @@ class TestRuntimeCheckpointDriftMetadata:
             ("expected_steps_per_epoch", "dp_relevant"),
             ("expected_batch_size", "dp_relevant"),
             ("mechanism_kind", "dp_relevant"),
+            ("is_horizon_process", "dp_relevant"),
+            ("horizon_process_state", "dp_relevant"),
             ("mf_n_steps", "dp_relevant"),
             ("mf_min_sep", "dp_relevant"),
             ("mf_max_participations", "dp_relevant"),

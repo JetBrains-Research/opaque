@@ -69,22 +69,10 @@ pub fn drop_b_min_sep_transcript_handle(id: u64) {
     registry().lock().unwrap().remove(&id);
 }
 
-/// Build PLD from a registered corpus at `sigma` (noise multiplier).
-///
-/// Supports a *K-prefix* query: `n_steps` may be `<= arc.n_steps`. When
-/// strictly less, the per-sample transcripts are sliced to the first
-/// `n_steps` columns before the PLD pass. Within a single sample the
-/// RNG state at column `i` is fully determined by columns `0..i`, so
-/// this slice is byte-identical to a freshly-prepared `n_steps`-row
-/// transcript using the same per-sample initial RNG state. The
-/// K-step transcripts are prefix projections of the cached N-step corpus.
-/// Each resulting PLD is confidence-bounded, although independently converted
-/// prefix bounds need not be numerically monotone. The public horizon API uses
-/// the full-horizon bound for every nonzero Monte Carlo prefix.
+/// Build the full-horizon PLD from a registered corpus at `sigma`.
 pub fn pld_from_transcript_handle(
     id: u64,
     strategy_coef: &[f64],
-    n_steps: usize,
     p: f64,
     sigma: f64,
     config: &DiscretizationConfig,
@@ -106,44 +94,12 @@ pub fn pld_from_transcript_handle(
             "transcript handle does not match strategy_coef / p".into(),
         ));
     }
-    if n_steps == 0 || n_steps > arc.n_steps {
-        return Err(PldError::InvalidParameter(format!(
-            "queried n_steps ({n_steps}) must be in [1, {}]",
-            arc.n_steps
-        )));
-    }
-
-    if n_steps == arc.n_steps {
-        return bandmf_b_min_sep_pld_from_transcripts(
-            &arc.remove_x,
-            &arc.remove_zeta,
-            &arc.add_eta,
-            strategy_coef,
-            n_steps,
-            p,
-            sigma,
-            config,
-        );
-    }
-
-    // K < N: slice each per-sample row down to the first `n_steps`
-    // columns. This is the K-prefix projection of the N-step transcript.
-    let num_samples = arc.add_eta.len() / arc.n_steps;
-    let mut sliced_x = Vec::with_capacity(num_samples * n_steps);
-    let mut sliced_zeta = Vec::with_capacity(num_samples * n_steps);
-    let mut sliced_eta = Vec::with_capacity(num_samples * n_steps);
-    for s in 0..num_samples {
-        let row_start = s * arc.n_steps;
-        sliced_x.extend_from_slice(&arc.remove_x[row_start..row_start + n_steps]);
-        sliced_zeta.extend_from_slice(&arc.remove_zeta[row_start..row_start + n_steps]);
-        sliced_eta.extend_from_slice(&arc.add_eta[row_start..row_start + n_steps]);
-    }
     bandmf_b_min_sep_pld_from_transcripts(
-        &sliced_x,
-        &sliced_zeta,
-        &sliced_eta,
+        &arc.remove_x,
+        &arc.remove_zeta,
+        &arc.add_eta,
         strategy_coef,
-        n_steps,
+        arc.n_steps,
         p,
         sigma,
         config,
@@ -168,7 +124,7 @@ mod tests {
         cfg.mc_failure_probability = 1e-2;
         let s = cfg.resolved_num_mc_samples(2).unwrap();
         let h = register_b_min_sep_transcripts(&coef, n, p, s, 55).unwrap();
-        let p1 = pld_from_transcript_handle(h, &coef, n, p, sigma, &cfg).unwrap();
+        let p1 = pld_from_transcript_handle(h, &coef, p, sigma, &cfg).unwrap();
         let p2 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
         let d = 1e-2;
         assert!((p1.epsilon_at(d) - p2.epsilon_at(d)).abs() < 0.06);

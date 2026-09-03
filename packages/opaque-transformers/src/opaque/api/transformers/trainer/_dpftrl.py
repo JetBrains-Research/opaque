@@ -7,12 +7,9 @@ owns the lifecycle.  The trainer calls these in :meth:`_setup_training`
 :attr:`TrainingArguments.privacy_noise_mechanism` starts with ``"mf_"``.
 
 The MF amplifier returned by :func:`build_amplifier_factory` is the
-*raw* whole-process accountant (a :class:`DpHorizonProcess`); the trainer
-queries ``(n_steps, min_sep, max_participations)`` off it to build the
-matching :func:`opaque.dpftrl.noise.mf_gaussian_noise` and then wraps
-it with :func:`opaque.accounting.per_step` for the
-``acc |= step`` composition idiom.  See
-:func:`build_step_mechanism_factory`.
+whole-process accountant (a :class:`DpHorizonProcess`); the trainer queries
+``(n_steps, min_sep, max_participations)`` off it to build the matching
+:func:`opaque.dpftrl.noise.mf_gaussian_noise` and accounts that process once.
 """
 
 from __future__ import annotations
@@ -20,7 +17,6 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
-from opaque.accounting import per_step
 from opaque.dpftrl import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -183,24 +179,6 @@ def build_amplifier_factory(
     return amp
 
 
-def build_step_mechanism_factory(
-    raw_amplifier_factory: Callable[[float], Any],
-) -> Callable[[float], Any]:
-    """Wrap ``nm → DpHorizonProcess`` with ``per_step`` for ``acc |= step``.
-
-    The wrapped per-step view materialises as the true K-step PLD of the
-    deployed N-step mechanism on its ``K``-prefix, so
-    ``Repeated(per_step(proc), K).pld()`` equals
-    ``proc.pld_at(K)``.  Lets the DP-FTRL training loop use the
-    same accountant composition idiom as DP-SGD.
-    """
-
-    def step(nm: float, _f: Callable[[float], Any] = raw_amplifier_factory) -> Any:
-        return per_step(_f(nm))
-
-    return step
-
-
 def build_sampler(
     *,
     sampling_mode: str,
@@ -305,6 +283,5 @@ __all__ = [
     "MFContext",
     "build_amplifier_factory",
     "build_sampler",
-    "build_step_mechanism_factory",
     "build_strategy",
 ]

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
-from opaque.api.accounting.core._pld_cache import horizon_pld_cache
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._band_mf import BandMfStrategy
@@ -67,25 +67,6 @@ class CyclicPoisson(DpHorizonProcess):
     n_steps: int
     truncated_batch_size: int | None = None
     dataset_size: int | None = None
-
-    @property
-    def atomic_unit(self) -> int:
-        # BandMF factors over per-group PLDs of width ``bands``; Identity is
-        # per-step (band ≡ 1).  See :meth:`pld` for the matching ``num_groups``
-        # formula.
-        match self.inner.strategy:
-            case BandMfStrategy():
-                return self.inner.strategy.bands
-            case IdentityStrategy():
-                return 1
-            case _:
-                raise InputTypeError(
-                    *(
-                        "CyclicPoisson.atomic_unit: inner.strategy must be "
-                        "BandMfStrategy or IdentityStrategy, got "
-                        f"{type(self.inner.strategy).__name__}.",
-                    )
-                )
 
     @property
     def min_sep(self) -> int:
@@ -162,7 +143,7 @@ class CyclicPoisson(DpHorizonProcess):
                     )
                 )
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+    def _pld_cache_key(self) -> tuple[object, ...]:
         return (
             "CyclicPoisson",
             self.inner.noise_multiplier,
@@ -173,10 +154,9 @@ class CyclicPoisson(DpHorizonProcess):
             strategy_cache_key(self.inner.strategy, self.n_steps),
         )
 
-    @horizon_pld_cache(maxsize=8)
-    def pld_at(
+    @pld_cache(maxsize=8)
+    def pld(
         self,
-        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -186,21 +166,7 @@ class CyclicPoisson(DpHorizonProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        """K-step Poisson-amplified PLD using N-tuned strategy quantities.
-
-        ``n_steps`` is rounded up to the next ``atomic_unit`` boundary
-        (1 for Identity, ``bands`` for BandMF; capped at ``self.n_steps``).
-        The BandMF sensitivity is read at ``self.n_steps`` (the N-tuned
-        deployed mechanism); ``n_steps`` only changes the per-group
-        ``self_compose`` count.  The per-group PLD factors exactly at
-        band boundaries, so the rounded result is an upper bound on the
-        K-step ε that is monotone in K (the post-processing inequality
-        on the K-prefix of the N-step output).
-        """
-        if n_steps <= 0 or n_steps > self.n_steps:
-            raise ConfigurationError(
-                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
-            )
+        """Return the PLD for the complete declared horizon."""
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -220,11 +186,10 @@ class CyclicPoisson(DpHorizonProcess):
             )
             effective_nm = self.inner.noise_multiplier / sensitivity
             bands = s.bands
-            rounded = min(-(-n_steps // bands) * bands, self.n_steps)
-            num_groups = math.ceil(rounded / bands) if bands > 0 else 0
+            num_groups = math.ceil(self.n_steps / bands) if bands > 0 else 0
         elif isinstance(s, IdentityStrategy):
             effective_nm = float(self.inner.noise_multiplier)
-            num_groups = int(n_steps)
+            num_groups = self.n_steps
         else:
             raise InputTypeError(
                 *(
@@ -255,28 +220,6 @@ class CyclicPoisson(DpHorizonProcess):
                 self.sample_rate,
             )
         return per_group_pld.self_compose(num_groups)
-
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        max_grid_size: int | None = None,
-        max_conv_grid: int | None = None,
-        seed: int | None = None,
-        mc_resolution: float | None = None,
-        mc_failure_probability: float | None = None,
-    ) -> Pld:
-        return self.pld_at(
-            self.n_steps,
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            max_grid_size=max_grid_size,
-            max_conv_grid=max_conv_grid,
-            seed=seed,
-            mc_resolution=mc_resolution,
-            mc_failure_probability=mc_failure_probability,
-        )
 
 
 def poisson(

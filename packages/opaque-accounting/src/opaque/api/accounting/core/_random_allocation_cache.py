@@ -2,14 +2,11 @@
 
 Contributor-internal: not re-exported from the ``opaque.accounting`` façade.
 
-The random-allocation transform is O(G²) in the convolution grid and is
-rebuilt on every distinct step count by its horizon callers (k-out-of-t
-prefixes, identity balls-in-bins). The transform is deterministic, so the
-epoch and prefix primitives are memoised here on
-``(noise_multiplier, t / total_steps, k / released_steps, resolved
-DiscretizationConfig)`` — every input that affects the output. The caches are
-bounded LRUs over immutable Python :class:`Pld` objects (no native handles),
-so they are self-limiting and need no byte budget or destructor.
+The random-allocation transform is O(G²) in the convolution grid. The
+transform is deterministic, so complete-horizon calls are memoised on every
+input that affects the output. The cache is a bounded LRU over immutable
+Python :class:`Pld` objects (no native handles), so it is self-limiting and
+needs no byte budget or destructor.
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ if TYPE_CHECKING:
 
 #: Cached entries are one PLD with at most ``max_conv_grid`` bins per PMF
 #: (~0.5 MB per entry at the default config), so eight entries per cache are
-#: a few MB — comparable to one :func:`horizon_pld_cache` slice.
+#: a few MB — comparable to one process PLD cache slice.
 _MAXSIZE = 8
 
 
@@ -49,23 +46,6 @@ def epoch_pld(
     )
 
 
-@functools.lru_cache(maxsize=_MAXSIZE)
-def prefix_pld(
-    noise_multiplier: float,
-    total_steps: int,
-    released_steps: int,
-    config: DiscretizationConfig,
-) -> Pld:
-    """Cached ``_native.random_allocation_gaussian_prefix_pld``."""
-    return _native.random_allocation_gaussian_prefix_pld(
-        noise_multiplier,
-        total_steps,
-        released_steps,
-        config.to_native(),
-    )
-
-
 def clear_random_allocation_caches() -> None:
     """Drop all memoised random-allocation PLDs."""
     epoch_pld.cache_clear()
-    prefix_pld.cache_clear()

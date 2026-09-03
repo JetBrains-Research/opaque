@@ -1,47 +1,17 @@
-"""Whole-horizon DP process with prefix privacy accounting."""
+"""Whole-horizon DP process marker."""
 
 from __future__ import annotations
 
-from abc import abstractmethod
-
-from opaque.api.accounting.core._base import DpProcess, Pld
+from opaque.api.accounting.core._base import DpProcess
 
 __all__ = ["DpHorizonProcess"]
 
 
 class DpHorizonProcess(DpProcess):
-    """A DP process defined over a declared sequence of ``n_steps`` releases.
+    """A complete fixed-horizon process that cannot be accounted by prefixes.
 
-    Subclasses are frozen dataclasses with an ``n_steps`` field and implement
-    :meth:`pld_at`. The returned PLD may be exact or a conservative prefix
-    bound at the mechanism's natural granularity.
+    Subclasses implement the ordinary :meth:`DpProcess.pld` contract for their
+    full declared ``n_steps`` and are lifecycle markers for trainer integrations.
     """
 
     n_steps: int
-
-    @abstractmethod
-    def pld_at(self, n_steps: int, **kwargs) -> Pld:
-        """Return a privacy-loss bound for the first ``n_steps`` releases."""
-
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        max_grid_size: int | None = None,
-        max_conv_grid: int | None = None,
-        seed: int | None = None,
-        mc_resolution: float | None = None,
-        mc_failure_probability: float | None = None,
-    ) -> Pld:
-        """Return the full-horizon PLD."""
-        return self.pld_at(
-            self.n_steps,
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            max_grid_size=max_grid_size,
-            max_conv_grid=max_conv_grid,
-            seed=seed,
-            mc_resolution=mc_resolution,
-            mc_failure_probability=mc_failure_probability,
-        )
