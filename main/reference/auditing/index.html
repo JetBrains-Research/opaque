@@ -4273,15 +4273,7 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-auditing/src/opaque/api/auditing/_coin_flip.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-325">325</a></span>
-<span class="normal"><a href="#__codelineno-0-326">326</a></span>
-<span class="normal"><a href="#__codelineno-0-327">327</a></span>
-<span class="normal"><a href="#__codelineno-0-328">328</a></span>
-<span class="normal"><a href="#__codelineno-0-329">329</a></span>
-<span class="normal"><a href="#__codelineno-0-330">330</a></span>
-<span class="normal"><a href="#__codelineno-0-331">331</a></span>
-<span class="normal"><a href="#__codelineno-0-332">332</a></span>
-<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-333">333</a></span>
 <span class="normal"><a href="#__codelineno-0-334">334</a></span>
 <span class="normal"><a href="#__codelineno-0-335">335</a></span>
 <span class="normal"><a href="#__codelineno-0-336">336</a></span>
@@ -4337,71 +4329,81 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 <span class="normal"><a href="#__codelineno-0-386">386</a></span>
 <span class="normal"><a href="#__codelineno-0-387">387</a></span>
 <span class="normal"><a href="#__codelineno-0-388">388</a></span>
-<span class="normal"><a href="#__codelineno-0-389">389</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-325" name="__codelineno-0-325"></a><span class="k">def</span><span class="w"> </span><span class="nf">coin_flip</span><span class="p">(</span>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
-<a id="__codelineno-0-327" name="__codelineno-0-327"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a>    <span class="n">num_canaries</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>    <span class="n">candidate_indices</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span><span class="p">:</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a><span class="w">    </span><span class="sd">"""Create a coin-flip partition for canary-based auditing.</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a><span class="sd">    Selects ``num_canaries`` examples uniformly without replacement and</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a><span class="sd">    flips a fair coin for each. Selection uses the whole dataset unless</span>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a><span class="sd">    ``candidate_indices`` supplies an eligible pool. Fix that pool before</span>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a><span class="sd">    target training, independently of the target run's coins and outputs.</span>
-<a id="__codelineno-0-338" name="__codelineno-0-338"></a>
-<a id="__codelineno-0-339" name="__codelineno-0-339"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-340" name="__codelineno-0-340"></a><span class="sd">        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).</span>
-<a id="__codelineno-0-341" name="__codelineno-0-341"></a><span class="sd">        num_canaries: Number of canary examples to designate.</span>
-<a id="__codelineno-0-342" name="__codelineno-0-342"></a><span class="sd">        key: RNG key for reproducible canary selection and coin flips.</span>
-<a id="__codelineno-0-343" name="__codelineno-0-343"></a><span class="sd">        candidate_indices: Optional 1-D collection of unique, in-range</span>
-<a id="__codelineno-0-344" name="__codelineno-0-344"></a><span class="sd">            integer indices eligible to become canaries. Passing exactly</span>
-<a id="__codelineno-0-345" name="__codelineno-0-345"></a><span class="sd">            ``num_canaries`` indices designates them all.</span>
+<span class="normal"><a href="#__codelineno-0-389">389</a></span>
+<span class="normal"><a href="#__codelineno-0-390">390</a></span>
+<span class="normal"><a href="#__codelineno-0-391">391</a></span>
+<span class="normal"><a href="#__codelineno-0-392">392</a></span>
+<span class="normal"><a href="#__codelineno-0-393">393</a></span>
+<span class="normal"><a href="#__codelineno-0-394">394</a></span>
+<span class="normal"><a href="#__codelineno-0-395">395</a></span>
+<span class="normal"><a href="#__codelineno-0-396">396</a></span>
+<span class="normal"><a href="#__codelineno-0-397">397</a></span>
+<span class="normal"><a href="#__codelineno-0-398">398</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-333" name="__codelineno-0-333"></a><span class="k">def</span><span class="w"> </span><span class="nf">coin_flip</span><span class="p">(</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>    <span class="n">dataset</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>    <span class="n">num_canaries</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>    <span class="n">key</span><span class="p">:</span> <span class="n">RngKey</span><span class="p">,</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>    <span class="n">candidate_indices</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CoinFlip</span><span class="p">:</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a><span class="w">    </span><span class="sd">"""Create a coin-flip partition for canary-based auditing.</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a><span class="sd">    Selects ``num_canaries`` examples uniformly without replacement and</span>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a><span class="sd">    flips a fair coin for each. Selection uses the whole dataset unless</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a><span class="sd">    ``candidate_indices`` supplies an eligible pool. Fix that pool before</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a><span class="sd">    target training, independently of the target run's coins and outputs.</span>
 <a id="__codelineno-0-346" name="__codelineno-0-346"></a>
-<a id="__codelineno-0-347" name="__codelineno-0-347"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-348" name="__codelineno-0-348"></a><span class="sd">        A :class:`CoinFlip` with the canary partition.</span>
-<a id="__codelineno-0-349" name="__codelineno-0-349"></a>
-<a id="__codelineno-0-350" name="__codelineno-0-350"></a><span class="sd">    Raises:</span>
-<a id="__codelineno-0-351" name="__codelineno-0-351"></a><span class="sd">        ValueError: If the candidate pool is invalid or too small.</span>
-<a id="__codelineno-0-352" name="__codelineno-0-352"></a>
-<a id="__codelineno-0-353" name="__codelineno-0-353"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a><span class="sd">        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a><span class="sd">        num_canaries: Number of canary examples to designate.</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a><span class="sd">        key: RNG key for reproducible canary selection and coin flips.</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a><span class="sd">        candidate_indices: Optional 1-D collection of unique, in-range</span>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a><span class="sd">            integer indices eligible to become canaries. Passing exactly</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a><span class="sd">            ``num_canaries`` indices designates them all.</span>
 <a id="__codelineno-0-354" name="__codelineno-0-354"></a>
-<a id="__codelineno-0-355" name="__codelineno-0-355"></a><span class="sd">        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))</span>
-<a id="__codelineno-0-356" name="__codelineno-0-356"></a><span class="sd">        train_data = dataset.select(cf.train_indices(len(dataset)))</span>
-<a id="__codelineno-0-357" name="__codelineno-0-357"></a><span class="sd">    """</span>
-<a id="__codelineno-0-358" name="__codelineno-0-358"></a>    <span class="n">dataset_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
-<a id="__codelineno-0-359" name="__codelineno-0-359"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-0-360" name="__codelineno-0-360"></a>        <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-361" name="__codelineno-0-361"></a>            <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"num_canaries must be non-negative, got </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
-<a id="__codelineno-0-362" name="__codelineno-0-362"></a>        <span class="p">)</span>
-<a id="__codelineno-0-363" name="__codelineno-0-363"></a>    <span class="k">if</span> <span class="n">candidate_indices</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-364" name="__codelineno-0-364"></a>        <span class="n">population</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">dataset_size</span>
-<a id="__codelineno-0-365" name="__codelineno-0-365"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">dataset_size</span>
-<a id="__codelineno-0-366" name="__codelineno-0-366"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"dataset size"</span>
-<a id="__codelineno-0-367" name="__codelineno-0-367"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-368" name="__codelineno-0-368"></a>        <span class="n">population</span> <span class="o">=</span> <span class="n">_candidate_pool</span><span class="p">(</span><span class="n">candidate_indices</span><span class="p">,</span> <span class="n">dataset_size</span><span class="p">)</span>
-<a id="__codelineno-0-369" name="__codelineno-0-369"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">population</span><span class="o">.</span><span class="n">size</span>
-<a id="__codelineno-0-370" name="__codelineno-0-370"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"candidate pool size"</span>
-<a id="__codelineno-0-371" name="__codelineno-0-371"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&gt;</span> <span class="n">pool_size</span><span class="p">:</span>
-<a id="__codelineno-0-372" name="__codelineno-0-372"></a>        <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
-<a id="__codelineno-0-373" name="__codelineno-0-373"></a>            <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds </span><span class="si">{</span><span class="n">pool_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">pool_size</span><span class="si">}</span><span class="s2">)"</span><span class="p">,)</span>
-<a id="__codelineno-0-374" name="__codelineno-0-374"></a>        <span class="p">)</span>
-<a id="__codelineno-0-375" name="__codelineno-0-375"></a>
-<a id="__codelineno-0-376" name="__codelineno-0-376"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_CANARY_SELECTION_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>    <span class="n">canary_indices</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">population</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>    <span class="n">coin_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_COIN_FLIP_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>    <span class="n">in_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="n">coin_rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">num_canaries</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">_INCLUSION_PROBABILITY</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>    <span class="p">)</span>
-<a id="__codelineno-0-382" name="__codelineno-0-382"></a>
-<a id="__codelineno-0-383" name="__codelineno-0-383"></a>    <span class="k">return</span> <span class="n">CoinFlip</span><span class="p">(</span>
-<a id="__codelineno-0-384" name="__codelineno-0-384"></a>        <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span>
-<a id="__codelineno-0-385" name="__codelineno-0-385"></a>        <span class="n">canary_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">,</span>
-<a id="__codelineno-0-386" name="__codelineno-0-386"></a>        <span class="n">_in_mask</span><span class="o">=</span><span class="n">in_mask</span><span class="p">,</span>
-<a id="__codelineno-0-387" name="__codelineno-0-387"></a>        <span class="n">in_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="n">in_mask</span><span class="p">],</span>
-<a id="__codelineno-0-388" name="__codelineno-0-388"></a>        <span class="n">out_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="o">~</span><span class="n">in_mask</span><span class="p">],</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a><span class="sd">        A :class:`CoinFlip` with the canary partition.</span>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a><span class="sd">        ValueError: If the candidate pool is invalid or too small.</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="sd">        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))</span>
+<a id="__codelineno-0-364" name="__codelineno-0-364"></a><span class="sd">        train_data = dataset.select(cf.train_indices(len(dataset)))</span>
+<a id="__codelineno-0-365" name="__codelineno-0-365"></a><span class="sd">    """</span>
+<a id="__codelineno-0-366" name="__codelineno-0-366"></a>    <span class="n">dataset_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+<a id="__codelineno-0-367" name="__codelineno-0-367"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-0-368" name="__codelineno-0-368"></a>        <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a>            <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"num_canaries must be non-negative, got </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">"</span><span class="p">,)</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a>        <span class="p">)</span>
+<a id="__codelineno-0-371" name="__codelineno-0-371"></a>    <span class="k">if</span> <span class="n">candidate_indices</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>        <span class="n">population</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">dataset_size</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">dataset_size</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"dataset size"</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>        <span class="n">population</span> <span class="o">=</span> <span class="n">_candidate_pool</span><span class="p">(</span><span class="n">candidate_indices</span><span class="p">,</span> <span class="n">dataset_size</span><span class="p">)</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="n">pool_size</span> <span class="o">=</span> <span class="n">population</span><span class="o">.</span><span class="n">size</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>        <span class="n">pool_name</span> <span class="o">=</span> <span class="s2">"candidate pool size"</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>    <span class="k">if</span> <span class="n">num_canaries</span> <span class="o">&gt;</span> <span class="n">pool_size</span><span class="p">:</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>            <span class="o">*</span><span class="p">(</span><span class="sa">f</span><span class="s2">"num_canaries (</span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2">) exceeds </span><span class="si">{</span><span class="n">pool_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">pool_size</span><span class="si">}</span><span class="s2">)"</span><span class="p">,)</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>        <span class="p">)</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_CANARY_SELECTION_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>    <span class="n">canary_indices</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">population</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>    <span class="n">coin_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">_COIN_FLIP_DOMAIN</span><span class="p">)</span><span class="o">.</span><span class="n">seed</span><span class="p">)</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>    <span class="n">in_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>        <span class="n">coin_rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">num_canaries</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">_INCLUSION_PROBABILITY</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span>
 <a id="__codelineno-0-389" name="__codelineno-0-389"></a>    <span class="p">)</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>    <span class="k">return</span> <span class="n">CoinFlip</span><span class="p">(</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a>        <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a>        <span class="n">canary_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">,</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>        <span class="n">_in_mask</span><span class="o">=</span><span class="n">in_mask</span><span class="p">,</span>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a>        <span class="n">in_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="n">in_mask</span><span class="p">],</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a>        <span class="n">out_indices</span><span class="o">=</span><span class="n">canary_indices</span><span class="p">[</span><span class="o">~</span><span class="n">in_mask</span><span class="p">],</span>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a>        <span class="n">dataset_size</span><span class="o">=</span><span class="n">dataset_size</span><span class="p">,</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
