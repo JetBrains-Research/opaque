@@ -129,7 +129,6 @@ import opaque.distributed
 import opaque.dpftrl
 import opaque.dpsgd
 import opaque.functional
-import opaque.precision
 import opaque.profiling
 import opaque.random
 import opaque.scheduling

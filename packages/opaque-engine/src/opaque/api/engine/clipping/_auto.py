@@ -261,9 +261,7 @@ def auto_clipped_grad(
             Mahalanobis allocation gives the paired release the same PLD
             as a single first-moment release.
         return_stats: If True, return :class:`ClippingStats` beside the
-            gradient. Its ``all_finite`` field is measured before AUTO-S
-            sanitizes non-finite gradients. Cannot be combined with
-            ``return_aux``.
+            gradient. Cannot be combined with ``return_aux``.
 
     Returns:
         ``(grad_fn, state)``.  ``grad_fn`` has the signature

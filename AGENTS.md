@@ -27,7 +27,7 @@ ships an `__init__.py`.
 | --- | --- | --- | --- |
 | `opaque` | — | umbrella pin for the default bundle | sub-wheels |
 | `opaque-base` | `opaque.api.base.serialization`; façade `opaque.serialization` | Pure-Python serialization registry + dispatcher (the seam for `state_dict` / `from_state_dict`); no torch / numpy / optree | stdlib only |
-| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling,precision}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling`, `opaque.precision` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, mixed-precision loss scaling, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
+| `opaque-engine` | `opaque.api.engine.{types,pytree,random,serialization,distributed,noise_allocation,clipping,functional,scheduling,profiling}`; façades `opaque.types`, `opaque.pytree`, `opaque.random`, `opaque.distributed`, `opaque.functional`, `opaque.scheduling`, `opaque.profiling` | Torch substrate: pytree wrappers (`ClippedPytree`, `NoisedPytree`, `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler, structural state-dict for tensors/ndarrays/dataclasses, per-group / paired noise stddev math | `opaque-base`, torch, numpy, optree |
 | `opaque-optimizers` | `opaque.api.optimizers`; façade `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) | `opaque-engine`, torchopt |
 | `opaque-accounting` | `opaque.api.accounting.core` (+ Rust ext); façade `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.api.accounting.core.opaque_accounting`, aliased as `_native`); torch-free | `opaque-base` |
 | `opaque-dpsgd` | `opaque.api.dpsgd.*`, `opaque.api.accounting.dpsgd.*`; façade `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, adaptive clipping, Poisson + truncated-Poisson samplers, DP-SGD-specific accounting factories | `opaque-engine`, `opaque-accounting` |
@@ -339,8 +339,8 @@ the canonical lint / test / Rust-test commands.
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
 - The namespace is PEP 420 — there is **no** `opaque.core` import path.
   Public primitives live at `opaque.{types,pytree,random,distributed,
-  functional,scheduling,profiling,precision,serialization,optimizers}` (provided
-  by `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
+  functional,scheduling,profiling,serialization,optimizers}` (provided by
+  `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
   imports clipping via `opaque.dpsgd.clipping` / `opaque.dpftrl.clipping`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
   is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).

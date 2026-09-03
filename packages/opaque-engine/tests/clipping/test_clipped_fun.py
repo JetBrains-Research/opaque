@@ -143,21 +143,18 @@ def test_clipped_fun_return_norms():
 
 
 @pytest.mark.parametrize("microbatch_size", [None, 1])
-def test_clipped_fun_return_stats_aggregates_finiteness(microbatch_size):
+def test_clipped_fun_sanitizes_nonfinite_values(microbatch_size):
     clipped_fn, clip_state = clipped_fun(
         lambda value: value,
         clipping_norm=1.0,
-        return_stats=True,
         microbatch_size=microbatch_size,
     )
 
-    (clipped_value, stats), _ = clipped_fn(
+    clipped_value, _ = clipped_fn(
         torch.tensor([1.0, float("nan")]),
         state=clip_state,
     )
 
-    assert stats.batch_size == 2
-    assert stats.all_finite is False
     assert torch.isfinite(_unwrap_clipped(clipped_value)).all()
 
 

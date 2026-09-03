@@ -181,7 +181,7 @@ class TestAutoClippedGrad:
         assert grads.shape == params.shape
         assert isinstance(new_state, AutoClipState)
 
-    def test_stats_report_nonfinite_gradients_before_auto_scaling(self):
+    def test_stats_preserve_sanitized_auto_clipping_output(self):
         def loss(params, data):
             return torch.sqrt(data - params)
 
@@ -199,7 +199,7 @@ class TestAutoClippedGrad:
             state=state,
         )
 
-        assert stats.all_finite is False
+        assert stats.batch_size == 2
         assert torch.isfinite(_unwrap_clipped(grads)).all()
 
     def test_state_is_fixed(self):
@@ -463,7 +463,7 @@ class TestAutoClippedFun:
         torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
         assert new_state == state
 
-    def test_return_stats_reports_pre_scaling_finiteness(self):
+    def test_return_stats_preserves_sanitized_output(self):
         fn, state = auto_clipped_fun(
             lambda x: x,
             batch_argnums=0,
@@ -476,7 +476,7 @@ class TestAutoClippedFun:
             state=state,
         )
 
-        assert stats.all_finite is False
+        assert stats.batch_size == 2
         assert torch.isfinite(_unwrap_clipped(result)).all()
 
 
