@@ -168,6 +168,8 @@ class TestGetTrainingChatTemplate:
             "{% for message in messages %}"
             "{% if message['role'] == 'assistant' %}"
             "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% else %}"
+            "{{ message['content'] }}"
             "{% endif %}"
             "{% endfor %}"
         )
