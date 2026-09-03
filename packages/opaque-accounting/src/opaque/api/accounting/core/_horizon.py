@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from opaque.api.accounting.core._base import DpProcess
+from abc import abstractmethod
+
+from opaque.api.accounting.core._base import DpProcess, Pld
 
 __all__ = ["DpHorizonProcess"]
 
@@ -15,3 +17,17 @@ class DpHorizonProcess(DpProcess):
     """
 
     n_steps: int
+
+    @abstractmethod
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        max_grid_size: int | None = None,
+        max_conv_grid: int | None = None,
+        seed: int | None = None,
+        mc_resolution: float | None = None,
+        mc_failure_probability: float | None = None,
+    ) -> Pld:
+        """Return the privacy-loss distribution for the complete horizon."""
