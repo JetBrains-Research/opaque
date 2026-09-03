@@ -339,8 +339,8 @@ the canonical lint / test / Rust-test commands.
   (~30 s cold, cached afterwards). Subsequent syncs are fast (~seconds).
 - The namespace is PEP 420 — there is **no** `opaque.core` import path.
   Public primitives live at `opaque.{types,pytree,random,distributed,
-  functional,scheduling,profiling,precision,serialization,optimizers}` (provided
-  by `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
+  functional,scheduling,profiling,serialization,optimizers}` (provided by
+  `opaque-base` + `opaque-engine` + `opaque-optimizers`); stack code
   imports clipping via `opaque.dpsgd.clipping` / `opaque.dpftrl.clipping`.
 - `gaussian_noise` returns `(noise_fn, state)` and the inner `noise_fn` signature
   is `noise_fn(clipped_pytree, state) -> (noised_pytree, new_state)` (positional args).

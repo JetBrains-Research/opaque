@@ -568,8 +568,8 @@ def clipped_fun(
             dataclass containing the original per-example values, per-example norms
             before clipping, and any auxiliary data returned by `fun`.
         return_stats: If True, return :class:`ClippingStats` with aggregate
-            clipping statistics and whether every pre-clipping output was finite.
-            Cannot be combined with ``return_aux``.
+            clipping counts, rates, and batch size. Cannot be combined with
+            ``return_aux``.
         second_moment: If True, also accumulate the element-wise sum of
             per-example squared clipped values, i.e. ``Σᵢ gᵢ²``.  The
             squaring happens inside the per-example loop so the
