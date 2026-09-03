@@ -306,18 +306,7 @@ def test_backward_grads_parity(family, device):
 )
 @pytest.mark.parametrize("family", sorted(_SLIDING_WINDOW_FAMILIES))
 def test_sliding_window_parity(family, use_attention_mask, device):
-    """Parity with a *binding* sliding-window attention constraint.
-
-    The window (4) is smaller than the probe sequence (16), so the look-back
-    limit removes real attention edges. A window wider than the sequence makes
-    the constraint vacuous: parity then holds whether or not the patched mask
-    applies the window at all.
-
-    ``no_padding_mask`` is the SDPA-without-padding-mask configuration: there is
-    no 2D mask to fold the window into, so the patched mask builder must
-    materialize it rather than fall back to SDPA's ``is_causal`` shortcut, which
-    expresses causality only.
-    """
+    """Parity with a binding sliding window (window 4, sequence 16)."""
     config_cls, model_cls = _resolve_family_imports(family)
     config_kwargs = _base_config_kwargs(family)
     config_kwargs.update(_extra_config_kwargs(family))
