@@ -29,6 +29,13 @@ dependencies = [
     "optree>=0.17.0",
 ]
 
+[dependency-groups]
+test = [
+  "opaque-torch>=0.0.0.dev0",
+  "opaque-mlx>=0.0.0.dev0; platform_system == 'Darwin' and platform_machine == 'arm64'",
+  "transformers>=5.0.0,<6",
+]
+
 [tool.setuptools]
 # Single-file façades at the namespace root — listed because
 # ``find_packages`` only discovers sub-packages (directories with
@@ -67,3 +74,8 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-base = { workspace = true }
+opaque-torch = { workspace = true }
+opaque-mlx = { workspace = true }

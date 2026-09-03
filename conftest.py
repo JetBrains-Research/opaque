@@ -5,8 +5,23 @@ package in the workspace inherits these fixtures automatically.
 """
 
 import os
+import sys
+from pathlib import Path
 
 import pytest
+
+_REPO_ROOT = str(Path(__file__).resolve().parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+_ENGINE_TEST_ROOT = str(Path(_REPO_ROOT, "packages", "opaque-engine", "tests"))
+if _ENGINE_TEST_ROOT not in sys.path:
+    sys.path.insert(0, _ENGINE_TEST_ROOT)
+_previous_pythonpath = os.environ.get("PYTHONPATH")
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    [_REPO_ROOT, *([_previous_pythonpath] if _previous_pythonpath else [])]
+)
+
+pytest_plugins = ("opaque_engine_testkit.matrix",)
 
 try:  # torch-less environments run only the backend-neutral test roots
     import torch
@@ -92,7 +107,11 @@ def _activate_torch_backend(request):
         "tests/contracts/",
         "tests/integration/backend/",
     )
-    if torch is None or any(root in path for root in neutral_test_roots):
+    if (
+        torch is None
+        or {"backend_case", "provider_case"}.intersection(request.fixturenames)
+        or any(root in path for root in neutral_test_roots)
+    ):
         yield
         return
 

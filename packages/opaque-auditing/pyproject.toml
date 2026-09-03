@@ -30,10 +30,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-# The collation helper stacks native arrays, so its tests need a provider to
-# execute on. ARC-006 allows that for a wheel-local test provided the
-# requirement is declared rather than inherited from the developer environment.
-test = ["opaque-torch>=0.0.0.dev0"]
+# The collation helper stacks native arrays, so its tests need every production
+# provider supported on the current platform. ARC-006 requires those test
+# dependencies to be declared rather than inherited from developer extras.
+test = [
+  "opaque-torch>=0.0.0.dev0",
+  "opaque-mlx>=0.0.0.dev0; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -53,3 +56,5 @@ package = true
 
 [tool.uv.sources]
 opaque-engine = { workspace = true }
+opaque-torch = { workspace = true }
+opaque-mlx = { workspace = true }

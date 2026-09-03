@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tomllib
 
+from tests._support.package_metadata import assert_portable_backend_test_matrix
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ENGINE_ROOT = REPO_ROOT / "packages" / "opaque-engine"
 ENGINE_SOURCE = ENGINE_ROOT / "src"
@@ -80,6 +82,17 @@ def test_engine_metadata_does_not_depend_on_torch() -> None:
         "opaque-engine must not depend on Torch; declare it in opaque-torch instead: "
         + ", ".join(torch_requirements)
     )
+
+
+def test_engine_tests_declare_the_portable_provider_matrix() -> None:
+    groups = tomllib.loads(ENGINE_PROJECT.read_text(encoding="utf-8")).get(
+        "dependency-groups", {}
+    )
+
+    assert_portable_backend_test_matrix(groups.get("test", []))
+    assert "transformers" in {
+        _requirement_name(requirement) for requirement in groups.get("test", [])
+    }
 
 
 def test_importing_engine_does_not_load_a_framework() -> None:

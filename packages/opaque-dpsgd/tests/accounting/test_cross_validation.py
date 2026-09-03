@@ -8,12 +8,12 @@ dp_accounting PLDs, enabling triple validation.
 **Tolerance**: < 1e-6 for all epsilon/delta comparisons.  Empirically the
 agreement is ~1e-8 to 1e-12.
 
-Requires optional deps — install with ``uv sync --group cross-validation``.
-The ``pytest.importorskip`` calls below gate the entire module automatically.
+Requires package test dependencies — install with
+``uv sync --group dev --group test --all-packages``.
 
 Run selectively with::
 
-    uv run --group cross-validation pytest packages/opaque-dpsgd/tests/accounting/test_cross_validation.py -v
+    uv run pytest packages/opaque-dpsgd/tests/accounting/test_cross_validation.py -v
 """
 
 from __future__ import annotations

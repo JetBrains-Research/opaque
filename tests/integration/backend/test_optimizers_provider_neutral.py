@@ -13,6 +13,8 @@ import pathlib
 import re
 import tomllib
 
+from tests._support.package_metadata import assert_portable_backend_test_matrix
+
 PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[3] / "packages"
 OPTIMIZERS_DIR = PACKAGES_DIR / "opaque-optimizers"
 _PROVIDERS = ("torch", "jax", "mlx")
@@ -87,13 +89,11 @@ def test_optimizers_tests_declare_the_backend_they_execute_on() -> None:
 
     with (OPTIMIZERS_DIR / "pyproject.toml").open("rb") as f:
         groups = tomllib.load(f).get("dependency-groups", {})
-    declared = {_dependency_name(spec) for spec in groups.get("test", [])}
-
-    assert declared & {"opaque-torch", "opaque-jax", "opaque-mlx"}, (
-        "opaque-optimizers ships tests that execute numerics, so its "
-        "pyproject must declare a backend in its `test` dependency group; "
-        f"found {sorted(declared) or 'no test group'}."
-    )
+    test_dependencies = groups.get("test", [])
+    assert_portable_backend_test_matrix(test_dependencies)
+    assert "torchopt" in {
+        _dependency_name(dependency) for dependency in test_dependencies
+    }
 
 
 def test_optimizers_metadata_does_not_require_a_provider() -> None:

@@ -7,6 +7,8 @@ import pathlib
 import re
 import tomllib
 
+from tests._support.package_metadata import assert_portable_backend_test_matrix
+
 PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[3] / "packages"
 DPFTRL_DIR = PACKAGES_DIR / "opaque-dpftrl"
 _PROVIDER_IMPORTS = (
@@ -60,16 +62,11 @@ def test_dpftrl_sources_do_not_import_provider_runtime() -> None:
     )
 
 
-def test_dpftrl_tests_do_not_import_provider_runtime() -> None:
-    violations = [
-        path for path in (DPFTRL_DIR / "tests").rglob("*.py") if _imports_provider(path)
-    ]
-    assert not violations, (
-        "DP-FTRL execution tests belong in the wheel that owns their provider:\n"
-        + "\n".join(
-            f"  - {path.relative_to(PACKAGES_DIR.parent)}" for path in violations
-        )
-    )
+def test_dpftrl_tests_declare_the_portable_provider_matrix() -> None:
+    with (DPFTRL_DIR / "pyproject.toml").open("rb") as f:
+        groups = tomllib.load(f).get("dependency-groups", {})
+
+    assert_portable_backend_test_matrix(groups.get("test", []))
 
 
 def test_dpftrl_metadata_does_not_require_a_provider() -> None:

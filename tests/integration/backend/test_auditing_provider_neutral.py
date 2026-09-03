@@ -12,6 +12,8 @@ import pathlib
 import re
 import tomllib
 
+from tests._support.package_metadata import assert_portable_backend_test_matrix
+
 PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[3] / "packages"
 AUDITING_DIR = PACKAGES_DIR / "opaque-auditing"
 _PROVIDER_IMPORTS = (
@@ -85,14 +87,7 @@ def test_auditing_tests_declare_any_backend_they_execute_on() -> None:
 
     with (AUDITING_DIR / "pyproject.toml").open("rb") as f:
         groups = tomllib.load(f).get("dependency-groups", {})
-    declared = {_dependency_name(spec) for spec in groups.get("test", [])}
-
-    assert declared & {"opaque-torch", "opaque-jax", "opaque-mlx"}, (
-        "these opaque-auditing tests execute on a provider:\n"
-        + "\n".join(f"  - {path.relative_to(PACKAGES_DIR.parent)}" for path in users)
-        + "\nso its pyproject must declare one in the `test` dependency group; "
-        + f"found {sorted(declared) or 'no test group'}."
-    )
+    assert_portable_backend_test_matrix(groups.get("test", []))
 
 
 def test_auditing_metadata_does_not_require_a_provider() -> None:

@@ -141,9 +141,27 @@ A test lives with the distribution whose behavior it exercises. Needing a
 backend to execute is **not** a reason to move it: "its backend requirements"
 above is exactly that permission, and a distribution whose tests need one
 declares it in a `test` dependency group rather than relying on a
-monorepo-wide developer environment. Only tests of a provider's own
-behavior — conformance to the primitive contract, framework-specific
-compilation, process-group collectives — belong in that provider's wheel.
+monorepo-wide developer environment. Tests are classified as backend-free,
+portable execution, provider-native, or cross-package integration. Portable
+execution tests live with their functional owner under `execution/portable/`
+and request the repository's `backend_case` fixture; one collected matrix runs
+them for every provider expected on that platform (Torch everywhere and MLX on
+Darwin arm64). Backend-free tests run once, and integration tests belong under
+`tests/integration`.
+
+The repository-only `opaque_engine_testkit` under `opaque-engine/tests` owns
+the matrix and its non-collected `BackendContractTests` base. Production
+providers supply concrete `Test*BackendContract` subclasses, inherit each
+portable `test_*` primitive invariant, and may override only construction,
+dtype, host-observation, tolerance, or documented capability hooks. Replacing
+an inherited invariant requires a documented semantic exception that preserves
+its primitive coverage. Compiler, device, checkpoint, framework-oracle,
+DataLoader, and collective behavior remains provider-native rather than being
+forced through a lowest-common-denominator adapter.
+
+Only tests of a provider's own behavior — primitive conformance and native
+runtime behavior such as framework-specific compilation or process-group
+collectives — belong in that provider's wheel.
 
 **Enforcement:** Junie reviews added or moved tests against the owning
 distribution metadata. Isolated per-wheel test environments may replace this

@@ -196,6 +196,36 @@ def test_unsupported_runtime_capability_fails_explicitly() -> None:
         runtime.distributed_rank()
 
 
+@pytest.mark.parametrize(
+    ("call", "primitive_name"),
+    [
+        (lambda: runtime.distributed_rank(), "opaque.runtime.distributed.rank"),
+        (
+            lambda: runtime.distributed_all_gather_object(None),
+            "opaque.runtime.distributed.all_gather_object",
+        ),
+        (lambda: runtime.synchronize(), "opaque.runtime.observability.synchronize"),
+        (lambda: runtime.memory_stats(), "opaque.runtime.observability.memory_stats"),
+        (
+            lambda: runtime.trace_scope("runtime-contract"),
+            "opaque.runtime.observability.trace_scope",
+        ),
+    ],
+)
+def test_optional_runtime_capabilities_fail_at_the_public_call_site(
+    call, primitive_name: str
+) -> None:
+    backend = _complete_backend(
+        f"runtime-core-only-{primitive_name.rsplit('.', 1)[-1]}"
+    )
+
+    with use_backend(backend), pytest.raises(UnsupportedPrimitiveError) as error:
+        call()
+
+    assert error.value.primitive_name == primitive_name
+    assert error.value.backend_name == backend.name
+
+
 def test_torch_shaped_declarations_are_absent_from_shared_runtime() -> None:
     removed = {
         "device_capabilities",

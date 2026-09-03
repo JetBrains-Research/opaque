@@ -32,10 +32,16 @@ dependencies = [
 optimizers = ["opaque-optimizers>=0.0.0.dev0"]
 
 # ARC-006: this package is backend-neutral, but its tests execute real
-# numerics and therefore need a backend. Declare that requirement rather
-# than relying on the monorepo dev environment to supply one.
+# numerics and therefore need each production backend supported on the current
+# platform. Declare that requirement rather than inheriting developer extras.
 [dependency-groups]
-test = ["opaque-torch>=0.0.0.dev0"]
+test = [
+  "opaque-torch>=0.0.0.dev0",
+  "opaque-mlx>=0.0.0.dev0; platform_system == 'Darwin' and platform_machine == 'arm64'",
+  "dp-accounting>=0.4.4",
+  "random-allocation>=1.0.5",
+  "riskcal>=1.2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -55,6 +61,7 @@ package = true
 
 [tool.uv.sources]
 opaque-torch = { workspace = true }
+opaque-mlx = { workspace = true }
 opaque-engine = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-optimizers = { workspace = true }

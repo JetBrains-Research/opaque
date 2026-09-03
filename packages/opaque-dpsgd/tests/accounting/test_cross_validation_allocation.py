@@ -12,8 +12,8 @@ The direction is what matters. If our ε ever exceeded an independently
 implemented valid bound, the transform would be unsound; that is the failure
 this catches, and it catches it against code we did not write.
 
-Requires optional deps — install with ``uv sync --group dev``.
-The ``pytest.importorskip`` below gates the whole module.
+Requires package test dependencies — install with
+``uv sync --group dev --group test --all-packages``.
 
 Run with::
 

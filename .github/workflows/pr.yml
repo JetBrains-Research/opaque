@@ -67,6 +67,7 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-amd64
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
@@ -79,6 +80,7 @@ jobs:
     with:
       allow-empty-test-selection: true
       environment-name: linux-distributed
+      expected-providers: torch
       pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
@@ -90,6 +92,7 @@ jobs:
     with:
       dependency-selection: minimum
       environment-name: minimum-dependencies
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
@@ -103,6 +106,7 @@ jobs:
     with:
       dependency-selection: latest
       environment-name: latest-dependencies
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.13"
@@ -115,21 +119,20 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: mps
+      expected-providers: torch,mlx
       pytest-marker: not cuda and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
+      runtime-test-paths: packages/opaque-mlx
       timeout-minutes: 30
-
-  python-tests-mlx:
-    name: MLX provider
-    uses: ./.github/workflows/mlx-tests.yml
 
   python-tests-linux-arm64:
     name: Linux arm64 (locked)
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-aarch64
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
@@ -147,6 +150,7 @@ jobs:
     with:
       allow-empty-test-selection: true
       environment-name: cuda
+      expected-providers: torch
       pytest-marker: cuda and not slow
       pytest-xdist: -rs
       report-durations: true
@@ -163,6 +167,7 @@ jobs:
       allow-empty-test-selection: true
       dependency-selection: minimum
       environment-name: cuda-minimum-dependencies
+      expected-providers: torch
       pytest-marker: cuda and not slow
       pytest-xdist: -rs
       python-version: "3.11"
@@ -180,6 +185,7 @@ jobs:
       allow-empty-test-selection: true
       dependency-selection: latest
       environment-name: cuda-latest-dependencies
+      expected-providers: torch
       pytest-marker: cuda and not slow
       pytest-xdist: -rs
       python-version: "3.13"
@@ -199,7 +205,6 @@ jobs:
       - python-tests-minimum
       - python-tests-latest
       - python-tests-macos-arm64
-      - python-tests-mlx
       - python-tests-linux-arm64
       - python-tests-cuda
       - python-tests-cuda-minimum

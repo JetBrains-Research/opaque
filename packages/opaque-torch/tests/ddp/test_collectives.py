@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from engine_ddp_helpers import (
+from tests._support.torch_distributed import (
     _spawn,
     _worker_all_reduce_values,
     _worker_reduce_pytree,

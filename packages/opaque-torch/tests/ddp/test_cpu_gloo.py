@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 import torch.distributed as dist
-from engine_ddp_helpers import (
+from tests._support.torch_distributed import (
     _spawn_gloo,
     _worker_cold_process_group_query_gloo,
     _worker_core_collectives_gloo,

@@ -191,10 +191,6 @@ def test_two_rank_ring_collectives_preserve_array_and_scalar_contracts() -> None
             "scalar": (2**61) + 1,
             "gathered": [[0, 10, 1, 11]],
             "objects": [{"rank": 0}, {"rank": 1}],
-            "dpsgd_total": [3.0],
-            "dpsgd_step": 1,
-            "dpftrl_total": [3.0],
-            "dpftrl_step": 1,
         },
         {
             "rank": 1,
@@ -203,9 +199,5 @@ def test_two_rank_ring_collectives_preserve_array_and_scalar_contracts() -> None
             "scalar": (2**61) + 1,
             "gathered": [[0, 10, 1, 11]],
             "objects": [{"rank": 0}, {"rank": 1}],
-            "dpsgd_total": [3.0],
-            "dpsgd_step": 1,
-            "dpftrl_total": [3.0],
-            "dpftrl_step": 1,
         },
     ]

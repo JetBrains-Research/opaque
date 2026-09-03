@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.distributed as dist
-from engine_ddp_helpers import (
+from tests._support.torch_distributed import (
     _spawn_gloo,
     _worker_custom_sync_seam_gloo,
     _worker_gather_optional_ragged,

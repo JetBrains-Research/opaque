@@ -12,6 +12,8 @@ import pathlib
 import re
 import tomllib
 
+from tests._support.package_metadata import assert_portable_backend_test_matrix
+
 PACKAGES_DIR = pathlib.Path(__file__).resolve().parents[3] / "packages"
 DPSGD_DIR = PACKAGES_DIR / "opaque-dpsgd"
 _PROVIDER_IMPORTS = (
@@ -63,16 +65,14 @@ def test_dpsgd_sources_do_not_import_provider_runtime() -> None:
     )
 
 
-def test_dpsgd_tests_do_not_import_provider_runtime() -> None:
-    violations = [
-        path for path in (DPSGD_DIR / "tests").rglob("*.py") if _imports_provider(path)
-    ]
+def test_dpsgd_tests_declare_the_portable_provider_matrix() -> None:
+    with (DPSGD_DIR / "pyproject.toml").open("rb") as f:
+        groups = tomllib.load(f).get("dependency-groups", {})
 
-    assert not violations, (
-        "DP-SGD execution tests belong in the wheel that owns their provider:\n"
-        + "\n".join(
-            f"  - {path.relative_to(PACKAGES_DIR.parent)}" for path in violations
-        )
+    test_dependencies = groups.get("test", [])
+    assert_portable_backend_test_matrix(test_dependencies)
+    assert {"dp-accounting", "random-allocation", "riskcal"}.issubset(
+        {_dependency_name(dependency) for dependency in test_dependencies}
     )
 
 

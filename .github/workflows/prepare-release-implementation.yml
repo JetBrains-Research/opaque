@@ -286,6 +286,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-amd64
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
@@ -302,6 +303,7 @@ jobs:
       allow-empty-test-selection: true
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-distributed
+      expected-providers: torch
       pytest-marker: distributed and not cuda
       report-durations: true
       runner: ubuntu-latest
@@ -318,6 +320,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: minimum
       environment-name: minimum-dependencies
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.11"
@@ -336,6 +339,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: latest
       environment-name: latest-dependencies
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not slow and not distributed
       pytest-xdist: -n auto --dist loadscope
       python-version: "3.13"
@@ -353,10 +357,12 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: mps
+      expected-providers: torch,mlx
       pytest-marker: not cuda and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
+      runtime-test-paths: packages/opaque-mlx
       timeout-minutes: 40
 
   python-tests-linux-arm64:
@@ -369,6 +375,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-aarch64
+      expected-providers: torch
       pytest-marker: not cuda and not mps and not distributed
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
@@ -386,6 +393,7 @@ jobs:
       allow-empty-test-selection: true
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: cuda
+      expected-providers: torch
       pytest-marker: cuda
       pytest-xdist: -rs
       report-durations: true
@@ -404,6 +412,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: minimum
       environment-name: cuda-minimum-dependencies
+      expected-providers: torch
       pytest-marker: cuda and not slow
       pytest-xdist: -rs
       python-version: "3.11"
@@ -423,6 +432,7 @@ jobs:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       dependency-selection: latest
       environment-name: cuda-latest-dependencies
+      expected-providers: torch
       pytest-marker: cuda and not slow
       pytest-xdist: -rs
       python-version: "3.13"

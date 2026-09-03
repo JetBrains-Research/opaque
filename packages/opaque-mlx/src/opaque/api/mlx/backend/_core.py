@@ -318,6 +318,8 @@ def expand_dims(value: Any, axis: int) -> mx.array:
 
 @_MLX.implements(ops.squeeze)
 def squeeze(value: Any, axis: int | None = None) -> mx.array:
+    if axis is not None and value.shape[axis] != 1:
+        return value
     return mx.squeeze(value, axis=axis)
 
 

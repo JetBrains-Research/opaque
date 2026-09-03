@@ -22,6 +22,11 @@ on:
         description: Stable environment identifier used in artifacts and Codecov flags.
         required: true
         type: string
+      expected-providers:
+        description: Comma-separated production providers required by this lane.
+        required: false
+        default: "torch"
+        type: string
       pytest-marker:
         description: pytest marker expression.
         required: true
@@ -41,6 +46,11 @@ on:
         required: false
         default: false
         type: boolean
+      runtime-test-paths:
+        description: Additional provider paths to include in the runtime test group.
+        required: false
+        default: ""
+        type: string
       runner:
         description: GitHub Actions runner label.
         required: true
@@ -80,6 +90,7 @@ jobs:
               packages/opaque-torch
               packages/opaque-optimizers
               packages/opaque-kernels
+              ${{ inputs.runtime-test-paths }}
           - id: alignment-and-transformers
             label: Alignment and transformers
             paths: |
@@ -91,6 +102,7 @@ jobs:
     env:
       ALLOW_EMPTY_TEST_SELECTION: ${{ inputs.allow-empty-test-selection }}
       COVERAGE_FILE: .coverage-${{ inputs.environment-name }}-${{ matrix.suite.id }}
+      OPAQUE_EXPECTED_PROVIDERS: ${{ inputs.expected-providers }}
       PYTEST_MARKER: ${{ inputs.pytest-marker }}
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}

@@ -30,11 +30,6 @@ dependencies = [
     "torch>=2.9.0",
 ]
 
-[project.optional-dependencies]
-dpsgd = ["opaque-dpsgd>=0.0.0.dev0"]
-dpftrl = ["opaque-dpftrl>=0.0.0.dev0"]
-auditing = ["opaque-auditing>=0.0.0.dev0"]
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["opaque.api.torch*", "opaque.torch*", "opaque.device*"]
@@ -53,6 +48,3 @@ package = true
 
 [tool.uv.sources]
 opaque-engine = { workspace = true }
-opaque-dpsgd = { workspace = true }
-opaque-dpftrl = { workspace = true }
-opaque-auditing = { workspace = true }
