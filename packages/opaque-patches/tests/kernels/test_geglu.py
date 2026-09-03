@@ -651,5 +651,46 @@ class TestGeGLURepeatedBackward:
         torch.autograd.grad(out, (gate, up), torch.randn_like(gate))
 
 
+class TestGeGLUSecondOrder:
+    """Second-order differentiation is refused, not silently wrong.
+
+    Reverse-over-reverse reaches the inner backward's guard; forward-over-reverse
+    stops earlier, on the missing forward-mode rule.
+    """
+
+    @staticmethod
+    def _fn(kernel, up):
+        return lambda gate: kernel.apply(gate, up).sum()
+
+    @pytest.mark.parametrize("kernel", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            lambda f, x: torch.func.jacrev(torch.func.jacrev(f))(x),
+            lambda f, x: torch.func.hessian(f)(x),
+            lambda f, x: torch.func.jacfwd(torch.func.jacrev(f))(x),
+            lambda f, x: torch.func.jvp(
+                torch.func.grad(f), (x,), (torch.ones_like(x),)
+            ),
+        ],
+        ids=["jacrev_jacrev", "hessian", "jacfwd_jacrev", "hvp"],
+    )
+    def test_second_order_raises(self, kernel, transform):
+        gate = torch.randn(8, device="cuda")
+        up = torch.randn(8, device="cuda")
+        with pytest.raises(NotImplementedError):
+            transform(self._fn(kernel, up), gate)
+
+    @pytest.mark.parametrize("kernel", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_create_graph_raises(self, kernel):
+        gate = torch.randn(8, device="cuda", requires_grad=True)
+        up = torch.randn(8, device="cuda", requires_grad=True)
+        (grad_gate,) = torch.autograd.grad(
+            kernel.apply(gate, up).sum(), gate, create_graph=True
+        )
+        with pytest.raises(NotImplementedError, match=r"[Dd]ouble backward"):
+            torch.autograd.grad(grad_gate.sum(), gate)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

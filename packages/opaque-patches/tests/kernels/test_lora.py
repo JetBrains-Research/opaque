@@ -1469,5 +1469,29 @@ class TestLoRAMLPRepeatedBackward:
         torch.autograd.grad(out, args[0], torch.randn_like(out))
 
 
+class TestLoRAMLPSecondOrder:
+    """Second-order differentiation through the fused LoRA MLP is refused."""
+
+    @pytest.mark.cuda
+    def test_create_graph_raises(self):
+        args = TestLoRAMLPRepeatedBackward._inputs()
+        (grad_X,) = torch.autograd.grad(
+            opaque_lora_mlp(*args).sum(), args[0], create_graph=True
+        )
+        with pytest.raises(NotImplementedError, match=r"[Dd]ouble backward"):
+            torch.autograd.grad(grad_X.sum(), args[0])
+
+    @pytest.mark.cuda
+    def test_jacrev_jacrev_raises(self):
+        args = TestLoRAMLPRepeatedBackward._inputs()
+        rest = args[1:]
+
+        def fn(x):
+            return opaque_lora_mlp(x, *rest).sum()
+
+        with pytest.raises(NotImplementedError):
+            torch.func.jacrev(torch.func.jacrev(fn))(args[0].detach())
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
