@@ -70,6 +70,22 @@ def _assert_int_equal(value: int, *, name: str) -> None:
     assert_scalar_equal(int(value), name=name)
 
 
+def _assert_float_equal(value: float, *, name: str) -> None:
+    """Exact float equality across ranks, compared in float64.
+
+    ``assert_scalar_equal`` defaults to float32 at ``rtol=1e-5``, coarser than
+    the drift this audit looks for. Assumes ranks share an intra-op thread
+    count, which standard launchers guarantee.
+    """
+    assert_scalar_equal(
+        float(value),
+        name=name,
+        atol=0.0,
+        rtol=0.0,
+        compute_dtype=torch.float64,
+    )
+
+
 def _assert_str_equal(value: str, *, name: str) -> None:
     """Cross-rank string equality via 48-bit blake2b fingerprint.
 
@@ -90,16 +106,20 @@ def _assert_tensor_fingerprint_equal(tensor: torch.Tensor, *, name: str) -> None
     ``[2, 1, 3]``) and the audit passes.  For optimizer-state audits — where
     drift detection is the entire point — fingerprint each tensor with four
     statistics that cancel only under contrived adversarial inputs.
+
+    The four float statistics are compared exactly in float64 via
+    :func:`_assert_float_equal`; ``numel`` / ``ndim`` are integers and already
+    take ``assert_scalar_equal``'s exact int64 path.
     """
     if tensor.numel() == 0:
         # Empty tensor has no statistics; assert shape via dim count.
         assert_scalar_equal(tensor.ndim, name=f"{name}.ndim")
         return
     t = tensor.detach().double()
-    assert_scalar_equal(float(t.sum().item()), name=f"{name}.sum")
-    assert_scalar_equal(float((t * t).sum().item()), name=f"{name}.sumsq")
-    assert_scalar_equal(float(t.amin().item()), name=f"{name}.min")
-    assert_scalar_equal(float(t.amax().item()), name=f"{name}.max")
+    _assert_float_equal(float(t.sum().item()), name=f"{name}.sum")
+    _assert_float_equal(float((t * t).sum().item()), name=f"{name}.sumsq")
+    _assert_float_equal(float(t.amin().item()), name=f"{name}.min")
+    _assert_float_equal(float(t.amax().item()), name=f"{name}.max")
     assert_scalar_equal(tensor.numel(), name=f"{name}.numel")
 
 
@@ -125,7 +145,7 @@ def _audit_value(value: Any, *, name: str) -> None:
         _assert_int_equal(value, name=name)
         return
     if isinstance(value, float):
-        assert_scalar_equal(value, name=name)
+        _assert_float_equal(value, name=name)
         return
     if isinstance(value, str):
         _assert_str_equal(value, name=name)
