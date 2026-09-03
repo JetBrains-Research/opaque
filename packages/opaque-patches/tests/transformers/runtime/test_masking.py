@@ -283,3 +283,47 @@ def test_ignore_causal_mask_shim_short_circuits_on_a_padding_mask():
             del _vmap_safe_ignore_causal_mask_sdpa._original
         else:
             _vmap_safe_ignore_causal_mask_sdpa._original = previous
+
+
+class TestSlidingWindowWithoutPaddingMask:
+    """A binding window must be materialized even with no padding mask.
+
+    SDPA's ``is_causal`` shortcut expresses causality only, so returning ``None``
+    there silently widens attention from the window to the whole causal prefix.
+    """
+
+    @staticmethod
+    def _make_mask(attn_impl, sliding_window, seq_len=8):
+        config = type(
+            "Cfg",
+            (),
+            {"_attn_implementation": attn_impl, "sliding_window": sliding_window},
+        )()
+        return vmap_create_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(1, seq_len, 8),
+            attention_mask=None,
+            past_key_values=None,
+        )
+
+    def test_binding_window_is_materialized_for_sdpa(self):
+        mask = self._make_mask("sdpa", sliding_window=2, seq_len=8)
+        assert mask is not None, "binding window must not fall back to is_causal"
+        neg_inf = torch.finfo(mask.dtype).min
+        assert mask[0, 0, 3, 2] == 0.0, "in-window key must be visible"
+        assert mask[0, 0, 3, 1] == neg_inf, "out-of-window key must be blocked"
+
+    def test_non_binding_window_keeps_the_is_causal_fast_path(self):
+        assert self._make_mask("sdpa", sliding_window=64, seq_len=8) is None
+
+    def test_flash_backend_keeps_the_is_causal_fast_path(self):
+        # Flash kernels receive ``sliding_window`` and mask in-kernel.
+        assert self._make_mask("flash_attention_2", sliding_window=2, seq_len=8) is None
+
+    def test_allow_is_causal_skip_is_honoured_by_the_causal_builder(self):
+        config = type("Cfg", (), {"_attn_implementation": "sdpa"})()
+        kwargs = {"inputs_embeds": torch.randn(1, 8, 8), "attention_mask": None}
+        assert vmap_create_causal_mask(config, **kwargs) is None
+        forced = vmap_create_causal_mask(config, allow_is_causal_skip=False, **kwargs)
+        assert forced is not None
+        assert forced.shape == (1, 1, 8, 8)

@@ -39,6 +39,24 @@ def _safe_seq_length(past_key_values) -> int:
     return getattr(past_key_values, "seen_tokens", 0)
 
 
+def _backend_enforces_sliding_window(attn_impl: str | None) -> bool:
+    """True when the backend applies the look-back limit in-kernel.
+
+    Flash-attention receives ``sliding_window`` directly; every mask-consuming
+    backend (eager, SDPA, flex) needs it materialized in the additive mask.
+    """
+    return attn_impl is not None and "flash" in attn_impl
+
+
+def _query_length(input_embeds: torch.Tensor) -> int:
+    """Query length of an embedding tensor, batched (3D) or batchless (2D)."""
+    return (
+        input_embeds.shape[0]
+        if input_embeds.ndim == 2  # noqa: PLR2004 - batchless embeddings are 2D
+        else input_embeds.shape[1]
+    )
+
+
 def vmap_create_causal_mask(
     config,
     inputs_embeds: torch.Tensor | None = None,
@@ -50,6 +68,7 @@ def vmap_create_causal_mask(
     *,
     cache_position: torch.Tensor | None = None,
     input_embeds: torch.Tensor | None = None,
+    allow_is_causal_skip: bool = True,
     **kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible create_causal_mask.
@@ -75,7 +94,8 @@ def vmap_create_causal_mask(
     # so we check for actual cached data rather than just None.
     attn_impl = getattr(config, "_attn_implementation", None)
     if (
-        attention_mask is None
+        allow_is_causal_skip
+        and attention_mask is None
         and attn_impl != "eager"
         and _safe_seq_length(past_key_values) <= 0
     ):
@@ -192,6 +212,7 @@ def vmap_create_sliding_window_causal_mask(
     *,
     cache_position: torch.Tensor | None = None,
     input_embeds: torch.Tensor | None = None,
+    allow_is_causal_skip: bool = True,
     **kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible ``create_sliding_window_causal_mask``.
@@ -207,10 +228,25 @@ def vmap_create_sliding_window_causal_mask(
     The causal upper-triangle is already blocked by the underlying
     ``vmap_create_causal_mask``; this function only adds the look-back limit.
 
+    The mask is materialized once the key length reaches the window: SDPA's
+    ``is_causal`` shortcut expresses causality but not the look-back limit.
+
     Signature is version-agnostic: v4 uses ``input_embeds`` + ``cache_position``,
     v5 renames to ``inputs_embeds`` and drops ``cache_position``.
     """
     input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
+    sliding_window = getattr(config, "sliding_window", None)
+
+    if (
+        allow_is_causal_skip
+        and sliding_window is not None
+        and input_embeds is not None
+        and not _backend_enforces_sliding_window(
+            getattr(config, "_attn_implementation", None)
+        )
+    ):
+        target_length = _safe_seq_length(past_key_values) + _query_length(input_embeds)
+        allow_is_causal_skip = target_length < sliding_window
 
     causal_mask = vmap_create_causal_mask(
         config,
@@ -221,12 +257,12 @@ def vmap_create_sliding_window_causal_mask(
         or_mask_function=or_mask_function,
         and_mask_function=and_mask_function,
         cache_position=cache_position,
+        allow_is_causal_skip=allow_is_causal_skip,
     )
 
     if causal_mask is None:
         return None
 
-    sliding_window = getattr(config, "sliding_window", None)
     if sliding_window is None:
         return causal_mask
 
