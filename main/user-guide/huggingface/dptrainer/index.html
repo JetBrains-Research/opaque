@@ -3324,8 +3324,8 @@ construction. No extra setup calls are needed before <code>train()</code>.</p>
 <p>At least one of <code>privacy_noise_multiplier</code> / <code>privacy_target_epsilon</code>
 must be set — neither has a silent default; see the
 <a href="../training-arguments/#privacy-targets">Privacy targets</a> section of
-the <code>TrainingArguments</code> reference for the two valid shapes and the
-stop-at-ε contract that fires when both are set.</p>
+the <code>TrainingArguments</code> reference for calibration, fixed-noise accounting,
+and the independent-DP-SGD stop-at-ε contract.</p>
 <h2 id="training-evaluation-prediction">Training, evaluation, prediction<a class="headerlink" href="#training-evaluation-prediction" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>                                  <span class="c1"># full DP-SGD loop</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">trainer</span><span class="o">.</span><span class="n">train</span><span class="p">(</span><span class="n">resume_from_checkpoint</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>       <span class="c1"># auto-find latest checkpoint</span>
@@ -3338,6 +3338,10 @@ loss / step / runtime fields. Evaluation and prediction route through
 the same loop; <code>predict()</code> returns the full <code>EvaluationResult</code>
 (predictions + labels + metrics) while <code>evaluate()</code> returns only the
 metrics dict.</p>
+<p>For horizon mechanisms, <code>privacy_epsilon</code> is always the conservative epsilon
+for the complete declared <code>n_steps</code>, even before the final step. Prefix privacy
+queries and privacy-based early stopping are unsupported, so combining a fixed
+<code>privacy_noise_multiplier</code> with <code>privacy_target_epsilon</code> is rejected.</p>
 <p><code>resume_from_checkpoint</code> accepts a path string, <code>True</code> to auto-find
 the latest <code>checkpoint-*/</code> under <code>output_dir</code>, or <code>None</code> for a fresh
 run.</p>
@@ -3362,8 +3366,9 @@ analyses driven by <code>compute_metrics</code>.</p>
 </ul>
 <p>Checkpointing during training is driven by <code>save_strategy</code> /
 <code>save_steps</code> on <code>TrainingArguments</code>; resume from a checkpoint
-preserves the privacy accountant (the saved provenance is the prefix,
-calibration covers the remaining steps).</p>
+preserves the privacy accountant. Independent DP-SGD restores the executed
+composition and calibrates against the remaining steps; horizon mechanisms
+retain their single declared full-horizon process.</p>
 <h2 id="callbacks">Callbacks<a class="headerlink" href="#callbacks" title="Permanent link">&para;</a></h2>
 <p>User callbacks are passed via the <code>callbacks=</code> constructor arg or
 added later:</p>

@@ -1297,10 +1297,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#dp-ftrl-step-by-step-accounting-via-per_step" class="md-nav__link">
+  <a href="#dp-ftrl-whole-process-accounting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        DP-FTRL: step-by-step accounting via per_step
+        DP-FTRL: whole-process accounting
       
     </span>
   </a>
@@ -3729,10 +3729,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#dp-ftrl-step-by-step-accounting-via-per_step" class="md-nav__link">
+  <a href="#dp-ftrl-whole-process-accounting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        DP-FTRL: step-by-step accounting via per_step
+        DP-FTRL: whole-process accounting
       
     </span>
   </a>
@@ -3964,12 +3964,11 @@ PLD transform rather than Monte Carlo.</p>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>The returned whole-horizon process provides exact prefix accounting; use
-<code>acc.per_step(process)</code> in a step-wise loop.</p>
+<p>The returned process accounts the complete declared horizon and must be
+included exactly once.</p>
 <p>With <code>allocation="total"</code>, each example chooses a uniform <code>k</code>-subset of the
 whole horizon. The factory currently reports the block reduction as a valid
-conservative upper bound. For <code>k &gt; 1</code>, prefix accounting before the final step
-returns the full-horizon bound.</p>
+conservative upper bound.</p>
 <h3 id="dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1"><code>dpsgd_acc.adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1)</code><a class="headerlink" href="#dpsgd_accadaclipinner-fraction_noise_std-expected_batch_size-num_groups1" title="Permanent link">&para;</a></h3>
 <p>Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using <code>adaptive_clipped_grad</code>. <code>num_groups</code>
@@ -4267,41 +4266,27 @@ It wraps a <code>DpProcess</code> and provides budget checking.</p>
 <p><code>Accountant</code> is functional: <code>acct | step</code> returns a new <code>Accountant</code> without
 mutating the original. The <code>budget_exceeded</code> property checks whether the
 accumulated process exceeds the budget.</p>
-<h3 id="dp-ftrl-step-by-step-accounting-via-per_step">DP-FTRL: step-by-step accounting via <code>per_step</code><a class="headerlink" href="#dp-ftrl-step-by-step-accounting-via-per_step" title="Permanent link">&para;</a></h3>
-<p>DP-FTRL accountants are <em>whole-process</em> (<code>dpftrl_acc.poisson</code> / <code>b_min_sep</code> /
-<code>balls_in_bins</code> already cover all <code>n_steps</code> rounds), so feeding the bare
-process to <code>acct |= step</code> would over-count. Wrap the process with
-<code>acc.per_step(...)</code> to get a step-shaped adapter whose
-<code>per_step(proc) * K</code> materialises the strategy-aware K-prefix PLD (rather
-than the K-fold composition of a single-step PLD, which would double-count
-the workload coefficients):</p>
+<h3 id="dp-ftrl-whole-process-accounting">DP-FTRL: whole-process accounting<a class="headerlink" href="#dp-ftrl-whole-process-accounting" title="Permanent link">&para;</a></h3>
+<p>DP-FTRL accountants are whole-process mechanisms: <code>dpftrl_acc.poisson</code>,
+<code>b_min_sep</code>, and <code>balls_in_bins</code> already cover all declared <code>n_steps</code>. Include
+the process once rather than once per training step:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>
 <a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
 <a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>
 <a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="n">process</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
 <a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
 <a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
 <a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">15_624</span><span class="p">,</span>
 <a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="p">)</span>
-<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
-<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
-<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>
-<a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a>    <span class="c1"># ... train ...</span>
-<a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a>    <span class="n">acct</span> <span class="o">|=</span> <span class="n">step</span>
-<a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
-<a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a>        <span class="k">break</span>
-<a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a>
-<a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="n">acct</span> <span class="o">|=</span> <span class="n">process</span>
+<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>For analytic DP-FTRL accountants, the K-step ε is bounded above by
-<code>proc.epsilon_at(delta)</code> and is monotone non-decreasing in K. For b-min-sep and
-correlated-strategy Balls-in-Bins, every nonzero K conservatively uses the
-full-horizon confidence-bounded PLD. Balls-in-Bins with <code>identity_strategy()</code>
-retains its exact prefix path. <code>K &gt; proc.n_steps</code> raises <code>ValueError</code>.</p>
+<p>The resulting epsilon is the declared full-horizon guarantee. These mechanisms
+do not support prefix privacy queries or privacy-based early stopping.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
 <a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.serialization</span><span class="w"> </span><span class="kn">import</span> <span class="n">from_state_dict</span><span class="p">,</span> <span class="n">state_dict</span>

@@ -4301,9 +4301,9 @@ rather than compacted away, because dropping them changes the accounted
 participation schedule.</p>
 <p>Account block allocation with
 <code>dpsgd_acc.k_out_of_t(mechanism, k=k, t=t, allocation="block")</code>.
-The process computes exact prefix privacy. Total allocation uses the same
-factory with <code>allocation="total"</code> and currently receives the conservative
-block bound; its <code>k &gt; 1</code> prefixes carry the full-horizon bound.</p>
+This accounts the complete declared horizon once. Total allocation uses the
+same factory with <code>allocation="total"</code> and currently receives the conservative
+block bound.</p>
 <div class="admonition warning">
 <p class="admonition-title">Not the same scheme as <code>BallsInBinsSampler</code></p>
 <p><code>opaque.dpftrl.sampling.BallsInBinsSampler</code> draws the bin assignment

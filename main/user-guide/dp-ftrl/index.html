@@ -913,10 +913,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#step-by-step-reporting-per_step" class="md-nav__link">
+  <a href="#whole-process-reporting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step-by-step ε reporting (per_step)
+        Whole-process ε reporting
       
     </span>
   </a>
@@ -3243,10 +3243,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#step-by-step-reporting-per_step" class="md-nav__link">
+  <a href="#whole-process-reporting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step-by-step ε reporting (per_step)
+        Whole-process ε reporting
       
     </span>
   </a>
@@ -3434,30 +3434,20 @@ sensitivity / Gram matrix:</p>
 <code>DpProcess</code> describing the full training run. <strong>Always pass the same
 strategy object</strong> to <code>mf_gaussian_noise</code> and the accounting factory — that is
 how DP correctness is preserved.</p>
-<h3 id="step-by-step-reporting-per_step">Step-by-step ε reporting (<code>per_step</code>)<a class="headerlink" href="#step-by-step-reporting-per_step" title="Permanent link">&para;</a></h3>
-<p>DP-FTRL processes are <em>whole-process</em>: feeding the bare process to
-<code>Accountant</code>'s <code>acct |= step</code> would over-count. Wrap with
-<code>acc.per_step(...)</code> to get a step-shaped adapter whose
-<code>per_step(proc) * K</code> materialises the strategy-aware K-prefix PLD —
-identical in shape to the DP-SGD <code>acct |= step</code> idiom but with the
-correct K-step bound under MF correlations:</p>
+<h3 id="whole-process-reporting">Whole-process ε reporting<a class="headerlink" href="#whole-process-reporting" title="Permanent link">&para;</a></h3>
+<p>DP-FTRL processes are whole-process mechanisms. Include the process once at
+its declared <code>n_steps</code>; composing it once per optimizer step would over-count:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">per_step</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="c1"># ... train ...</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">acct</span> <span class="o">|=</span> <span class="n">step</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">eps_so_far</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">acct</span> <span class="o">|=</span> <span class="n">proc</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">epsilon</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-For Monte Carlo-backed b-min-sep and correlated Balls-in-Bins, every nonzero
-prefix charges the full-horizon confidence bound, preserving those invariants
-at the cost of prefix tightness. <code>K &gt; proc.n_steps</code> raises.</p>
+<p>The reported epsilon covers the full declared horizon. Prefix queries and
+privacy-based early stopping are unsupported for these correlated mechanisms.</p>
 <h2 id="3-clipping">3. Clipping<a class="headerlink" href="#3-clipping" title="Permanent link">&para;</a></h2>
 <p>Same engine clipping primitives as DP-SGD, just imported from
 <code>opaque.dpftrl.clipping</code>. Adaptive clipping is <strong>not</strong> available
