@@ -73,27 +73,9 @@ def _assert_int_equal(value: int, *, name: str) -> None:
 def _assert_float_equal(value: float, *, name: str) -> None:
     """Exact float equality across ranks, compared in float64.
 
-    ``assert_scalar_equal`` defaults to a float32 collective at
-    ``rtol=1e-5``, which is far coarser than the drift this audit exists to
-    find: a uniform 1e-6 relative divergence on a float32 state tensor
-    survives it unnoticed.  Marshal through float64 and demand bit equality
-    instead, mirroring the ``assert_equal`` field op of
-    :func:`~opaque.api.engine.distributed.sync_object`.
-
-    Bit equality is the right bar because functional optimizer state is
-    bit-identical across ranks by construction (see the module docstring), so
-    every fingerprint below is an exact function of that state:
-
-    - ``min`` / ``max`` select an existing element, and float32 widens to
-      float64 losslessly, so the collective compares exact values;
-    - ``sum`` / ``sumsq`` accumulate, but rank-locally and in float64 — ranks
-      running the same program over the same shapes with the same intra-op
-      thread count accumulate in the same order and agree bit for bit.
-
-    The one way an identical state can still trip this is ranks configured
-    with *different* intra-op thread counts, where a large tensor's parallel
-    reduction splits differently and the float64 total can land a ULP apart.
-    Standard launchers give every rank the same thread configuration.
+    ``assert_scalar_equal`` defaults to float32 at ``rtol=1e-5``, coarser than
+    the drift this audit looks for. Assumes ranks share an intra-op thread
+    count, which standard launchers guarantee.
     """
     assert_scalar_equal(
         float(value),
