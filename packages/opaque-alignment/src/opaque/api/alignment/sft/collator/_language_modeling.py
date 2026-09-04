@@ -19,9 +19,9 @@ Design notes
 * **Padding** — right-pad with ``pad_token_id`` to the length of the longest
   (post-truncation) example in the batch, subject to ``pad_to_multiple_of``.
 * **Labels** — copy of ``input_ids`` with pad positions set to ``-100``.  When
-  ``completion_only_loss=True`` non-completion positions are also set to
-  ``-100`` (prompts and examples that carry no ``completion_mask`` contribute
-  no loss signal).
+  ``completion_only_loss=True`` and a ``completion_mask`` is present,
+  non-completion positions are also set to ``-100``. Examples without a mask
+  retain full-sequence labels, matching TRL's language-modeling collator.
 * **completion_mask output key** — included only when at least one example in
   the batch supplies ``"completion_mask"``.  This preserves backward
   compatibility with simple SFT datasets that do not carry the field.
@@ -144,29 +144,21 @@ class _LMCollator:
             # Labels: copy input_ids; pad positions already -100.
             labels_t[i, :seq_len] = torch.tensor(ids, dtype=torch.long)
 
-            if has_completion_mask:
-                if cm is not None:
-                    cm_tensor = torch.tensor(cm, dtype=torch.long)
-                    # Pad completion_mask with 0s at padding positions (already 0).
-                    completion_mask_t[i, :seq_len] = cm_tensor  # type: ignore[possibly-undefined]
-                    if self._completion_only_loss:
-                        # Mask non-completion real tokens in labels.
-                        non_completion = cm_tensor == 0
-                        # Build a position index for the real tokens.
-                        positions = torch.arange(seq_len, dtype=torch.long)
-                        masked_positions = positions[non_completion]
-                        labels_t[i].scatter_(0, masked_positions, _IGNORE_INDEX)
-                else:
-                    # Example has no completion_mask: treat all real tokens as
-                    # non-completion when completion_only_loss is active.
-                    if self._completion_only_loss:
-                        labels_t[i, :seq_len] = _IGNORE_INDEX
-                    # completion_mask row stays all-zero (correct: no completions).
-            elif self._completion_only_loss:
-                # completion_only_loss=True but no example in the batch carries
-                # completion_mask — mask all real tokens (nothing to learn from).
-                labels_t[i, :seq_len] = _IGNORE_INDEX
-
+            if has_completion_mask and cm is not None:
+                cm_tensor = torch.tensor(cm, dtype=torch.long)
+                # Pad completion_mask with 0s at padding positions (already 0).
+                completion_mask_t[i, :seq_len] = cm_tensor  # type: ignore[possibly-undefined]
+                if self._completion_only_loss:
+                    # Mask non-completion real tokens in labels.
+                    non_completion = cm_tensor == 0
+                    # Build a position index for the real tokens.
+                    positions = torch.arange(seq_len, dtype=torch.long)
+                    masked_positions = positions[non_completion]
+                    labels_t[i].scatter_(0, masked_positions, _IGNORE_INDEX)
+            elif has_completion_mask:
+                # No completion subset was supplied, so the fully supervised
+                # real-token span is also the completion span for this row.
+                completion_mask_t[i, :seq_len] = 1  # type: ignore[possibly-undefined]
         # ---- Assemble output ----------------------------------------
         out: LMBatch = {
             "input_ids": input_ids_t,

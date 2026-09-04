@@ -169,17 +169,16 @@ def test_completion_mask_values_correctly_padded() -> None:
     assert cm[1].tolist() == [0, 1, 0, 0]
 
 
-def test_completion_mask_missing_row_fills_zeros() -> None:
-    """An example with no ``completion_mask`` gets an all-zero row."""
+def test_completion_mask_missing_row_marks_real_tokens() -> None:
+    """An example with no ``completion_mask`` marks all real tokens."""
     examples = [
         {"input_ids": [1, 2, 3], "completion_mask": [0, 1, 1]},
-        {"input_ids": [4, 5]},  # contributes no completion signal
+        {"input_ids": [4, 5]},
     ]
     collate = _make_collator()
     batch = collate(examples)
     cm = batch["completion_mask"]
-    # Row 1 (no completion_mask supplied) must be all zeros
-    assert cm[1].tolist() == [0, 0, 0]
+    assert cm[1].tolist() == [1, 1, 0]
 
 
 # ---------------------------------------------------------------------------
@@ -201,9 +200,8 @@ def test_labels_completion_only_loss_masks_non_completion() -> None:
     assert labels[0].tolist() == [-100, -100, 3, 4]
 
 
-def test_labels_completion_only_loss_no_mask_masks_all_real_tokens() -> None:
-    """With ``completion_only_loss=True``, an example with no ``completion_mask``
-    has ALL real tokens masked (nothing to learn from it)."""
+def test_labels_completion_only_loss_no_mask_retains_all_real_tokens() -> None:
+    """Without ``completion_mask``, completion-only mode leaves labels intact."""
     examples = [
         {"input_ids": [1, 2, 3]},
     ]
@@ -212,15 +210,14 @@ def test_labels_completion_only_loss_no_mask_masks_all_real_tokens() -> None:
     )
     batch = collate(examples)
     labels = batch["labels"]
-    # All real tokens should be -100 (no completion signal)
-    assert all(v == -100 for v in labels[0].tolist())
+    assert labels[0].tolist() == [1, 2, 3]
 
 
 def test_labels_completion_only_loss_mixed_batch() -> None:
     """Mixed batch: one example has completion_mask, one does not."""
     examples = [
         {"input_ids": [1, 2, 3], "completion_mask": [0, 1, 1]},
-        {"input_ids": [4, 5, 6]},  # no mask → all tokens masked
+        {"input_ids": [4, 5, 6]},
     ]
     collate = language_modeling_collator(
         pad_token_id=_PAD, max_length=16, completion_only_loss=True
@@ -229,8 +226,9 @@ def test_labels_completion_only_loss_mixed_batch() -> None:
     labels = batch["labels"]
     # Row 0: prompt (pos 0) → -100; completion (pos 1, 2) → token ids
     assert labels[0].tolist() == [-100, 2, 3]
-    # Row 1: all real tokens → -100 (no completion mask supplied)
-    assert labels[1].tolist() == [-100, -100, -100]
+    # Row 1 has no completion mask, so all real tokens remain supervised.
+    assert labels[1].tolist() == [4, 5, 6]
+    assert batch["completion_mask"][1].tolist() == [1, 1, 1]
 
 
 def test_labels_no_completion_only_loss_retains_all_real_tokens() -> None:
@@ -507,7 +505,7 @@ def test_max_length_exactly_equals_example_length() -> None:
 def test_completion_only_loss_without_any_completion_mask_in_batch() -> None:
     """completion_only_loss=True but no example carries completion_mask.
 
-    All real tokens in every row get -100; output has no completion_mask key.
+    Full-sequence labels are retained and no completion_mask key is emitted.
     """
     examples = [
         {"input_ids": [1, 2, 3]},
@@ -519,9 +517,8 @@ def test_completion_only_loss_without_any_completion_mask_in_batch() -> None:
     batch = collate(examples)
     # No completion_mask key in output
     assert "completion_mask" not in batch
-    # All real tokens masked out in labels
-    assert batch["labels"][0].tolist() == [-100, -100, -100]
-    assert batch["labels"][1].tolist() == [-100, -100, -100]
+    assert batch["labels"][0].tolist() == [1, 2, 3]
+    assert batch["labels"][1].tolist() == [4, 5, -100]
 
 
 def test_dtype_is_long() -> None:
