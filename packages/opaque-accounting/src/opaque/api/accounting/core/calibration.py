@@ -316,17 +316,26 @@ def calibrate(
                 tolerance,
                 max_iterations,
             )
+
+        # Re-evaluate the calibrated process under the runtime discretization.
+        # The probe context uses stricter MC bounds; re-evaluate under overall_config
+        # to get the achieved epsilon that will actually apply during training.
+        with _use_discretization(overall_config):
             final_process = process(result.param)
+            achieved = budget.evaluate(final_process)
+            result.achieved = achieved
+
             pld_method = getattr(final_process, "pld", None)
-            final_kwargs = {}
+            runtime_kwargs = {}
             if isinstance(budget, EpsilonBudget):
-                final_kwargs["mc_resolution"] = min(
-                    probe_config.mc_resolution,
+                runtime_kwargs["mc_resolution"] = min(
+                    overall_config.mc_resolution,
                     budget.delta / 2.0,
                 )
-            final_pld = pld_method(**final_kwargs) if callable(pld_method) else None
+            final_pld = pld_method(**runtime_kwargs) if callable(pld_method) else None
             if final_pld is not None and final_pld.mc_failure_probability > 0.0:
                 result.mc_failure_probability = overall_config.mc_failure_probability
+
             return result
     finally:
         _clear_all_native_caches()

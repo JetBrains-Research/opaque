@@ -8,6 +8,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
+from opaque.accounting.discretization import set_discretization
 from opaque.api.accounting.core.calibration import (
     AdvantageBudget,
     BetaBudget,
@@ -571,3 +572,33 @@ class TestCalibrateDirectionIntegration:
         )
         assert result.achieved <= 3.0
         assert result.param == pytest.approx(0.8865, rel=1e-2)
+
+
+class TestCalibrateRuntimeDiscretization:
+    @pytest.fixture(autouse=True)
+    def _reset_discretization(self):
+        from opaque.accounting import discretization
+
+        original = discretization._default_config
+        yield
+        discretization._default_config = original
+
+    def test_reported_achieved_is_runtime_upper_bound(self):
+        set_discretization(
+            discretization=1e-3,
+            mc_resolution=1e-3,
+            mc_failure_probability=1e-6,
+        )
+        result = cal.calibrate(
+            cal.epsilon_budget(3.0, delta=1e-5),
+            lambda nm: dpsgd_acc.poisson(dpsgd_acc.gaussian(nm), 0.032) * 100,
+            param_min=0.1,
+            param_max=10.0,
+            tolerance=1e-4,
+        )
+
+        runtime_achieved = (
+            dpsgd_acc.poisson(dpsgd_acc.gaussian(result.param), 0.032) * 100
+        ).epsilon_at(1e-5)
+        assert runtime_achieved == pytest.approx(result.achieved, rel=1e-9, abs=0.0)
+        assert result.achieved <= 3.0
