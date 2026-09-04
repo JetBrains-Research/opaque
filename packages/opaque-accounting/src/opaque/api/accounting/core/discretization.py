@@ -22,7 +22,8 @@ class DiscretizationConfig:
         discretization: Grid spacing for the PLD PMF. Smaller = tighter, slower.
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
         max_grid_size: Maximum grid bins before automatic coarsening.
-        seed: RNG seed for Monte Carlo reproducibility.
+        seed: RNG seed for reproducibility across worker counts within a fixed
+            Opaque and dependency build. Exact streams may change across releases.
         max_conv_grid: Maximum convolution grid size for random-allocation PLD transform.
         mc_resolution: Maximum unresolved Monte Carlo mass, in delta units.
         mc_failure_probability: Failure probability of the simultaneous Monte
