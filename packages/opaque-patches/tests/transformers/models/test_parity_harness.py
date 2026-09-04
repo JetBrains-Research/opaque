@@ -51,6 +51,19 @@ def _imports(family: str):
     return config_cls, model_cls
 
 
+def _unbind_leaked_interface(family: str) -> None:
+    """Undo any attention rebinding an earlier test left on this family.
+
+    Without this the snapshots below are taken from an already-contaminated
+    module, so both sides of the comparison match and the test passes.
+    """
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS as shared
+
+    module = sys.modules.get(f"transformers.models.{family}.modeling_{family}")
+    if module is not None:
+        module.ALL_ATTENTION_FUNCTIONS = shared
+
+
 def _reference_logits(config_cls, model_cls, device) -> torch.Tensor:
     """Build a fresh *unpatched* model and run it."""
     torch.manual_seed(0)
@@ -69,6 +82,7 @@ def _reference_logits(config_cls, model_cls, device) -> torch.Tensor:
 def test_reference_output_survives_a_patch_cycle(family, device):
     """Two reference builds must agree across an intervening patch/unpatch."""
     config_cls, model_cls = _imports(family)
+    _unbind_leaked_interface(family)
 
     before = _reference_logits(config_cls, model_cls, device)
 
@@ -92,6 +106,7 @@ def test_reference_output_survives_a_patch_cycle(family, device):
 def test_module_level_names_are_restored(family, device):
     """The rebindable module attributes are the same objects afterwards."""
     config_cls, model_cls = _imports(family)
+    _unbind_leaked_interface(family)
     torch.manual_seed(0)
     _, patchable = build_patched_model_pair(
         config_cls, model_cls, device, config_kwargs=get_tiny_config_kwargs()
