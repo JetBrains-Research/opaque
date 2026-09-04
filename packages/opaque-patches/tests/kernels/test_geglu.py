@@ -624,5 +624,73 @@ class TestGeGLUApproxPerformance:
         assert_perf_benefit(pt_stats, op_stats, label="GeGLU Approx backward")
 
 
+class TestGeGLURepeatedBackward:
+    """A retained graph must be refused on the second traversal, not silently wrong.
+
+    The Triton backward writes grad_gate/grad_up over the saved gate/up
+    buffers, so a second walk would read overwritten activations. Triton
+    stores bypass the autograd version counter, so nothing else would notice.
+    """
+
+    @pytest.mark.parametrize("fn", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_repeated_backward_raises(self, fn):
+        gate = torch.randn(4, 256, device="cuda", requires_grad=True)
+        up = torch.randn(4, 256, device="cuda", requires_grad=True)
+        grad_out = torch.randn_like(gate)
+        out = fn.apply(gate, up)
+
+        torch.autograd.grad(out, (gate, up), grad_out, retain_graph=True)
+        with pytest.raises(NotImplementedError, match="Repeated backward"):
+            torch.autograd.grad(out, (gate, up), grad_out, retain_graph=True)
+
+    @pytest.mark.parametrize("fn", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_single_backward_unaffected(self, fn):
+        gate = torch.randn(4, 256, device="cuda", requires_grad=True)
+        up = torch.randn(4, 256, device="cuda", requires_grad=True)
+        out = fn.apply(gate, up)
+        torch.autograd.grad(out, (gate, up), torch.randn_like(gate))
+
+
+class TestGeGLUSecondOrder:
+    """Second-order differentiation is refused, not silently wrong.
+
+    Reverse-over-reverse reaches the inner backward's guard; forward-over-reverse
+    stops earlier, on the missing forward-mode rule.
+    """
+
+    @staticmethod
+    def _fn(kernel, up):
+        return lambda gate: kernel.apply(gate, up).sum()
+
+    @pytest.mark.parametrize("kernel", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            lambda f, x: torch.func.jacrev(torch.func.jacrev(f))(x),
+            lambda f, x: torch.func.hessian(f)(x),
+            lambda f, x: torch.func.jacfwd(torch.func.jacrev(f))(x),
+            lambda f, x: torch.func.jvp(
+                torch.func.grad(f), (x,), (torch.ones_like(x),)
+            ),
+        ],
+        ids=["jacrev_jacrev", "hessian", "jacfwd_jacrev", "hvp"],
+    )
+    def test_second_order_raises(self, kernel, transform):
+        gate = torch.randn(8, device="cuda")
+        up = torch.randn(8, device="cuda")
+        with pytest.raises(NotImplementedError):
+            transform(self._fn(kernel, up), gate)
+
+    @pytest.mark.parametrize("kernel", [Opaque_GeGLU_Exact, Opaque_GeGLU_Approx])
+    def test_create_graph_raises(self, kernel):
+        gate = torch.randn(8, device="cuda", requires_grad=True)
+        up = torch.randn(8, device="cuda", requires_grad=True)
+        (grad_gate,) = torch.autograd.grad(
+            kernel.apply(gate, up).sum(), gate, create_graph=True
+        )
+        with pytest.raises(NotImplementedError, match=r"[Dd]ouble backward"):
+            torch.autograd.grad(grad_gate.sum(), gate)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

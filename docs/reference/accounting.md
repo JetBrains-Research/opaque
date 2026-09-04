@@ -286,8 +286,8 @@ each of `k` contiguous, nearly equal blocks. Block sizes differ by at most one.
 
 This mode pairs with
 `opaque.dpsgd.sampling.KOutOfTSampler(..., allocation="block")` and
-provides exact `pld_at(K)` prefix accounting. It is computed by the exact PLD
-transform of Feldman & Shenfeld (2026), with no Monte Carlo sampling.
+is computed for the declared horizon by the exact PLD transform of Feldman &
+Shenfeld (2026), with no Monte Carlo sampling.
 
 - `inner` (Gaussian | AdaClip | NonPrivate): Base mechanism
 - `k` (int): Number of blocks / participations per record
@@ -306,8 +306,7 @@ eps = process.epsilon_at(1e-5)
 
 With `allocation="total"`, every record chooses a uniform `k`-subset of the
 complete horizon. The accountant currently uses the block reduction as a
-conservative upper bound. For `k > 1`, partial-horizon queries return the
-full-horizon bound.
+conservative upper bound.
 
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size, num_groups=1) -> DpProcess`
 
@@ -521,29 +520,6 @@ proc = dpftrl_acc.balls_in_bins(
     num_bins=100,
     n_steps=1000,
 )
-```
-
-### `per_step(proc) -> PerStep`
-
-Adapter that wraps a whole-horizon accountant so it composes step-by-step
-under `Accountant`'s `acct |= step` idiom. `per_step(proc) * K` materialises
-the process-aware K-prefix PLD via `proc.pld_at(K)`. Analytic mechanisms use a
-strategy-aware prefix bound. For b-min-sep and correlated-strategy
-Balls-in-Bins, every nonzero prefix conservatively charges the full-horizon
-confidence-bounded PLD. This preserves monotonicity and boundedness but gives
-up prefix tightness. Identity Balls-in-Bins retains its exact prefix path.
-`K > proc.n_steps` raises.
-
-- `proc` (DpHorizonProcess): The whole-process accountant
-  (`dpftrl_acc.poisson(...)`, `b_min_sep(...)`, `balls_in_bins(...)`).
-
-```python
-proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(0.8, strategy),
-    sample_rate=0.01, n_steps=15_624,
-)
-step = acc.per_step(proc)
-eps_K = (step * 1_000).epsilon_at(1e-5)   # analytic PLD: K-step ε ≤ proc.epsilon_at(δ)
 ```
 
 ---

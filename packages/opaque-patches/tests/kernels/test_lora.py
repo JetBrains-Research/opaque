@@ -1433,5 +1433,65 @@ class TestLoRAMLPPerformance:
         )
 
 
+class TestLoRAMLPRepeatedBackward:
+    """The fused LoRA MLP backward overwrites its saved gate/up buffers."""
+
+    @staticmethod
+    def _inputs():
+        X = torch.randn(4, 64, device="cuda", requires_grad=True)
+
+        def w(o, i):
+            return torch.randn(o, i, device="cuda", requires_grad=True)
+
+        def lora(o, i, r=8):
+            return w(r, i), w(o, r)
+
+        Wg, Wu, Wd = w(128, 64), w(128, 64), w(64, 128)
+        Ag, Bg = lora(128, 64)
+        Au, Bu = lora(128, 64)
+        Ad, Bd = lora(64, 128)
+        return X, Wg, Ag, Bg, 1.0, Wu, Au, Bu, 1.0, Wd, Ad, Bd, 1.0
+
+    @pytest.mark.cuda
+    def test_repeated_backward_raises(self):
+        args = self._inputs()
+        out = opaque_lora_mlp(*args)
+        grad_out = torch.randn_like(out)
+
+        torch.autograd.grad(out, args[0], grad_out, retain_graph=True)
+        with pytest.raises(NotImplementedError, match="Repeated backward"):
+            torch.autograd.grad(out, args[0], grad_out, retain_graph=True)
+
+    @pytest.mark.cuda
+    def test_single_backward_unaffected(self):
+        args = self._inputs()
+        out = opaque_lora_mlp(*args)
+        torch.autograd.grad(out, args[0], torch.randn_like(out))
+
+
+class TestLoRAMLPSecondOrder:
+    """Second-order differentiation through the fused LoRA MLP is refused."""
+
+    @pytest.mark.cuda
+    def test_create_graph_raises(self):
+        args = TestLoRAMLPRepeatedBackward._inputs()
+        (grad_X,) = torch.autograd.grad(
+            opaque_lora_mlp(*args).sum(), args[0], create_graph=True
+        )
+        with pytest.raises(NotImplementedError, match=r"[Dd]ouble backward"):
+            torch.autograd.grad(grad_X.sum(), args[0])
+
+    @pytest.mark.cuda
+    def test_jacrev_jacrev_raises(self):
+        args = TestLoRAMLPRepeatedBackward._inputs()
+        rest = args[1:]
+
+        def fn(x):
+            return opaque_lora_mlp(x, *rest).sum()
+
+        with pytest.raises(NotImplementedError):
+            torch.func.jacrev(torch.func.jacrev(fn))(args[0].detach())
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

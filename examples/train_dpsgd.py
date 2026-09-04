@@ -1595,9 +1595,7 @@ def main():
             _ns=total_steps,
             _allocation=args.allocation,
         ):
-            return acc.per_step(
-                dpsgd_acc.k_out_of_t(_u(nm), k=_k, t=_ns, allocation=_allocation)
-            )
+            return dpsgd_acc.k_out_of_t(_u(nm), k=_k, t=_ns, allocation=_allocation)
 
     elif truncated_batch_size is not None:
         mechanism = lambda nm: dpsgd_acc.poisson(
@@ -1630,7 +1628,7 @@ def main():
         if use_parallel_poisson and args.sampler == "poisson":
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         if use_horizon_sampler:
-            print(f"  Accounting: {args.sampler} (horizon + per_step)")
+            print(f"  Accounting: {args.sampler} (whole horizon)")
         print(f"  Noise mechanism: {args.noise_mechanism}")
         if args.noise_mechanism == "bounded_gaussian":
             print(f"  Noise bound: ±{args.noise_bound}")
@@ -1647,7 +1645,7 @@ def main():
         if use_horizon_sampler:
             while True:
                 try:
-                    (mechanism(param_min) * total_steps).epsilon_at(args.target_delta)
+                    mechanism(param_min).epsilon_at(args.target_delta)
                 except ValueError as exc:
                     if (
                         "exceeds max_grid_size" not in str(exc)
@@ -1659,7 +1657,11 @@ def main():
                     break
         calibration = cal.calibrate(
             cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
-            lambda nm: mechanism(nm) * total_steps,
+            (
+                mechanism
+                if use_horizon_sampler
+                else lambda nm: mechanism(nm) * total_steps
+            ),
             param_min=param_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1802,6 +1804,10 @@ def main():
 
     opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
+    if use_horizon_sampler:
+        # Horizon mechanisms describe the declared run as one release. Reporting
+        # its full cost is conservative if --stop-at-step truncates execution.
+        accounting |= mechanism(noise_multiplier)
 
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
@@ -1887,7 +1893,8 @@ def main():
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===
-            accounting |= mechanism(noise_multiplier)
+            if not use_horizon_sampler:
+                accounting |= mechanism(noise_multiplier)
 
             batch_size = len(input_ids)
 
@@ -1987,9 +1994,10 @@ def main():
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
-                # Independent DP-SGD releases compose across this checkpoint, so
-                # caching the evaluated prefix avoids recomputing it at later evals.
-                accounting = acc.cached(accounting)
+                if not use_horizon_sampler:
+                    # Independent DP-SGD releases compose across this checkpoint,
+                    # so caching avoids recomputing them at later evaluations.
+                    accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
 
                 metrics = {
@@ -2072,7 +2080,7 @@ def main():
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
     if use_horizon_sampler:
-        print(f"  Accounting: {args.sampler} (horizon + per_step)")
+        print(f"  Accounting: {args.sampler} (whole horizon)")
     elif truncated_batch_size is not None:
         print(
             f"  Accounting: truncated_poisson (cap={truncated_batch_size}, n={global_train_size})"

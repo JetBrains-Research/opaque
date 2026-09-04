@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
-from opaque.api.accounting.core._pld_cache import horizon_pld_cache
+from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core._random_allocation_cache import epoch_pld
 from opaque.api.accounting.dpftrl.mechanisms._mf_gaussian import MfGaussian
 from opaque.api.dpftrl.noise._bisr import BisrStrategy
@@ -135,35 +135,18 @@ class BallsInBins(DpHorizonProcess):
         # Once per epoch ⇒ ``num_epochs`` total per example.
         return self.num_epochs
 
-    @property
-    def atomic_unit(self) -> int:
-        # One full epoch covers ``num_bins`` rounds; the BnB dominating-pair
-        # analysis is defined at epoch boundaries.  ``per_step(self) * K``
-        # rounds K up to the next epoch.
-        return self.num_bins
-
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
-        prefix_steps = self.n_steps if n_steps is None else n_steps
-        if isinstance(self.inner.strategy, BltStrategy):
-            # BLT prefix PLDs use coefficients optimized for the full horizon.
-            prefix_steps = self.n_steps
-        else:
-            prefix_steps = min(
-                -(-prefix_steps // self.num_bins) * self.num_bins,
-                self.n_steps,
-            )
+    def _pld_cache_key(self) -> tuple[object, ...]:
         return (
             "BallsInBins",
             self.inner.noise_multiplier,
             self.num_bins,
             self.n_steps,
-            strategy_cache_key(self.inner.strategy, prefix_steps),
+            strategy_cache_key(self.inner.strategy, self.n_steps),
         )
 
-    @horizon_pld_cache(maxsize=8)
-    def pld_at(
+    @pld_cache(maxsize=8)
+    def pld(
         self,
-        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -173,29 +156,8 @@ class BallsInBins(DpHorizonProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        """K-step BnB PLD using N-tuned strategy quantities.
-
-        ``n_steps`` is rounded up to the next epoch (multiple of
-        ``num_bins``; capped at ``self.n_steps``).  For horizon-
-        independent inners (Identity, BSR, BiSR, λ-CGD) the gram /
-        primitive is reparameterised by ``K_epochs = rounded // num_bins``.
-        For BLT (the only retuning inner) the N-tuned Toeplitz first
-        column is read at ``self.n_steps`` and the K-prefix gram is
-        built via the closed-form Toeplitz gram on those coefficients,
-        evaluated at participation context ``(K, num_bins, K_epochs)``.
-        Correlated-strategy Monte Carlo paths use the full-horizon confidence
-        bound for every nonzero prefix. Identity retains its exact prefix path.
-        """
+        """Return the PLD for the complete declared horizon."""
         from opaque.api.accounting.core.discretization import get_discretization
-
-        if n_steps <= 0 or n_steps > self.n_steps:
-            raise ConfigurationError(
-                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
-            )
-        rounded = min(-(-n_steps // self.num_bins) * self.num_bins, self.n_steps)
-        num_epochs_K = rounded // self.num_bins
-        min_sep_K = self.num_bins
-        max_participations_K = num_epochs_K
 
         config = get_discretization(
             discretization=discretization,
@@ -207,20 +169,10 @@ class BallsInBins(DpHorizonProcess):
             mc_failure_probability=mc_failure_probability,
         )
         native_cfg = config.to_native()
+        if self.inner.noise_multiplier == 0:
+            return _native.non_private_pld(native_cfg)
 
         s = self.inner.strategy
-
-        if not isinstance(s, IdentityStrategy) and rounded < self.n_steps:
-            return self.pld_at(
-                self.n_steps,
-                discretization=discretization,
-                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                max_grid_size=max_grid_size,
-                max_conv_grid=max_conv_grid,
-                seed=seed,
-                mc_resolution=mc_resolution,
-                mc_failure_probability=mc_failure_probability,
-            )
 
         # Identity (C = I) collapses onto random allocation, exactly.
         #
@@ -235,9 +187,7 @@ class BallsInBins(DpHorizonProcess):
         # Carlo: no 1/δ sample cost, reproducible across thread counts, and
         # tighter.  The sampler is unchanged — bins stay fixed across epochs.
         if isinstance(s, IdentityStrategy):
-            if self.inner.noise_multiplier == 0:
-                return _native.non_private_pld(native_cfg)
-            sigma_eff = float(self.inner.noise_multiplier) / math.sqrt(num_epochs_K)
+            sigma_eff = float(self.inner.noise_multiplier) / math.sqrt(self.num_epochs)
             return epoch_pld(
                 sigma_eff,
                 self.num_bins,
@@ -246,22 +196,20 @@ class BallsInBins(DpHorizonProcess):
             )
 
         if isinstance(s, BltStrategy):
-            # BLT is the only retuning inner: re-running L-BFGS at K
-            # would yield a different mechanism, breaking post-processing
-            # monotonicity.  Pin the N-tuned Toeplitz first column and
-            # evaluate its K-prefix gram instead.
+            # BLT is retuned for the declared horizon, so use that horizon's
+            # Toeplitz first column for the complete-process Gram matrix.
             coefs = s.coefficients(
                 n_steps=self.n_steps,
                 min_sep=self.min_sep,
                 max_participations=self.max_participations,
             )
-            pinned = list(coefs[:rounded].tolist())
+            pinned = list(coefs.tolist())
             gram = tuple(
                 _native.toeplitz_gram_matrix(
                     pinned,
-                    rounded,
-                    min_sep_K,
-                    max_participations_K,
+                    self.n_steps,
+                    self.min_sep,
+                    self.max_participations,
                     False,
                 )
             )
@@ -272,9 +220,9 @@ class BallsInBins(DpHorizonProcess):
             # BnB builders construct means from |C|; for normalized families,
             # per-column normalization precedes the epoch sum.
             gram = s.gram_matrix(
-                n_steps=rounded,
-                min_sep=min_sep_K,
-                max_participations=max_participations_K,
+                n_steps=self.n_steps,
+                min_sep=self.min_sep,
+                max_participations=self.max_participations,
             )
         config.warn_if_large_mc()
         return _native.bnb_mc_pld(
@@ -282,29 +230,6 @@ class BallsInBins(DpHorizonProcess):
             self.num_bins,
             self.inner.noise_multiplier,
             native_cfg,
-        )
-
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        max_grid_size: int | None = None,
-        max_conv_grid: int | None = None,
-        seed: int | None = None,
-        mc_resolution: float | None = None,
-        mc_failure_probability: float | None = None,
-    ) -> Pld:
-        """Return the full-horizon PLD, confidence-bounded for MC strategies."""
-        return self.pld_at(
-            self.n_steps,
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            max_grid_size=max_grid_size,
-            max_conv_grid=max_conv_grid,
-            seed=seed,
-            mc_resolution=mc_resolution,
-            mc_failure_probability=mc_failure_probability,
         )
 
 

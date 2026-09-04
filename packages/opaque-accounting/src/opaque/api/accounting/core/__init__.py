@@ -42,7 +42,7 @@ from opaque.api.accounting.core.calibration import (
     epsilon_budget,
     risk_budget,
 )
-from opaque.api.accounting.core.composition import cached, compose, per_step, repeat
+from opaque.api.accounting.core.composition import cached, compose, repeat
 from opaque.api.accounting.core.discretization import (
     get_discretization,
     set_discretization,
@@ -78,7 +78,6 @@ __all__ = [
     "repeat",
     "compose",
     "cached",
-    "per_step",
     # Calibration / budgets
     "epsilon_budget",
     "delta_budget",

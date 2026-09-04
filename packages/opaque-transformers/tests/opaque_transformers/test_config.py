@@ -448,6 +448,24 @@ class TestClippingAndSamplingSurfaces:
         )
         assert args.sampling_mode == "k_out_of_t"
 
+    @pytest.mark.parametrize("mechanism", ["mf_identity", "mf_band"])
+    def test_horizon_mechanism_rejects_privacy_early_stopping(self, mechanism):
+        with pytest.raises(ValueError, match="whole-horizon"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=2.0,
+                privacy_noise_mechanism=mechanism,
+            )
+
+    def test_k_out_of_t_rejects_privacy_early_stopping(self):
+        with pytest.raises(ValueError, match="whole-horizon"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_target_epsilon=2.0,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 2, "allocation": "block"},
+            )
+
     def test_k_out_of_t_requires_k_and_allocation(self):
         with pytest.raises(ValueError, match="k"):
             TrainingArguments(

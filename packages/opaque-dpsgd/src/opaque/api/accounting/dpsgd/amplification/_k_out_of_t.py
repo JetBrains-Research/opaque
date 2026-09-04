@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Literal
 
 from opaque.api.accounting.core import _native
 from opaque.api.accounting.core._horizon import DpHorizonProcess
-from opaque.api.accounting.core._pld_cache import horizon_pld_cache
-from opaque.api.accounting.core._random_allocation_cache import epoch_pld, prefix_pld
+from opaque.api.accounting.core._pld_cache import pld_cache
+from opaque.api.accounting.core._random_allocation_cache import epoch_pld
 from opaque.api.accounting.core.mechanisms._nonprivate import NonPrivate
 from opaque.api.accounting.dpsgd.mechanisms._adaclip import AdaClip
 from opaque.api.accounting.dpsgd.mechanisms._gaussian import Gaussian
@@ -34,11 +34,10 @@ class KOutOfT(DpHorizonProcess):
     """Accounting for block or total ``k``-out-of-``t`` allocation.
 
     Block allocation places each record once in each of ``k`` contiguous,
-    nearly equal blocks. Its PLD is exact at every prefix.
+    nearly equal blocks.
 
     Total allocation chooses a uniform ``k``-subset of the ``t`` steps. The
-    block PLD is a conservative upper bound for its full horizon. For ``k > 1``,
-    prefix queries conservatively return that full-horizon bound.
+    block PLD is a conservative upper bound for its full horizon.
     """
 
     inner: _Inner
@@ -85,10 +84,9 @@ class KOutOfT(DpHorizonProcess):
                     *("KOutOfT requires Gaussian, AdaClip(Gaussian), or NonPrivate",)
                 )
 
-    @horizon_pld_cache(maxsize=16)
-    def pld_at(
+    @pld_cache(maxsize=16)
+    def pld(
         self,
-        n_steps: int,
         *,
         discretization: float | None = None,
         log_x_mass_truncation_bound: float | None = None,
@@ -98,10 +96,6 @@ class KOutOfT(DpHorizonProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
-        if n_steps < 1 or n_steps > self.n_steps:
-            raise ConfigurationError(
-                *(f"n_steps ({n_steps}) must be in [1, {self.n_steps}]",)
-            )
         from opaque.api.accounting.core.discretization import get_discretization
 
         config = get_discretization(
@@ -116,57 +110,12 @@ class KOutOfT(DpHorizonProcess):
         noise_multiplier = self._noise_multiplier()
         if noise_multiplier is None:
             return _native.non_private_pld(config.to_native())
-        if n_steps == self.n_steps:
-            return epoch_pld(
-                noise_multiplier,
-                self.n_steps,
-                self.k,
-                config,
-            )
-        if self.allocation == "total" and self.k > 1 and n_steps < self.n_steps:
-            return self.pld_at(
-                self.n_steps,
-                discretization=discretization,
-                log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-                max_grid_size=max_grid_size,
-                max_conv_grid=max_conv_grid,
-                seed=seed,
-                mc_resolution=mc_resolution,
-                mc_failure_probability=mc_failure_probability,
-            )
-
-        result = None
-        remaining = n_steps
-        floor = self.n_steps // self.k
-        num_ceil = self.n_steps - floor * self.k
-        for block_size, count in (
-            (floor, self.k - num_ceil),
-            (floor + 1, num_ceil),
-        ):
-            full_blocks = min(remaining // block_size, count)
-            if full_blocks:
-                block = epoch_pld(
-                    noise_multiplier,
-                    block_size,
-                    1,
-                    config,
-                )
-                blocks = block if full_blocks == 1 else block.self_compose(full_blocks)
-                result = blocks if result is None else result.compose(blocks)
-                remaining -= full_blocks * block_size
-            if remaining and full_blocks < count:
-                prefix = prefix_pld(
-                    noise_multiplier,
-                    block_size,
-                    remaining,
-                    config,
-                )
-                result = prefix if result is None else result.compose(prefix)
-                remaining = 0
-                break
-        assert remaining == 0
-        assert result is not None
-        return result
+        return epoch_pld(
+            noise_multiplier,
+            self.n_steps,
+            self.k,
+            config,
+        )
 
 
 def k_out_of_t(
@@ -182,8 +131,7 @@ def k_out_of_t(
     :class:`opaque.dpsgd.sampling.KOutOfTSampler` with the same arguments.
 
     ``allocation="total"`` uses the block reduction as a valid conservative
-    upper bound. Full-horizon accounting is the intended calibration target;
-    prefixes with ``k > 1`` return the full-horizon bound.
+    upper bound. The returned process accounts the complete ``t``-step run.
     """
     if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
         raise InputTypeError(

@@ -173,12 +173,11 @@ pub fn py_drop_b_min_sep_transcript_corpus(handle: u64) {
 #[pyfunction]
 #[pyo3(
     name = "bandmf_b_min_sep_pld_from_transcript_handle",
-    signature = (handle, strategy_coef, n_steps, p, sigma, config)
+    signature = (handle, strategy_coef, p, sigma, config)
 )]
 pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
     handle: u64,
     strategy_coef: Vec<f64>,
-    n_steps: usize,
     p: f64,
     sigma: f64,
     config: &PyDiscretizationConfig,
@@ -186,7 +185,6 @@ pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
     let pld = crate::amplification::pld_from_transcript_handle(
         handle,
         &strategy_coef,
-        n_steps,
         p,
         sigma,
         &config.inner,
@@ -230,44 +228,6 @@ pub fn py_random_allocation_gaussian_pld(
         noise_multiplier,
         t,
         k,
-        &config.inner,
-    )?;
-    Ok(PyPld::new(pld))
-}
-
-/// Compute the exact PLD for a released prefix of 1-out-of-t allocation.
-#[pyfunction]
-#[pyo3(name = "random_allocation_gaussian_prefix_pld", signature = (noise_multiplier, total_steps, released_steps, config))]
-pub fn py_random_allocation_gaussian_prefix_pld(
-    noise_multiplier: f64,
-    total_steps: usize,
-    released_steps: usize,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::amplification::random_allocation_gaussian_prefix_pld(
-        noise_multiplier,
-        total_steps,
-        released_steps,
-        &config.inner,
-    )?;
-    Ok(PyPld::new(pld))
-}
-
-/// Compute a conservative prefix PLD for global k-out-of-t allocation.
-#[pyfunction]
-#[pyo3(name = "k_out_of_t_gaussian_prefix_pld", signature = (noise_multiplier, total_steps, total_participations, released_steps, config))]
-pub fn py_k_out_of_t_gaussian_prefix_pld(
-    noise_multiplier: f64,
-    total_steps: usize,
-    total_participations: usize,
-    released_steps: usize,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::amplification::k_out_of_t_gaussian_prefix_pld(
-        noise_multiplier,
-        total_steps,
-        total_participations,
-        released_steps,
         &config.inner,
     )?;
     Ok(PyPld::new(pld))

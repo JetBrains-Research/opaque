@@ -55,12 +55,14 @@ skip calibration.
 
 **At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
 must be set.** Neither has a silent default — construction raises if
-both are `None`. The two valid shapes are:
+both are `None`. The usual configurations are:
 
 - `privacy_target_epsilon=ε` (NM left as `None`) — calibrate the noise
   multiplier from the budget at `train()` start.
 - `privacy_noise_multiplier=σ` (target_eps left as `None`) — fix the
   noise multiplier; accounted ε is reported but not constrained.
+- For independent DP-SGD only, set both to use a fixed multiplier and
+  stop after the accumulated epsilon reaches the target.
 
 Setting `privacy_noise_multiplier=0.0` together with a
 `privacy_target_epsilon` raises: the non-private path can't honour a
@@ -75,8 +77,10 @@ boundary where the accumulated ε from the privacy accountant meets or
 exceeds the target. The halt records `state.privacy_target_epsilon_reached
 = True` and surfaces as a normal early-stop control flow (callbacks see
 the final eval / save / log pass). The check runs every
-`logging_steps` (so setting `logging_steps=0` disables it
-silently — explicit logging is the contract for stop-at-ε visibility).
+`logging_steps` (so setting `logging_steps=0` disables it silently —
+explicit logging is the contract for stop-at-ε visibility). This mode is
+supported only for independent DP-SGD mechanisms. Horizon mechanisms reject
+this combination because privacy-based early stopping is unsupported.
 A resume against a checkpoint where the budget is already spent
 short-circuits before the first training step.
 
@@ -153,8 +157,8 @@ once in each of `k` nearly equal blocks. With `"allocation": "total"`, each
 example chooses a uniform `k`-subset of the horizon and `DPTrainer` uses the
 conservative block bound.
 Identity MF explicitly accepts `sampling_mode="balls_in_bins"`. Horizon modes
-are adapted to the trainer's step-wise accountant through
-`opaque.accounting.per_step`.
+are accounted once for their declared `n_steps`; every privacy metric reported
+during the run is the conservative full-horizon epsilon.
 
 So the minimal DP-FTRL configuration is one field:
 
@@ -216,10 +220,9 @@ Resume claims:
 - `train(resume_from_checkpoint=<path>)` restores model weights,
   optimizer / clip / noise state, sampler cursor, RNG snapshots, and
   the privacy accountant in one call.
-- The saved accountant is the **prefix**: heterogeneous composition
-  with the remaining steps is DP-valid. Calibration runs over the
-  remaining steps to hit the original `privacy_target_epsilon`
-  against that prefix.
+- For independent DP-SGD, the saved accountant contains the executed
+  composition and calibration covers the remaining steps against it.
+  Horizon mechanisms retain their single declared full-horizon process.
 - `resume_from_checkpoint` requires a **complete DP checkpoint**
   (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json`).  A
   weights-only export (`save_only_model=True`, an HF checkpoint, a

@@ -237,22 +237,21 @@ are Binomial, so **some batches are empty**. They are emitted rather than
 skipped: compacting them away changes the accounted participation schedule.
 
 `dpsgd_acc.k_out_of_t(..., allocation="block")` provides an exact
-whole-horizon process and exact prefix bounds:
+whole-horizon process:
 
 ```python
-process = dpsgd_acc.k_out_of_t(
+training = dpsgd_acc.k_out_of_t(
     dpsgd_acc.gaussian(noise_multiplier),
     k=num_epochs,
     t=num_epochs * steps_per_epoch,
     allocation="block",
 )
-step = acc.per_step(process)
+epsilon = training.epsilon_at(delta=1e-5)
 ```
 
 With `allocation="total"`, every example instead chooses exactly `k` distinct
 steps uniformly from the whole `t`-step horizon. The same accounting factory
-uses the block reduction as a valid conservative upper bound. For `k > 1`, an
-intermediate prefix conservatively carries the full-horizon cost.
+uses the block reduction as a valid conservative upper bound.
 
 !!! warning "Not the same scheme as `BallsInBinsSampler`"
 

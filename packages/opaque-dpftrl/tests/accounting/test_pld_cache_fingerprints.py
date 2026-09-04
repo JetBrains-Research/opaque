@@ -12,26 +12,26 @@ from opaque.dpftrl.noise import band_mf_strategy, blt_strategy, identity_strateg
 from opaque.scheduling import constant_schedule, linear_schedule
 
 
-def _prefix_process(schedule, *, momentum: float = 1.0):
+def _horizon_process(schedule, *, momentum: float = 1.0):
     strategy = band_mf_strategy(bands=4, momentum=momentum, lr_schedule=schedule)
     process = ftrl_acc.poisson(
         ftrl_acc.mf_gaussian(1.0, strategy),
         sample_rate=0.01,
         n_steps=16,
     )
-    return acc.per_step(process) * 8
+    return process
 
 
 def test_distinct_materialized_schedules_do_not_share_cached_plds() -> None:
-    constant = _prefix_process(lambda _step: 1.0)
-    ramp = _prefix_process(lambda step: 1.0 + 0.01 * step)
+    constant = _horizon_process(lambda _step: 1.0)
+    ramp = _horizon_process(lambda step: 1.0 + 0.01 * step)
 
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 
 def test_structurally_distinct_equivalent_schedules_reuse_cached_pld() -> None:
-    first = _prefix_process(lambda step: 1.0 + 0.01 * step)
-    second = _prefix_process(lambda step: float(1.0 + 0.01 * step))
+    first = _horizon_process(lambda step: 1.0 + 0.01 * step)
+    second = _horizon_process(lambda step: float(1.0 + 0.01 * step))
 
     assert first.pld(discretization=0.1) is second.pld(discretization=0.1)
 
@@ -45,21 +45,21 @@ def test_distinct_mf_gaussian_parameters_do_not_share_cached_plds() -> None:
 
 
 def test_distinct_strategy_parameters_do_not_share_cached_plds() -> None:
-    first = _prefix_process(lambda _step: 1.0, momentum=0.9)
-    second = _prefix_process(lambda _step: 1.0, momentum=0.8)
+    first = _horizon_process(lambda _step: 1.0, momentum=0.9)
+    second = _horizon_process(lambda _step: 1.0, momentum=0.8)
     first.pld.cache_clear()
 
     assert first.pld(discretization=0.1) is not second.pld(discretization=0.1)
 
 
 def test_composed_processes_preserve_schedule_cache_identity() -> None:
-    constant = acc.eps_delta(0.1) | _prefix_process(lambda _step: 1.0)
-    ramp = acc.eps_delta(0.1) | _prefix_process(lambda step: 1.0 + 0.01 * step)
+    constant = acc.eps_delta(0.1) | _horizon_process(lambda _step: 1.0)
+    ramp = acc.eps_delta(0.1) | _horizon_process(lambda step: 1.0 + 0.01 * step)
 
     assert constant.pld(discretization=0.1) is not ramp.pld(discretization=0.1)
 
 
-def test_blt_prefix_fingerprint_uses_the_full_schedule() -> None:
+def test_blt_horizon_fingerprint_uses_the_full_schedule() -> None:
     constant = ftrl_acc.balls_in_bins(
         ftrl_acc.mf_gaussian(1.0, blt_strategy(lr_schedule=lambda _step: 1.0)),
         num_bins=4,
@@ -74,9 +74,7 @@ def test_blt_prefix_fingerprint_uses_the_full_schedule() -> None:
         n_steps=16,
     )
 
-    assert constant._pld_cache_key(n_steps=4) != changed_after_prefix._pld_cache_key(
-        n_steps=4
-    )
+    assert constant._pld_cache_key() != changed_after_prefix._pld_cache_key()
 
 
 def _blt_phase(schedule):

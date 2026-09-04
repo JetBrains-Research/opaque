@@ -42,8 +42,8 @@ def _args(tmp_path, **overrides) -> TrainingArguments:
         "output_dir": str(tmp_path),
         "save_strategy": "no",
         "use_cpu": True,
-        # ``_LogitsOnlyModel`` is a synthetic test fixture; not in
-        # opaque's family registry — silence the info log.
+        # ``_LogitsOnlyModel`` is a synthetic non-HF fixture, so it does
+        # not require the registered-family compatibility patches.
         "use_compat_patches": False,
         "privacy_target_epsilon": 10.0,
         "privacy_noise_multiplier": 1.0,
