@@ -2,20 +2,37 @@
 
 from __future__ import annotations
 
+import dataclasses
+from collections.abc import Callable, Mapping
 from dataclasses import fields
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
-from opaque.dpftrl.noise import band_mf_strategy, bisr_strategy, mf_gaussian_noise
+from opaque.dpftrl.noise import (
+    band_mf_strategy,
+    bisr_strategy,
+    blt_strategy,
+    bsr_strategy,
+    identity_strategy,
+    lambda_cgd_strategy,
+    mf_gaussian_noise,
+)
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.exceptions import CheckpointError
 from opaque.random import key
+from opaque.random.types import RngKey
 from opaque.serialization import from_state_dict as opaque_from_state_dict
-from opaque.types import clipped
+from opaque.types import (
+    PerGroup,
+    SecondMomentClippingOutput,
+    SecondMomentNoiseOutput,
+    clipped,
+)
 
 
 class TestParseCheckpointStep:
@@ -244,28 +261,270 @@ class TestDpRuntimeBundle:
             ckpt.load_dp_runtime_state(path)
 
 
+_NOISE_STEPS = 6
+_NOISE_CHECKPOINT_STEP = 3
+
+
+def _noise_tree() -> dict[str, Any]:
+    return {
+        "fallback": torch.zeros(3, dtype=torch.float64),
+        "nested": {"head": torch.zeros((2, 2), dtype=torch.float64)},
+    }
+
+
+def _per_group_norm(*, fallback: float, head: float) -> PerGroup:
+    return PerGroup(
+        groups={
+            ("fallback",): "fallback",
+            ("nested", "head"): "head",
+        },
+        values={"fallback": fallback, "head": head},
+    )
+
+
+def _mf_noise_factory(strategy_factory: Callable[[], Any]) -> Callable[[RngKey], Any]:
+    def make_noise(rng_key: RngKey):
+        return mf_gaussian_noise(
+            _noise_tree(),
+            strategy_factory(),
+            n_steps=_NOISE_STEPS,
+            min_sep=_NOISE_STEPS,
+            max_participations=1,
+            noise_multiplier=1.0,
+            key=rng_key,
+            compute_dtype=torch.float64,
+        )
+
+    return make_noise
+
+
+def _paired_noise_factory(rng_key: RngKey):
+    return mf_gaussian_noise(
+        _noise_tree(),
+        band_mf_strategy(bands=3, momentum=0.9),
+        n_steps=_NOISE_STEPS,
+        min_sep=_NOISE_STEPS,
+        max_participations=1,
+        noise_multiplier=1.0,
+        key=rng_key,
+        compute_dtype=torch.float64,
+        second_moment_strategy=lambda_cgd_strategy(lambda_=0.5),
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class _NoiseContinuityCase:
+    make_noise: Callable[[RngKey], Any]
+    make_input: Callable[[], Any]
+    make_poison_input: Callable[[], Any]
+    mechanism_kind: str
+    buffered: bool = False
+
+
+def _scalar_input(max_norm: float):
+    return clipped(_noise_tree(), max_norm=max_norm)
+
+
+def _per_group_input(*, fallback: float, head: float):
+    return clipped(
+        _noise_tree(),
+        max_norm=_per_group_norm(fallback=fallback, head=head),
+    )
+
+
+def _paired_input(*, max_norm: float, squared_max_norm: float):
+    return SecondMomentClippingOutput(
+        grads=_scalar_input(max_norm),
+        squared_grads=_scalar_input(squared_max_norm),
+    )
+
+
+_NOISE_CASES = [
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=lambda rng_key: gaussian_noise(
+                noise_multiplier=1.0,
+                key=rng_key,
+                compute_dtype=torch.float64,
+            ),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="gaussian",
+        ),
+        id="gaussian",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(identity_strategy),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="mf_identity",
+        ),
+        id="mf-identity",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(
+                lambda: band_mf_strategy(bands=3, momentum=0.9)
+            ),
+            make_input=lambda: _per_group_input(fallback=1.0, head=2.0),
+            make_poison_input=lambda: _per_group_input(
+                fallback=7.0,
+                head=8.0,
+            ),
+            mechanism_kind="mf_band",
+            buffered=True,
+        ),
+        id="mf-band-per-group",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(
+                lambda: blt_strategy(max_buffers=2, momentum=0.9)
+            ),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="mf_blt",
+            buffered=True,
+        ),
+        id="mf-blt",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(
+                lambda: bisr_strategy(bandwidth=3, momentum=0.9)
+            ),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="mf_bisr",
+            buffered=True,
+        ),
+        id="mf-bisr",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(
+                lambda: bsr_strategy(bandwidth=3, alpha=1.0, beta=0.9)
+            ),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="mf_bsr",
+            buffered=True,
+        ),
+        id="mf-bsr",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_mf_noise_factory(lambda: lambda_cgd_strategy(lambda_=0.5)),
+            make_input=lambda: _scalar_input(1.0),
+            make_poison_input=lambda: _scalar_input(7.0),
+            mechanism_kind="mf_lambda_cgd",
+        ),
+        id="mf-lambda-cgd",
+    ),
+    pytest.param(
+        _NoiseContinuityCase(
+            make_noise=_paired_noise_factory,
+            make_input=lambda: _paired_input(max_norm=1.0, squared_max_norm=1.0),
+            make_poison_input=lambda: _paired_input(
+                max_norm=7.0,
+                squared_max_norm=49.0,
+            ),
+            mechanism_kind="mf_band",
+            buffered=True,
+        ),
+        id="mf-paired-band-lambda-cgd",
+    ),
+]
+
+
+def _assert_nested_equal(actual: Any, expected: Any, path: str = "root") -> None:
+    assert type(actual) is type(expected), path
+    if isinstance(expected, torch.Tensor):
+        assert actual.dtype == expected.dtype, path
+        assert actual.device == expected.device, path
+        assert torch.equal(actual, expected), path
+        return
+    if dataclasses.is_dataclass(expected):
+        for field in dataclasses.fields(expected):
+            _assert_nested_equal(
+                getattr(actual, field.name),
+                getattr(expected, field.name),
+                f"{path}.{field.name}",
+            )
+        return
+    if isinstance(expected, Mapping):
+        assert set(actual) == set(expected), path
+        for key_ in expected:
+            _assert_nested_equal(actual[key_], expected[key_], f"{path}[{key_!r}]")
+        return
+    if isinstance(expected, (list, tuple)):
+        assert len(actual) == len(expected), path
+        for index, (actual_item, expected_item) in enumerate(
+            zip(actual, expected, strict=True)
+        ):
+            _assert_nested_equal(actual_item, expected_item, f"{path}[{index}]")
+        return
+    assert actual == expected, path
+
+
+def _nested_tensors(value: Any):
+    if isinstance(value, torch.Tensor):
+        yield value
+    elif dataclasses.is_dataclass(value):
+        for field in dataclasses.fields(value):
+            yield from _nested_tensors(getattr(value, field.name))
+    elif isinstance(value, Mapping):
+        for child in value.values():
+            yield from _nested_tensors(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            yield from _nested_tensors(child)
+
+
+def _noise_streams(output: Any):
+    if isinstance(output, SecondMomentNoiseOutput):
+        return output.noisy_grads, output.noisy_squared_grads
+    return (output,)
+
+
 class TestNoiseStreamContinuity:
-    """DP noise draws continue exactly after checkpoint state restoration."""
+    """DP noise state and outputs continue exactly across a runtime checkpoint."""
 
-    @staticmethod
-    def _assert_continuity(tmp_path, make_noise):
-        total_steps = 4
-        checkpoint_step = 2
-        grads = clipped(torch.zeros(8), max_norm=1.0)
-
-        uninterrupted_fn, uninterrupted_state = make_noise()
+    @pytest.mark.parametrize("case", _NOISE_CASES)
+    def test_continues_after_resume(self, tmp_path, case):
+        uninterrupted_fn, uninterrupted_state = case.make_noise(key(42))
         uninterrupted_outputs = []
-        for _ in range(total_steps):
-            output, uninterrupted_state = uninterrupted_fn(grads, uninterrupted_state)
-            uninterrupted_outputs.append(output.pytree)
+        for _ in range(_NOISE_STEPS):
+            output, uninterrupted_state = uninterrupted_fn(
+                case.make_input(),
+                uninterrupted_state,
+            )
+            uninterrupted_outputs.append(output)
 
-        interrupted_fn, interrupted_state = make_noise()
-        resumed_outputs = []
-        for _ in range(checkpoint_step):
-            output, interrupted_state = interrupted_fn(grads, interrupted_state)
-            resumed_outputs.append(output.pytree)
+        interrupted_fn, interrupted_state = case.make_noise(key(42))
+        interrupted_outputs = []
+        for _ in range(_NOISE_CHECKPOINT_STEP):
+            output, interrupted_state = interrupted_fn(
+                case.make_input(),
+                interrupted_state,
+            )
+            interrupted_outputs.append(output)
+
+        for actual, expected in zip(
+            interrupted_outputs,
+            uninterrupted_outputs[:_NOISE_CHECKPOINT_STEP],
+            strict=True,
+        ):
+            _assert_nested_equal(actual, expected)
+        if case.buffered:
+            assert any(
+                bool(torch.count_nonzero(value))
+                for value in _nested_tensors(interrupted_state)
+            )
 
         path = str(tmp_path / "dp_runtime.pt")
+        is_mf = case.mechanism_kind.startswith("mf_")
         ckpt.save_dp_runtime_state(
             path,
             clip_state=FixedClipState(),
@@ -276,52 +535,64 @@ class TestNoiseStreamContinuity:
             noise_multiplier=1.0,
             expected_steps_per_epoch=1,
             expected_batch_size=1,
-            total_steps=total_steps,
+            total_steps=_NOISE_STEPS,
+            mechanism_kind=case.mechanism_kind,
+            mf_n_steps=_NOISE_STEPS if is_mf else None,
+            mf_min_sep=_NOISE_STEPS if is_mf else None,
+            mf_max_participations=1 if is_mf else None,
         )
         checkpoint = ckpt.load_dp_runtime_state(path)
 
-        resumed_fn, state_template = make_noise()
-        resumed_state = opaque_from_state_dict(state_template, checkpoint.noise_state)
-        for _ in range(total_steps - checkpoint_step):
-            output, resumed_state = resumed_fn(grads, resumed_state)
-            resumed_outputs.append(output.pytree)
+        for restore_mode in ("fresh", "poisoned"):
+            poisoned = restore_mode == "poisoned"
+            restore_key = (
+                RngKey(seed=999, impl="poison-template") if poisoned else key(42)
+            )
+            resumed_fn, state_template = case.make_noise(restore_key)
+            if poisoned:
+                _, state_template = resumed_fn(
+                    case.make_poison_input(),
+                    state_template,
+                )
+            resumed_state = opaque_from_state_dict(
+                state_template,
+                checkpoint.noise_state,
+            )
+            _assert_nested_equal(
+                resumed_state,
+                interrupted_state,
+                path=f"{restore_mode}.restored_state",
+            )
 
-        for uninterrupted, resumed in zip(
-            uninterrupted_outputs, resumed_outputs, strict=True
-        ):
-            assert torch.equal(uninterrupted, resumed)
-        assert not torch.equal(resumed_outputs[checkpoint_step], resumed_outputs[0])
+            resumed_outputs = list(interrupted_outputs)
+            for _ in range(_NOISE_CHECKPOINT_STEP, _NOISE_STEPS):
+                output, resumed_state = resumed_fn(
+                    case.make_input(),
+                    resumed_state,
+                )
+                resumed_outputs.append(output)
 
-    def test_gaussian_noise_continues_after_resume(self, tmp_path):
-        self._assert_continuity(
-            tmp_path,
-            lambda: gaussian_noise(noise_multiplier=1.0, key=key(42)),
-        )
+            for actual, expected in zip(
+                resumed_outputs,
+                uninterrupted_outputs,
+                strict=True,
+            ):
+                _assert_nested_equal(actual, expected)
+            _assert_nested_equal(resumed_state, uninterrupted_state)
 
-    def test_band_mf_noise_continues_after_resume(self, tmp_path):
-        self._assert_continuity(
-            tmp_path,
-            lambda: mf_gaussian_noise(
-                torch.zeros(8),
-                band_mf_strategy(bands=2, momentum=0.9),
-                n_steps=4,
-                noise_multiplier=1.0,
-                key=key(42),
-            ),
-        )
-
-    def test_bisr_bounded_noise_continues_after_resume(self, tmp_path):
-        self._assert_continuity(
-            tmp_path,
-            lambda: mf_gaussian_noise(
-                torch.zeros(8),
-                bisr_strategy(bandwidth=3, momentum=0.9),
-                n_steps=4,
-                noise_multiplier=1.0,
-                key=key(42),
-                compute_dtype=torch.float64,
-            ),
-        )
+            first_output = uninterrupted_outputs[0]
+            resumed_output = resumed_outputs[_NOISE_CHECKPOINT_STEP]
+            for resumed_stream, first_stream in zip(
+                _noise_streams(resumed_output),
+                _noise_streams(first_output),
+                strict=True,
+            ):
+                for resumed_leaf, first_leaf in zip(
+                    _nested_tensors(resumed_stream.pytree),
+                    _nested_tensors(first_stream.pytree),
+                    strict=True,
+                ):
+                    assert not torch.equal(resumed_leaf, first_leaf)
 
 
 class TestRuntimeCheckpointDriftMetadata:
