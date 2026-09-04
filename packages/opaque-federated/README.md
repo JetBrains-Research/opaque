@@ -16,8 +16,6 @@ Federated twins of the central DP training loop's data primitives, executed on
   assignment-delta policy. No sampling randomness is claimed (selection is
   platform-greedy), so it pairs with **non-amplified** BandMF accounting.
 - `opaque.federated.DataLoader` — iterates a population for `rounds` cohorts.
-- `opaque.federated.datastore` — builds an `ifed.FederatedDatastore` whose
-  population, version, and cardinality come from the sampler.
 
 IFED's own primitives stay user-facing: you build the plan with
 `ifed.build_train` and open the run with `ifed.session`. Nothing here wraps
@@ -40,10 +38,15 @@ plan = ifed.build_train(
     strategy=strategy,
 )
 
-with ifed.session(
-    plan, fed.datastore(sampler), assign_delta=sampler.assign_delta
-) as run:
-    params = plan.init(plan.input_dir).params
+store = ifed.FederatedDatastore(
+    population=pop.name,
+    version=pop.version,
+    cardinality=sampler.batch_size,
+    assign_delta=sampler.assign_delta,
+    server="prod",
+)
+with ifed.session(plan, store) as run:
+    params = plan.init_state.params
     grad_fn, clip_state = fed.clipped_grad(run, strategy)
     for cohort in loader:
         grads, clip_state = grad_fn(params, cohort, state=clip_state)

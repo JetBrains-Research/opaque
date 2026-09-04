@@ -1,11 +1,10 @@
-"""Federated population, cohort, loader, and datastore façade."""
+"""Federated population, cohort, and loader façade."""
 
 from opaque.api.federated.data import (
     Cohort,
     DataLoader,
     Population,
-    datastore,
     population,
 )
 
-__all__ = ["Cohort", "DataLoader", "Population", "datastore", "population"]
+__all__ = ["Cohort", "DataLoader", "Population", "population"]

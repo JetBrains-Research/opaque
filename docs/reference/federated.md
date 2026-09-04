@@ -42,9 +42,15 @@ plan = ifed.build_train(
     strategy=strategy,
 )
 
-store = fed.datastore(sampler, server="prod")
-with ifed.session(plan, store, assign_delta=sampler.assign_delta) as run:
-    params = plan.init(plan.input_dir).params
+store = ifed.FederatedDatastore(
+    population=pop.name,
+    version=pop.version,
+    cardinality=sampler.batch_size,   # the cohort size the accounting is stated for
+    assign_delta=sampler.assign_delta,
+    server="prod",
+)
+with ifed.session(plan, store) as run:
+    params = plan.init_state.params
     grad_fn, clip_state = fed.clipped_grad(run, strategy)
     for cohort in loader:
         grads, clip_state = grad_fn(params, cohort, state=clip_state)
@@ -110,11 +116,15 @@ clients (blocking until it has them), so the batch size is a constant, the
 gradient normalizer is fixed, and the sensitivity
 `clipping_norm / batch_size` is data-independent.
 
+The store is IFED's own `ifed.FederatedDatastore`: nothing in Opaque wraps it.
+Give it the sampler's `batch_size` as `cardinality`, so the round runs with the
+cohort size the accounting is stated for.
+
 `sampler.assign_delta` is the `bands - 1` that IFED's assignment-separation
 policy takes, so an agent that served round `r` is ineligible until round
-`r + bands`. It is a **driver** setting: a `LocalDatastore` run has no driver
-to enforce it, so local runs reproduce the loop but not the separation
-guarantee.
+`r + bands`. It is a field of the **driver** store: a `LocalDatastore` has no
+driver to enforce it and no such field, so local runs reproduce the loop but
+not the separation guarantee.
 
 Accounting remains user-owned, as everywhere in Opaque: the sampler and loader
 only expose the participation structure (`bands`, `batch_size`, `rounds`).
@@ -122,8 +132,6 @@ only expose the participation structure (`bands`, `batch_size`, `rounds`).
 ## API
 
 ::: opaque.federated.population
-
-::: opaque.federated.datastore
 
 ::: opaque.federated.clipped_sum
 

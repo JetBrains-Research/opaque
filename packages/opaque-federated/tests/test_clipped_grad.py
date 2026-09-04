@@ -130,7 +130,7 @@ def test_one_real_federated_round(population):
     store = ifed.LocalDatastore(datasets=[points, points])
 
     with ifed.session(plan, store) as run:
-        params = plan.init(plan.input_dir).params
+        params = plan.init_state.params
         grad_fn, clip_state = clipped_grad(run, strategy)
         cohorts = iter(_loader(population, rounds=2, batch_size=2, bands=2))
         grads, threaded = grad_fn(params, next(cohorts), state=clip_state)

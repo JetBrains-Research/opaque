@@ -107,12 +107,24 @@ opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
 opaque-alignment = { workspace = true }
 opaque-federated = { workspace = true }
-# The ifed closure for opaque-federated: another repo's uv workspace, not on
-# PyPI, so the three distributions are pinned here by revision. ifed-sdk pins
-# torch==2.11.0, which is what the whole workspace resolves to.
-ifed-sdk = { git = "https://github.com/JetBrains-Research/ifed", rev = "135777efe0f4646f91c44ac544fb96e30374032a", subdirectory = "engine/pytorch/python/sdk" }
-ifed-agent-abi = { git = "https://github.com/JetBrains-Research/ifed", rev = "135777efe0f4646f91c44ac544fb96e30374032a", subdirectory = "engine/pytorch/python/abi/agent" }
-ifed-server-abi = { git = "https://github.com/JetBrains-Research/ifed", rev = "135777efe0f4646f91c44ac544fb96e30374032a", subdirectory = "engine/pytorch/python/abi/server" }
+# IFED ships from JetBrains' own index, not PyPI (where the names are
+# dependency-confusion stubs). ifed-sdk pins torch==2.11.0 — the version its
+# prebuilt agent bridge is compiled against — so the whole workspace resolves
+# to it.
+# TEMPORARY, do not commit: the local IFED workspace, for plan.loss while the
+# API is still being designed. Restore the jetbrains-fed index lines below once
+# 5.2.0 is published — this needs an ifed checkout beside this one.
+ifed-sdk = { path = "../ifed/engine/pytorch/python/sdk" }
+ifed-agent-abi = { path = "../ifed/engine/pytorch/python/abi/agent", editable = true }
+ifed-server-abi = { path = "../ifed/engine/pytorch/python/abi/server", editable = true }
+# ifed-sdk = { index = "jetbrains-fed" }
+# ifed-agent-abi = { index = "jetbrains-fed" }
+# ifed-server-abi = { index = "jetbrains-fed" }
+
+[[tool.uv.index]]
+name = "jetbrains-fed"
+url = "https://packages.jetbrains.team/pypi/p/fed/python/simple/"
+explicit = true
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation
