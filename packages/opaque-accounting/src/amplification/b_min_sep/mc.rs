@@ -294,8 +294,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                     || vec![0.0; n_steps],
                     |y, (sample, (x, zeta))| {
                         y_from_x_and_zeta(strategy_coef, n_steps, x, zeta, sigma, y);
-                        *sample =
-                            WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
+                        *sample = WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
                     },
                 );
         },
