@@ -423,7 +423,7 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
-    let start_idx = ((-x0 + 1) as usize).min(n_x);
+    let start_idx = ((-x0 + 1).max(0) as usize).min(n_x);
     let mut alpha_bar = pmf_add.negative_infinity_mass;
     for i in start_idx..n_x {
         alpha_bar += probs_x_add[n_x - 1 - i];
@@ -431,7 +431,7 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
 
     // f_alpha_bar = Pr[Y <= 0], including Y's atom at −∞.
     let y0 = pmf_remove.lower_loss_index;
-    let end_idx = ((-y0 + 1) as usize).min(n_y);
+    let end_idx = ((-y0 + 1).max(0) as usize).min(n_y);
     let mut f_alpha_bar = pmf_remove.negative_infinity_mass;
     for prob in probs_y.iter().take(end_idx) {
         f_alpha_bar += prob;
