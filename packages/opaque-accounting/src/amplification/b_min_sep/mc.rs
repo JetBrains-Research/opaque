@@ -224,9 +224,7 @@ pub fn bandmf_b_min_sep_prepare_transcripts(
                         .zip(zeta_shard.chunks_exact_mut(n_steps))
                     {
                         sample_x_under_p(n_steps, bands, p, &mut rng, x);
-                        for value in zeta {
-                            *value = rng.sample::<f64, _>(StandardNormal);
-                        }
+                        sample_eta_under_q(n_steps, &mut rng, zeta);
                     }
                 });
         },
@@ -280,7 +278,6 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         )));
     }
     let sigma2 = sigma * sigma;
-    let coef = strategy_coef.to_vec();
     let mut remove_samples = vec![0.0; num_samples];
     let mut add_samples = vec![0.0; num_samples];
 
@@ -296,8 +293,9 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                 .for_each_init(
                     || vec![0.0; n_steps],
                     |y, (sample, (x, zeta))| {
-                        y_from_x_and_zeta(&coef, n_steps, x, zeta, sigma, y);
-                        *sample = WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(y);
+                        y_from_x_and_zeta(strategy_coef, n_steps, x, zeta, sigma, y);
+                        *sample =
+                            WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
                     },
                 );
         },
@@ -311,7 +309,8 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
                         for (value, noise) in y.iter_mut().zip(eta) {
                             *value = sigma * noise;
                         }
-                        *sample = -WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(y);
+                        *sample =
+                            -WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
                     },
                 );
         },
@@ -367,7 +366,6 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
     }
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
-    let coef = strategy_coef.to_vec();
     let mut remove_samples = vec![0.0; num_samples];
     let mut add_samples = vec![0.0; num_samples];
 
@@ -387,11 +385,10 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
                         ));
                         for sample in samples {
                             sample_x_under_p(n_steps, bands, p, &mut rng, x);
-                            for value in zeta.iter_mut() {
-                                *value = rng.sample::<f64, _>(StandardNormal);
-                            }
-                            y_from_x_and_zeta(&coef, n_steps, x, zeta, sigma, y);
-                            *sample = WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(y);
+                            sample_eta_under_q(n_steps, &mut rng, zeta);
+                            y_from_x_and_zeta(strategy_coef, n_steps, x, zeta, sigma, y);
+                            *sample =
+                                WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
                         }
                     },
                 );
@@ -407,7 +404,8 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
                             StdRng::seed_from_u64(shard_seed(seed, shard, AdjacencyDirection::Add));
                         for sample in samples {
                             sample_y_under_q(n_steps, sigma, &mut rng, y);
-                            *sample = -WarmLogLikelihoodRatio::new(&coef, p, sigma2).evaluate(y);
+                            *sample =
+                                -WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
                         }
                     },
                 );
