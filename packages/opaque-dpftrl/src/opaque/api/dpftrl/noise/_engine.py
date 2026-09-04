@@ -42,6 +42,12 @@ MF_GAUSSIAN_STREAM_FOLD = "opaque.dpftrl.mf_gaussian"
 class MFNoiseState(NoiseState):
     """State for matrix factorization noise.
 
+    Restoration is template-driven. A saved state must be loaded into a
+    template built with the same strategy recipe, horizon, compute dtype, and
+    parameter-tree structure. The trainer checkpoint records and checks that
+    execution provenance before restoring this state; standalone callers are
+    responsible for preserving the same construction inputs.
+
     Attributes:
         _inner_state: Internal state (streaming matrix state or step counter).
         _step_counter: Number of noise_fn calls made.
