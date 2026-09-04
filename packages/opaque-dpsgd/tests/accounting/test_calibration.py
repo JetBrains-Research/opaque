@@ -8,7 +8,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
-from opaque.accounting.discretization import set_discretization
+from opaque.accounting.discretization import get_discretization, set_discretization
 from opaque.api.accounting.core.calibration import (
     AdvantageBudget,
     BetaBudget,
@@ -602,3 +602,30 @@ class TestCalibrateRuntimeDiscretization:
         ).epsilon_at(1e-5)
         assert runtime_achieved == pytest.approx(result.achieved, rel=1e-9, abs=0.0)
         assert result.achieved <= 3.0
+
+    def test_recalibrates_when_runtime_evaluation_is_unsafe(self):
+        @dataclass(frozen=True)
+        class _ConfigProcess:
+            param: float
+
+        @dataclass(frozen=True)
+        class _ConfigBudget:
+            value: float = 1.0
+            decreasing: bool = True
+            name: str = "config metric"
+
+            def evaluate(self, process: _ConfigProcess) -> float:
+                return 2.0 - process.param + get_discretization().mc_failure_probability
+
+        set_discretization(mc_failure_probability=0.1)
+        result = cal.calibrate(
+            _ConfigBudget(),
+            _ConfigProcess,
+            param_min=0.0,
+            param_max=2.0,
+            tolerance=1e-6,
+            max_iterations=30,
+        )
+
+        assert result.param == pytest.approx(1.1, abs=1e-6)
+        assert result.achieved <= 1.0

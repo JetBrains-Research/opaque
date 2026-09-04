@@ -323,6 +323,22 @@ def calibrate(
         with _use_discretization(overall_config):
             final_process = process(result.param)
             achieved = budget.evaluate(final_process)
+            runtime_safe = (
+                achieved <= budget.value
+                if budget.decreasing
+                else achieved >= budget.value
+            )
+            if not runtime_safe:
+                result = _calibrate_impl(
+                    budget,
+                    process,
+                    param_min,
+                    param_max,
+                    tolerance,
+                    max_iterations,
+                )
+                final_process = process(result.param)
+                achieved = result.achieved
             result.achieved = achieved
 
             pld_method = getattr(final_process, "pld", None)
