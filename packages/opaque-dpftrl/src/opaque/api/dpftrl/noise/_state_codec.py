@@ -10,7 +10,12 @@ from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 from opaque.exceptions import CheckpointError
-from opaque.serialization import from_state_dict, register_serializer, state_dict
+from opaque.serialization import (
+    from_state_dict,
+    register_serializer,
+    resolve_serializer,
+    state_dict,
+)
 from opaque.types import PerGroup
 
 from ._engine import MFNoiseState
@@ -281,6 +286,19 @@ def _template_inner_fields(template: MFNoiseState) -> set[str]:
     return {field for field in payload if _is_inner_field(field)}
 
 
+def _inner_state_dict(saved: Mapping[str, Any]) -> dict[str, Any]:
+    """Return MF inner-state fields relative to the inner-state root."""
+    relative: dict[str, Any] = {}
+    for field, value in saved.items():
+        if field == "_inner_state":
+            relative[""] = value
+        elif field.startswith("_inner_state."):
+            relative[field.removeprefix("_inner_state.")] = value
+        elif field.startswith("_inner_state["):
+            relative[field.removeprefix("_inner_state")] = value
+    return relative
+
+
 def _validate_inner_manifest(
     saved: Mapping[str, Any],
     template: MFNoiseState,
@@ -309,6 +327,13 @@ def _validate_inner_manifest(
 
     configured = _template_inner_fields(template)
     if declared_fields != configured:
+        # A registered inner state can provide a more actionable migration or
+        # compatibility error than the outer structural mismatch.  In
+        # particular, bounded BISR deliberately diagnoses legacy dense-history
+        # checkpoints.  Ask that codec to validate its own slice, but retain
+        # the fail-closed outer error if it accepts the slice.
+        if resolve_serializer(type(template._inner_state)) is not None:
+            from_state_dict(template._inner_state, _inner_state_dict(saved))
         raise CheckpointError(
             *(
                 "MF inner-state fields do not match the configured runtime: "
