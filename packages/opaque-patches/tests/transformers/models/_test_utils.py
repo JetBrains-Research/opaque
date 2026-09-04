@@ -255,6 +255,8 @@ def build_patched_model_pair(
 
 # Module attributes the family patches rebind; restored on context exit.
 _FAMILY_MODULE_PATCH_NAMES = (
+    # Rebound wholesale by the family patch, not written through.
+    "ALL_ATTENTION_FUNCTIONS",
     "create_causal_mask",
     "create_sliding_window_causal_mask",
     "repeat_kv",
@@ -280,13 +282,6 @@ def parity_model_patches(
         for name in _FAMILY_MODULE_PATCH_NAMES
         if hasattr(modeling_module, name)
     }
-    # ``ALL_ATTENTION_FUNCTIONS`` is a process-wide registry, so a family that
-    # replaces its "sdpa" entry (gemma2) would otherwise reroute every family.
-    attention_functions = getattr(modeling_module, "ALL_ATTENTION_FUNCTIONS", None)
-    original_sdpa = (
-        attention_functions.get("sdpa") if attention_functions is not None else None
-    )
-
     _reset_patched_families()
     try:
         apply_transformers_model_patches(
@@ -298,8 +293,6 @@ def parity_model_patches(
             module_cls.forward = forward
         for name, value in module_originals.items():
             setattr(modeling_module, name, value)
-        if original_sdpa is not None:
-            attention_functions["sdpa"] = original_sdpa
         _reset_patched_families()
 
 
