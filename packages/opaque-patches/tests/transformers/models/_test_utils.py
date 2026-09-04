@@ -283,7 +283,9 @@ def parity_model_patches(
     # ``ALL_ATTENTION_FUNCTIONS`` is a process-wide registry, so a family that
     # replaces its "sdpa" entry (gemma2) would otherwise reroute every family.
     # Save the entire object because patching may replace it with a scoped instance.
-    original_attention_functions = getattr(modeling_module, "ALL_ATTENTION_FUNCTIONS", None)
+    original_attention_functions = getattr(
+        modeling_module, "ALL_ATTENTION_FUNCTIONS", None
+    )
 
     _reset_patched_families()
     try:
