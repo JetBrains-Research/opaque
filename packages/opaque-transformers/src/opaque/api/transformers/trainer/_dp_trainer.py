@@ -824,9 +824,11 @@ class DPTrainer:
         and inflates training memory regardless of host;
         ``performance_kernels_config={"kv_cache": False}`` opts out.
 
-        When opaque doesn't recognise the model family it logs an
-        info-level message; set ``use_compat_patches=False`` to suppress
-        for custom or non-HF ``nn.Module`` fixtures.
+        An unregistered Hugging Face model family raises a configuration
+        error because its vmap-safety patches cannot be applied. Set
+        ``use_compat_patches=False`` only when supplying a compatible
+        custom model. Non-HF ``nn.Module`` models log a warning and remain
+        supported.
         """
         try:
             from opaque.patches import apply_model_patches
