@@ -35,6 +35,7 @@ pytest.importorskip("transformers")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
+    assert_logits_differ,
     assert_parity_forward,
     assert_parity_grad,
     assert_parity_vmap_grad,
@@ -54,6 +55,14 @@ _SOFTCAP_FAMILIES = {"gemma2", "gemma3"}
 
 # Families that support sliding window attention.
 _SLIDING_WINDOW_FAMILIES = {"ministral", "mistral"}
+
+# Sliding-window probe geometry. The window must be strictly smaller than the
+# sequence for the look-back limit to bind — a window wider than the sequence
+# reduces to a plain causal mask and tests nothing, which is what
+# ``_NON_BINDING_SLIDING_WINDOW`` serves as the control for.
+_SLIDING_WINDOW = 4
+_SLIDING_WINDOW_SEQ_LEN = 16
+_NON_BINDING_SLIDING_WINDOW = 64
 
 # Families that are eager-only (SDPA not supported by HF).
 _EAGER_ONLY_FAMILIES = {"gpt_oss", "deepseek_v4"}
@@ -292,25 +301,43 @@ def test_backward_grads_parity(family, device):
 # ===========================================================================
 
 
+@pytest.mark.parametrize(
+    "use_attention_mask", [True, False], ids=["padding_mask", "no_padding_mask"]
+)
 @pytest.mark.parametrize("family", sorted(_SLIDING_WINDOW_FAMILIES))
-def test_sliding_window_parity(family, device):
-    """Parity with sliding window attention enabled."""
+def test_sliding_window_parity(family, use_attention_mask, device):
+    """Parity with a binding sliding window (window 4, sequence 16)."""
     config_cls, model_cls = _resolve_family_imports(family)
-    extra = _extra_config_kwargs(family)
-    extra["sliding_window"] = 64
+    config_kwargs = _base_config_kwargs(family)
+    config_kwargs.update(_extra_config_kwargs(family))
+    config_kwargs["sliding_window"] = _SLIDING_WINDOW
+    label = f"{family} [sliding_window]"
     try:
-        config_kwargs = _base_config_kwargs(family)
-        config_kwargs.update(extra)
-        assert_parity_forward(
+        logits, _ = assert_parity_forward(
             model_cls,
             config_cls,
             device,
             config_kwargs=config_kwargs,
-            label=f"{family} [sliding_window]",
+            label=label,
             dtype=_parity_dtype(device),
+            seq_len=_SLIDING_WINDOW_SEQ_LEN,
+            use_attention_mask=use_attention_mask,
         )
     except Exception as e:
         raise AssertionError(f"{family} sliding window parity failed") from e
+
+    # Vacuity guard: a non-binding window (ministral rejects sliding_window=None).
+    logits_open_window, _ = assert_parity_forward(
+        model_cls,
+        config_cls,
+        device,
+        config_kwargs={**config_kwargs, "sliding_window": _NON_BINDING_SLIDING_WINDOW},
+        label=f"{family} [non_binding_sliding_window]",
+        dtype=_parity_dtype(device),
+        seq_len=_SLIDING_WINDOW_SEQ_LEN,
+        use_attention_mask=use_attention_mask,
+    )
+    assert_logits_differ(logits, logits_open_window, label=label)
 
 
 @pytest.mark.parametrize("family", sorted(_SOFTCAP_FAMILIES))
