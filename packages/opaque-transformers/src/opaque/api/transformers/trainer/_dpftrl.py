@@ -103,8 +103,6 @@ def build_strategy(
     codec surfaces at serialization time).
     """
     factory = _STRATEGY_FACTORIES[mechanism]
-    if mechanism == "mf_identity":
-        return factory()
     extra = dict(kwargs) if kwargs else {}
     if (
         mechanism in _LR_SCHEDULED_STRATEGIES

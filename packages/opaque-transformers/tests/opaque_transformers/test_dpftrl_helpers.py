@@ -32,6 +32,15 @@ from opaque.dpftrl.noise.types import (
 from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler
 from opaque.random import key
 
+_STRATEGY_CASES = {
+    "mf_band": ({"bands": 4}, BandMfStrategy),
+    "mf_blt": ({"max_buffers": 4}, BltStrategy),
+    "mf_bisr": ({"bandwidth": 4}, BisrStrategy),
+    "mf_bsr": ({"bandwidth": 4, "alpha": 1.0, "beta": 0.9}, BsrStrategy),
+    "mf_lambda_cgd": ({"lambda_": 0.5}, LambdaCgdStrategy),
+    "mf_identity": ({}, IdentityStrategy),
+}
+
 
 class _ListDataset(Dataset):
     def __init__(self, n: int = 32) -> None:
@@ -95,24 +104,30 @@ class TestBuildStrategyLrSchedule:
 
 
 class TestBuildStrategy:
-    @pytest.mark.parametrize(
-        ("mechanism", "kwargs", "cls"),
-        [
-            ("mf_band", {"bands": 4}, BandMfStrategy),
-            ("mf_blt", {"max_buffers": 4}, BltStrategy),
-            ("mf_bisr", {"bandwidth": 4}, BisrStrategy),
-            ("mf_bsr", {"bandwidth": 4, "alpha": 1.0, "beta": 0.9}, BsrStrategy),
-            ("mf_lambda_cgd", {"lambda_": 0.5}, LambdaCgdStrategy),
-            ("mf_identity", {}, IdentityStrategy),
-        ],
-    )
-    def test_builds_strategy(self, mechanism, kwargs, cls):
+    @pytest.mark.parametrize("mechanism", _STRATEGY_CASES)
+    def test_builds_strategy(self, mechanism):
+        kwargs, strategy_type = _STRATEGY_CASES[mechanism]
         strategy = _dpftrl.build_strategy(mechanism, kwargs)
-        assert isinstance(strategy, cls)
+        assert isinstance(strategy, strategy_type)
 
-    def test_identity_ignores_kwargs(self):
-        strategy = _dpftrl.build_strategy("mf_identity", {"ignored": 1})
-        assert isinstance(strategy, IdentityStrategy)
+    def test_cases_cover_registered_strategies(self):
+        assert _STRATEGY_CASES.keys() == _dpftrl._STRATEGY_FACTORIES.keys()
+
+    @pytest.mark.parametrize("mechanism", _STRATEGY_CASES)
+    def test_rejects_unknown_kwargs(self, mechanism):
+        kwargs, _ = _STRATEGY_CASES[mechanism]
+        unexpected_key = "__unexpected__"
+        with pytest.raises(TypeError, match="unexpected keyword argument") as exc_info:
+            _dpftrl.build_strategy(
+                mechanism,
+                {**kwargs, unexpected_key: 1},
+            )
+        assert unexpected_key in str(exc_info.value)
+
+    def test_identity_accepts_none_kwargs(self):
+        assert _dpftrl.build_strategy("mf_identity", None) == _dpftrl.build_strategy(
+            "mf_identity", {}
+        )
 
 
 class TestBuildAmplifierFactory:
