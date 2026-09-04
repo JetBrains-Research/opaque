@@ -8,7 +8,7 @@ import pytest
 
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal
-from opaque.accounting.discretization import get_discretization, set_discretization
+from opaque.accounting.discretization import set_discretization
 from opaque.api.accounting.core.calibration import (
     AdvantageBudget,
     BetaBudget,
@@ -17,6 +17,7 @@ from opaque.api.accounting.core.calibration import (
     EpsilonBudget,
     RiskBudget,
 )
+from opaque.api.accounting.core.discretization import get_discretization
 from opaque.exceptions import CalibrationError, PrivacyBudgetError
 
 
