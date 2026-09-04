@@ -19,7 +19,9 @@ skipped when it is not installed via ``pytest.importorskip``.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
+import torch
 
 transformers = pytest.importorskip("transformers")
 
@@ -79,6 +81,18 @@ _GEMMA_TEMPLATE = (
     "{% set role = 'model' if message['role'] == 'assistant' else message['role'] %}"
     "{{ '<start_of_turn>' + role + '\\n' + message['content'] | trim "
     "+ '<end_of_turn>\\n' }}"
+    "{% endfor %}"
+)
+
+_WHITESPACE_CONTROLLED_ROLE_TEMPLATE = (
+    "{% for message in messages %}"
+    "{% if message['role'] == 'system' %}"
+    "system colon {{ message['content'] }} "
+    "{% elif message['role'] == 'user' %}"
+    "user colon {{ message['content'] }} "
+    "{% elif message['role'] == 'assistant' %}"
+    "assistant colon {%- generation -%}{{ message['content'] }}{%- endgeneration -%} "
+    "{% endif %}"
     "{% endfor %}"
 )
 
@@ -164,6 +178,58 @@ class TestApplyChatTemplateWithMask:
         with pytest.raises(ValueError, match="generation"):
             apply_chat_template_with_mask(tok, _CONVERSATION)
 
+    def test_accepts_whitespace_controlled_generation_marker(self) -> None:
+        """The guard accepts the same marker spelling as Transformers."""
+        tok = _make_chat_tokenizer()
+        tok.chat_template = _WHITESPACE_CONTROLLED_ROLE_TEMPLATE
+
+        result = apply_chat_template_with_mask(tok, _CONVERSATION)
+
+        assert any(result["completion_mask"])
+
+    @pytest.mark.parametrize(
+        ("return_tensors", "expected_type"),
+        [("pt", torch.Tensor), ("np", np.ndarray)],
+    )
+    def test_returns_nonempty_tensor_or_array_mask(
+        self, return_tensors: str, expected_type: type
+    ) -> None:
+        """Tensor-backed masks are accepted without ambiguous truth-value errors."""
+        tok = _make_chat_tokenizer()
+        tok.chat_template = get_training_chat_template_for(tok)
+
+        result = apply_chat_template_with_mask(
+            tok, _CONVERSATION, return_tensors=return_tensors
+        )
+
+        assert isinstance(result["completion_mask"], expected_type)
+        assert bool(result["completion_mask"].any())
+
+    def test_rejects_all_zero_assistant_mask(self) -> None:
+        """A recognized marker without rendered assistant spans still fails."""
+        tok = _make_chat_tokenizer()
+        tok.chat_template = (
+            "{% for message in messages %}"
+            "{% if false %}"
+            "{%- generation -%}{{ message['content'] }}{%- endgeneration -%}"
+            "{% endif %}"
+            "{% endfor %}"
+        )
+
+        with pytest.raises(ValueError, match="returned no assistant-token mask"):
+            apply_chat_template_with_mask(tok, _CONVERSATION)
+
+    def test_resolves_named_template_override(self) -> None:
+        """A named override follows Transformers' template-resolution behavior."""
+        tok = _make_chat_tokenizer()
+        tok.chat_template = {"default": _ROLE_TEMPLATE, "masked": _CHATML_WITH_GEN}
+
+        result = apply_chat_template_with_mask(
+            tok, _CONVERSATION, chat_template="masked"
+        )
+
+        assert any(result["completion_mask"])
+
     def test_gemma_mask_excludes_system_and_user_content(self) -> None:
         """Gemma's shared render expression masks only assistant content."""
         tok = _make_chat_tokenizer()
@@ -185,3 +251,14 @@ def get_training_chat_template_for(tok: PreTrainedTokenizerFast) -> str:
     """Install the plain role template, then return its generation-marker form."""
     tok.chat_template = _ROLE_TEMPLATE
     return get_training_chat_template(tok)
+
+
+_CHATML_WITH_GEN = (
+    "{% for message in messages %}"
+    "{% if message['role'] == 'user' %}"
+    "user colon {{ message['content'] }} "
+    "{% elif message['role'] == 'assistant' %}"
+    "assistant colon {% generation %}{{ message['content'] }}{% endgeneration %} "
+    "{% endif %}"
+    "{% endfor %}"
+)
