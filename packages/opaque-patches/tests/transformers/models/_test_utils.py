@@ -282,6 +282,11 @@ def parity_model_patches(
         for name in _FAMILY_MODULE_PATCH_NAMES
         if hasattr(modeling_module, name)
     }
+    # ``ALL_ATTENTION_FUNCTIONS`` is a process-wide registry, so a family that
+    # replaces its "sdpa" entry (gemma2) would otherwise reroute every family.
+    # Save the entire object because patching may replace it with a scoped instance.
+    original_attention_functions = getattr(modeling_module, "ALL_ATTENTION_FUNCTIONS", None)
+
     _reset_patched_families()
     try:
         apply_transformers_model_patches(
@@ -293,6 +298,8 @@ def parity_model_patches(
             module_cls.forward = forward
         for name, value in module_originals.items():
             setattr(modeling_module, name, value)
+        if original_attention_functions is not None:
+            modeling_module.ALL_ATTENTION_FUNCTIONS = original_attention_functions
         _reset_patched_families()
 
 
