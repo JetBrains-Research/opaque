@@ -128,6 +128,10 @@ fn clean_probs(probs: &[f64], infinity_mass: f64, negative_infinity_mass: f64) -
     let mut cleaned: Vec<f64> = probs.iter().map(|&p| p.max(0.0)).collect();
     let sum: f64 = cleaned.iter().sum();
     let target = (1.0 - infinity_mass - negative_infinity_mass).max(0.0);
+    if target == 0.0 {
+        cleaned.fill(0.0);
+        return cleaned;
+    }
     if sum > 0.0 && target > 0.0 {
         let scale = target / sum;
         for p in cleaned.iter_mut() {
@@ -414,12 +418,13 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
         pmf_add.negative_infinity_mass,
     );
 
-    // Compute alpha_bar = Pr[X > 0] using cleaned probs
+    // Compute alpha_bar = Pr[X > 0], including X's +∞ atom.
+    // Under X = -L_add, L_add = -∞ maps to X = +∞, which always contributes.
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
     let start_idx = ((-x0 + 1) as usize).min(n_x);
-    let mut alpha_bar = 0.0;
+    let mut alpha_bar = pmf_add.negative_infinity_mass;
     for i in start_idx..n_x {
         alpha_bar += probs_x_add[n_x - 1 - i];
     }
@@ -861,5 +866,29 @@ mod tests {
                 direct
             );
         }
+    }
+
+    #[test]
+    fn test_beta_asymmetric_includes_negative_infinity_mass() {
+        let remove = Pmf {
+            discretization: 0.1,
+            lower_loss_index: 0,
+            probs: vec![0.7],
+            infinity_mass: 0.0,
+            negative_infinity_mass: 0.3,
+            max_grid_size: usize::MAX,
+            right_tail_budget: 0.0,
+            left_tail_budget: 0.0,
+        };
+        let add = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+
+        let b = pmf_beta_asymmetric(&remove, &add, 0.5);
+        assert!((b - 0.65).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_clean_probs_zero_target_returns_zero_distribution() {
+        let cleaned = clean_probs(&[1e-16, -1e-16, 2e-16], 0.6, 0.4);
+        assert!(cleaned.iter().all(|&p| p == 0.0));
     }
 }
