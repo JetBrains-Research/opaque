@@ -114,6 +114,10 @@ def test_module_level_names_are_restored(family, device):
             f"{family}: {name} was not restored after parity_model_patches"
         )
     if sdpa_before is not None:
+        assert modeling_module.ALL_ATTENTION_FUNCTIONS is registry, (
+            f"{family}: ALL_ATTENTION_FUNCTIONS was not restored after "
+            "parity_model_patches"
+        )
         assert registry.get("sdpa") is sdpa_before, (
             f"{family}: ALL_ATTENTION_FUNCTIONS['sdpa'] was not restored"
         )
