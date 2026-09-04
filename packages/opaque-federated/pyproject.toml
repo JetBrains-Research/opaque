@@ -28,7 +28,12 @@ classifiers = [
 # could only ever conflict with it.
 dependencies = [
     "opaque-engine>=0.0.0.dev0",
-    "ifed-sdk==5.1.0",
+    # Markers track the platforms IFED publishes its prebuilt agent bridge for.
+    # The two abi wheels are direct, not transitive: uv maps a dependency to an
+    # index only for direct dependencies.
+    "ifed-sdk==5.2.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+    "ifed-agent-abi==2.0.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+    "ifed-server-abi==2.0.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,9 +52,8 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 [tool.uv]
 package = true
 
-# ifed-* sources live at the WORKSPACE ROOT pyproject: member-level sources
-# travel with this package when it is consumed as a path dependency (e.g. from
-# the ifed repo's own examples), where they would conflict with the consumer's
-# ifed checkout.
+# The jetbrains-fed index that serves ifed-* is declared at the WORKSPACE ROOT
+# pyproject: an index declared here would travel with this package when it is
+# consumed as a path dependency.
 [tool.uv.sources]
 opaque-engine = { workspace = true }

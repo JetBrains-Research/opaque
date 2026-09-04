@@ -34,8 +34,8 @@ def clipped_grad(
         strategy = fed.clipped_sum(clipping_norm=1.0)
         plan = ifed.build_train(net=net, source=Iris, loss=ifed.Loss.mse,
                                 batch_size=None, strategy=strategy)
-        with ifed.session(plan, store, assign_delta=sampler.assign_delta) as run:
-            params = plan.init(plan.input_dir).params
+        with ifed.session(plan, store) as run:
+            params = plan.init_state.params
             grad_fn, clip_state = fed.clipped_grad(run, strategy)
             for cohort in loader:
                 grads, clip_state = grad_fn(params, cohort, state=clip_state)

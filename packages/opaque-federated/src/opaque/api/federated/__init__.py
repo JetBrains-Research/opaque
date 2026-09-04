@@ -5,7 +5,6 @@ from opaque.api.federated.data import (
     Cohort,
     DataLoader,
     Population,
-    datastore,
     population,
 )
 from opaque.api.federated.sampling import MinSepSampler
@@ -17,6 +16,5 @@ __all__ = [
     "Population",
     "clipped_grad",
     "clipped_sum",
-    "datastore",
     "population",
 ]

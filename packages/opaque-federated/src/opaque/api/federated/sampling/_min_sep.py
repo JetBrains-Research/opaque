@@ -17,9 +17,8 @@ class MinSepSampler:
     The federated twin of :class:`opaque.dpftrl.sampling.BMinSepSampler`, with
     the *client* as the privacy unit and IFED as the enforcement mechanism:
     every yielded :class:`Cohort` carries ``separation = bands - 1``, which the
-    caller passes to ``ifed.session(..., assign_delta=sampler.assign_delta)``
-    so an agent that served round ``r`` is platform-ineligible until round
-    ``r + bands``.
+    caller passes to ``ifed.FederatedDatastore(assign_delta=…)`` so an agent
+    that served round ``r`` is platform-ineligible until round ``r + bands``.
 
     Two central parameters are deliberately absent, because federation cannot
     honestly claim them today:
@@ -74,7 +73,7 @@ class MinSepSampler:
 
     @property
     def assign_delta(self) -> int:
-        """The ``ifed.session(assign_delta=…)`` this sampler's bands compile to."""
+        """The ``ifed.FederatedDatastore(assign_delta=…)`` these bands compile to."""
         return self.bands - 1
 
     def __iter__(self) -> Iterator[Cohort]:

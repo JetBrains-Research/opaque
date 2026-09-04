@@ -278,7 +278,7 @@ name = "autoflake"
 version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyflakes" },
+    { name = "pyflakes", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c6/f9/742e1ec86d55869cf003f8bd058e559a9726a0afdf1d5664bbc8880cbb8d/autoflake-2.4.0.tar.gz", hash = "sha256:ef7c496d9bce9d2cef049f24e482d1d3090c37fbd44e5e85dfb00db3c78ee16c", size = 16994, upload-time = "2026-08-22T15:07:35.065Z" }
 wheels = [
@@ -1098,35 +1098,60 @@ wheels = [
 [[package]]
 name = "ifed-agent-abi"
 version = "2.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fabi%2Fagent&rev=135777efe0f4646f91c44ac544fb96e30374032a#135777efe0f4646f91c44ac544fb96e30374032a" }
+source = { editable = "../ifed/engine/pytorch/python/abi/agent" }
 dependencies = [
-    { name = "torch" },
+    { name = "torch", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
+
+[package.metadata]
+requires-dist = [{ name = "torch", specifier = "==2.11.0" }]
 
 [[package]]
 name = "ifed-sdk"
-version = "5.1.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&rev=135777efe0f4646f91c44ac544fb96e30374032a#135777efe0f4646f91c44ac544fb96e30374032a" }
+source = { directory = "../ifed/engine/pytorch/python/sdk" }
 dependencies = [
-    { name = "autoflake" },
-    { name = "cloudpickle" },
-    { name = "ifed-agent-abi" },
-    { name = "ifed-server-abi" },
-    { name = "jinja2" },
-    { name = "numpy" },
+    { name = "autoflake", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cloudpickle", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ifed-agent-abi", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ifed-server-abi", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "jinja2", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "numpy", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "packaging", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "pyarrow", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "safetensors", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "torch", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "autoflake", specifier = ">=2.0" },
+    { name = "cloudpickle", specifier = "==3.1.2" },
+    { name = "ifed-agent-abi", editable = "../ifed/engine/pytorch/python/abi/agent" },
+    { name = "ifed-server-abi", editable = "../ifed/engine/pytorch/python/abi/server" },
+    { name = "jinja2", specifier = ">=3.0" },
+    { name = "numpy", specifier = ">=1.24" },
     { name = "packaging" },
     { name = "pyarrow" },
-    { name = "safetensors" },
-    { name = "torch" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
+    { name = "safetensors", specifier = ">=0.4" },
+    { name = "torch", specifier = "==2.11.0" },
 ]
+provides-extras = ["test"]
 
 [[package]]
 name = "ifed-server-abi"
 version = "2.0.0"
-source = { git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fabi%2Fserver&rev=135777efe0f4646f91c44ac544fb96e30374032a#135777efe0f4646f91c44ac544fb96e30374032a" }
+source = { editable = "../ifed/engine/pytorch/python/abi/server" }
 dependencies = [
-    { name = "cloudpickle" },
+    { name = "cloudpickle", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "cloudpickle", specifier = "==3.1.2" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "iniconfig"
@@ -2663,13 +2688,17 @@ requires-dist = [
 name = "opaque-federated"
 source = { editable = "packages/opaque-federated" }
 dependencies = [
-    { name = "ifed-sdk" },
+    { name = "ifed-agent-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "ifed-sdk", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "ifed-server-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "opaque-engine" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "ifed-sdk", git = "https://github.com/JetBrains-Research/ifed?subdirectory=engine%2Fpytorch%2Fpython%2Fsdk&rev=135777efe0f4646f91c44ac544fb96e30374032a" },
+    { name = "ifed-agent-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", editable = "../ifed/engine/pytorch/python/abi/agent" },
+    { name = "ifed-sdk", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", directory = "../ifed/engine/pytorch/python/sdk" },
+    { name = "ifed-server-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", editable = "../ifed/engine/pytorch/python/abi/server" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
 

@@ -8,7 +8,6 @@ from opaque.api.federated import (
     Population,
     clipped_grad,
     clipped_sum,
-    datastore,
     population,
 )
 
@@ -19,6 +18,5 @@ __all__ = [
     "Population",
     "clipped_grad",
     "clipped_sum",
-    "datastore",
     "population",
 ]
