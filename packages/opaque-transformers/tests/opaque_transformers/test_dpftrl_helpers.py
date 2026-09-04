@@ -111,19 +111,19 @@ class TestBuildStrategy:
         assert isinstance(strategy, cls)
 
     @pytest.mark.parametrize(
-        "mechanism",
+        ("mechanism", "kwargs"),
         [
-            "mf_band",
-            "mf_blt",
-            "mf_bisr",
-            "mf_bsr",
-            "mf_lambda_cgd",
-            "mf_identity",
+            ("mf_band", {"bands": 4}),
+            ("mf_blt", {"max_buffers": 4}),
+            ("mf_bisr", {"bandwidth": 4}),
+            ("mf_bsr", {"bandwidth": 4, "alpha": 1.0, "beta": 0.9}),
+            ("mf_lambda_cgd", {"lambda_": 0.5}),
+            ("mf_identity", {}),
         ],
     )
-    def test_rejects_unknown_kwargs(self, mechanism):
+    def test_rejects_unknown_kwargs(self, mechanism, kwargs):
         with pytest.raises(TypeError):
-            _dpftrl.build_strategy(mechanism, {"ignored": 1})
+            _dpftrl.build_strategy(mechanism, kwargs | {"ignored": 1})
 
 
 class TestBuildAmplifierFactory:
