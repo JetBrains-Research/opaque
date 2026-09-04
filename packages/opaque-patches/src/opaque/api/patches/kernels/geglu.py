@@ -246,6 +246,9 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_h):
+        if getattr(ctx, "_opaque_backward_done", False):
+            raise NotImplementedError("Repeated backward not supported for GeGLU Exact")
+        ctx._opaque_backward_done = True
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
         grad_gate_flat, grad_up_flat = _GeGLUExactBackward.apply(
@@ -509,6 +512,11 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_h):
+        if getattr(ctx, "_opaque_backward_done", False):
+            raise NotImplementedError(
+                "Repeated backward not supported for GeGLU Approx"
+            )
+        ctx._opaque_backward_done = True
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
         grad_gate_flat, grad_up_flat = _GeGLUApproxBackward.apply(

@@ -37,8 +37,8 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-# Version 7 records calibration provenance so whole-horizon resumes cannot
-# reinterpret a fixed-noise run as calibrated, or vice versa.
+# Version 7 records calibration provenance plus versioned MF runtime state,
+# including bounded BISR history and sensitivity latches.
 DP_STATE_BUNDLE_VERSION = 7
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")

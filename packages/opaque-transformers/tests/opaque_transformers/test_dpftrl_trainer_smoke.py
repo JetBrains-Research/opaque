@@ -108,6 +108,7 @@ def _args(
         disable_tqdm=True,
         use_cpu=True,
         seed=0,
+        dataloader_num_workers=0,
     )
 
 
@@ -283,22 +284,14 @@ class TestDpFtrlCheckpointRoundTrip:
             data_collator=_collate,
         )
         out1 = trainer1.train()
-        # BallsInBinsSampler may skip empty bins under random partitions
-        # of small datasets — the realised step count can fall short of
-        # ``max_steps``.  Still assert it ran far enough for at least
-        # one mid-train checkpoint to land.
-        assert out1.global_step >= 8
+        assert out1.global_step == max_steps
+        expected_params = {
+            name: value.detach().clone()
+            for name, value in trainer1.model.named_parameters()
+        }
 
-        ckpts = sorted(
-            [
-                d.name
-                for d in Path(outdir).iterdir()
-                if d.name.startswith("checkpoint-")
-            ],
-            key=lambda d: int(d.split("-")[1]),
-        )
-        assert len(ckpts) >= 2, f"expected mid-train + end ckpts, got {ckpts}"
-        mid_ckpt = str(outdir / ckpts[-2])
+        mid_ckpt = outdir / f"checkpoint-{max_steps // 2}"
+        assert mid_ckpt.is_dir()
 
         outdir2 = tmp_path / f"{mechanism}-resumed"
         args2 = _args(
@@ -307,19 +300,27 @@ class TestDpFtrlCheckpointRoundTrip:
             max_steps=max_steps,
             save_steps=4,
         )
-        torch.manual_seed(0)
+        torch.manual_seed(123)
         trainer2 = DPTrainer(
             model=_TinyLM(),
             args=args2,
             train_dataset=ds,
             data_collator=_collate,
         )
-        out2 = trainer2.train(resume_from_checkpoint=mid_ckpt)
-        # Resume converges to the same realised step count as the
-        # original (BallsInBins skips empty bins; sampler determinism
-        # is bit-exact across runs at the same data_seed).
-        assert out2.global_step == out1.global_step
-        # Same mechanism + total steps + multiplier ⇒ deterministic ε.
+        out2 = trainer2.train(resume_from_checkpoint=str(mid_ckpt))
+        assert out2.global_step == max_steps
+
+        actual_params = dict(trainer2.model.named_parameters())
+        assert list(actual_params) == list(expected_params)
+        for name, expected in expected_params.items():
+            torch.testing.assert_close(
+                actual_params[name].detach(),
+                expected,
+                rtol=0.0,
+                atol=0.0,
+                msg=name,
+            )
+
         assert out1.metrics["privacy_epsilon"] == pytest.approx(
             out2.metrics["privacy_epsilon"], rel=1e-3
         )
@@ -357,6 +358,41 @@ class TestDpFtrlCheckpointRoundTrip:
 
         with pytest.raises(CheckpointError, match="horizon_process_state"):
             trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+    def test_mf_resume_rejects_same_shape_strategy_drift(self, tmp_path):
+        outdir = tmp_path / "mf-strategy-drift"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_band",
+                max_steps=16,
+                save_steps=4,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        resumed_args = _args(
+            output_dir=str(tmp_path / "mf-strategy-drift-resumed"),
+            mechanism="mf_band",
+            max_steps=16,
+        )
+        resumed_args.privacy_noise_mechanism_kwargs = {
+            "bands": 4,
+            "momentum": 0.5,
+        }
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=resumed_args,
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="horizon_process_state"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-4"))
 
     def test_calibrated_horizon_resume_restores_noise_multiplier(self, tmp_path):
         outdir = tmp_path / "calibrated"
