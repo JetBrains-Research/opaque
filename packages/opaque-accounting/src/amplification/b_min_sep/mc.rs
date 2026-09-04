@@ -437,7 +437,9 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::amplification::poisson_pld;
     use crate::discretization::DiscretizationConfig;
+    use crate::mechanisms::gaussian_pld;
     use approx::assert_abs_diff_eq;
 
     fn warm_path_probability(mask: u64, n: usize, bands: usize, p: f64) -> f64 {
@@ -611,6 +613,32 @@ mod tests {
         let pld = bandmf_b_min_sep_warm_mc_pld(&coef, 50, 0.05, 1.0, &cfg).unwrap();
         let eps = pld.epsilon_at(1e-2);
         assert!(eps > 0.0 && eps.is_finite());
+    }
+
+    #[test]
+    fn bandwidth_one_mc_bounds_poisson_gaussian_composition() {
+        let n_steps = 8;
+        let p = 0.15;
+        let sigma = 1.2;
+        let mut cfg = default_config();
+        cfg.seed = 779;
+
+        let mc = bandmf_b_min_sep_warm_mc_pld(&[1.0], n_steps, p, sigma, &cfg).unwrap();
+        let gaussian = gaussian_pld(sigma, &cfg).unwrap();
+        let analytic = poisson_pld(&gaussian, p)
+            .unwrap()
+            .self_compose(n_steps)
+            .unwrap();
+
+        for epsilon in [0.0, 0.25, 0.5, 1.0, 2.0] {
+            let mc_delta = mc.delta_at(epsilon);
+            let analytic_delta = analytic.delta_at(epsilon);
+            assert!(
+                mc_delta >= analytic_delta,
+                "bandwidth-one MC bound underestimates at ε={epsilon}: \
+                 mc={mc_delta:.17e}, analytic={analytic_delta:.17e}"
+            );
+        }
     }
 
     #[test]
