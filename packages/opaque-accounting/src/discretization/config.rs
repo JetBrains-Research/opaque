@@ -77,7 +77,9 @@ pub struct DiscretizationConfig {
     /// production depth (large t), or lower for faster exploratory runs.
     pub max_conv_grid: usize,
 
-    /// RNG seed for reproducibility of Monte Carlo PLD computation.
+    /// RNG seed for reproducible Monte Carlo PLDs across Rayon worker counts
+    /// within a fixed Opaque and dependency build. Exact streams may change
+    /// across releases.
     ///
     /// Default: 42.
     pub seed: u64,

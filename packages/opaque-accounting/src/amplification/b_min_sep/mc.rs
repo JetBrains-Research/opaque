@@ -21,6 +21,27 @@ use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
 /// `log N(μ, σ²I)(y) - log N(0, σ²I)(y)`.
+/// Samples per deterministic Monte Carlo stream.
+const SAMPLES_PER_SHARD: usize = 1024;
+
+#[derive(Clone, Copy)]
+#[repr(u64)]
+enum AdjacencyDirection {
+    Remove = 0,
+    Add = 1,
+}
+
+fn shard_seed(seed: u64, shard: usize, direction: AdjacencyDirection) -> u64 {
+    seed.wrapping_add((shard as u64).wrapping_mul(2))
+        .wrapping_add(direction as u64)
+}
+
+fn checked_sample_cells(num_samples: usize, n_steps: usize) -> Result<usize> {
+    num_samples
+        .checked_mul(n_steps)
+        .ok_or_else(|| PldError::InvalidParameter("sample count and horizon are too large".into()))
+}
+
 #[inline]
 fn log_gaussian_ratio_block(mu: &[f64], y: &[f64], sigma2: f64) -> f64 {
     let mut dot = 0.0;
@@ -154,8 +175,9 @@ fn sample_eta_under_q(n: usize, rng: &mut impl Rng, buf: &mut [f64]) {
 /// - `remove_x`, `remove_zeta` for the P-branch (`y = Cx + σ ζ`)
 /// - `add_eta` for the Q-branch (`y = σ η`)
 ///
-/// Sample order matches [`bandmf_b_min_sep_warm_mc_pld`]: thread 0 chunk, then
-/// thread 1, … with the same per-thread `StdRng` seeds (`seed+tid` and `1000+tid`).
+/// Rows use fixed, seed-indexed shards shared with one-shot sampling. Shards are
+/// independent of the Rayon pool size, so changing worker count preserves the
+/// generated corpus for a fixed build.
 pub fn bandmf_b_min_sep_prepare_transcripts(
     strategy_coef: &[f64],
     n_steps: usize,
@@ -182,51 +204,43 @@ pub fn bandmf_b_min_sep_prepare_transcripts(
     }
 
     let bands = strategy_coef.len();
-    let n_threads = rayon::current_num_threads().max(1);
-    let samples_per_thread = num_samples / n_threads;
-    let remainder = num_samples - samples_per_thread * n_threads;
+    let sample_cells = checked_sample_cells(num_samples, n_steps)?;
+    let shard_cells = checked_sample_cells(SAMPLES_PER_SHARD, n_steps)?;
+    let mut remove_x = vec![0.0; sample_cells];
+    let mut remove_zeta = vec![0.0; sample_cells];
+    let mut add_eta = vec![0.0; sample_cells];
 
-    let mut remove_x = vec![0.0f64; num_samples * n_steps];
-    let mut remove_zeta = vec![0.0f64; num_samples * n_steps];
-    let mut idx = 0usize;
-    for tid in 0..n_threads {
-        let n_samp = if tid == 0 {
-            samples_per_thread + remainder
-        } else {
-            samples_per_thread
-        };
-        let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));
-        let mut xb = vec![0.0f64; n_steps];
-        let mut zb = vec![0.0f64; n_steps];
-        for _ in 0..n_samp {
-            sample_x_under_p(n_steps, bands, p, &mut rng, &mut xb);
-            for v in zb.iter_mut() {
-                *v = rng.sample::<f64, _>(StandardNormal);
-            }
-            remove_x[idx * n_steps..(idx + 1) * n_steps].copy_from_slice(&xb);
-            remove_zeta[idx * n_steps..(idx + 1) * n_steps].copy_from_slice(&zb);
-            idx += 1;
-        }
-    }
-    debug_assert_eq!(idx, num_samples);
-
-    let mut add_eta = vec![0.0f64; num_samples * n_steps];
-    idx = 0;
-    for tid in 0..n_threads {
-        let n_samp = if tid == 0 {
-            samples_per_thread + remainder
-        } else {
-            samples_per_thread
-        };
-        let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
-        let mut eb = vec![0.0f64; n_steps];
-        for _ in 0..n_samp {
-            sample_eta_under_q(n_steps, &mut rng, &mut eb);
-            add_eta[idx * n_steps..(idx + 1) * n_steps].copy_from_slice(&eb);
-            idx += 1;
-        }
-    }
-    debug_assert_eq!(idx, num_samples);
+    rayon::join(
+        || {
+            remove_x
+                .par_chunks_mut(shard_cells)
+                .zip(remove_zeta.par_chunks_mut(shard_cells))
+                .enumerate()
+                .for_each(|(shard, (x_shard, zeta_shard))| {
+                    let mut rng =
+                        StdRng::seed_from_u64(shard_seed(seed, shard, AdjacencyDirection::Remove));
+                    for (x, zeta) in x_shard
+                        .chunks_exact_mut(n_steps)
+                        .zip(zeta_shard.chunks_exact_mut(n_steps))
+                    {
+                        sample_x_under_p(n_steps, bands, p, &mut rng, x);
+                        sample_eta_under_q(n_steps, &mut rng, zeta);
+                    }
+                });
+        },
+        || {
+            add_eta
+                .par_chunks_mut(shard_cells)
+                .enumerate()
+                .for_each(|(shard, eta_shard)| {
+                    let mut rng =
+                        StdRng::seed_from_u64(shard_seed(seed, shard, AdjacencyDirection::Add));
+                    for eta in eta_shard.chunks_exact_mut(n_steps) {
+                        sample_eta_under_q(n_steps, &mut rng, eta);
+                    }
+                });
+        },
+    );
 
     Ok((remove_x, remove_zeta, add_eta))
 }
@@ -243,12 +257,15 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
     sigma: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    let num_samples = add_eta.len() / n_steps;
-    if num_samples == 0 || add_eta.len() != num_samples * n_steps {
+    if n_steps == 0 {
+        return Err(PldError::InvalidParameter("n_steps must be > 0".into()));
+    }
+    if add_eta.is_empty() || add_eta.len() % n_steps != 0 {
         return Err(PldError::InvalidParameter(
             "add_eta length must be positive multiple of n_steps".into(),
         ));
     }
+    let num_samples = add_eta.len() / n_steps;
     if remove_x.len() != add_eta.len() || remove_zeta.len() != add_eta.len() {
         return Err(PldError::InvalidParameter(
             "remove_x/remove_zeta/add_eta length mismatch".into(),
@@ -261,65 +278,42 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
         )));
     }
     let sigma2 = sigma * sigma;
-    let coef = strategy_coef.to_vec();
-    let n_threads = rayon::current_num_threads().max(1);
-    let samples_per_thread = num_samples / n_threads;
-    let remainder = num_samples - samples_per_thread * n_threads;
+    let mut remove_samples = vec![0.0; num_samples];
+    let mut add_samples = vec![0.0; num_samples];
 
-    let mut remove_samples: Vec<f64> = (0..n_threads)
-        .into_par_iter()
-        .flat_map(|tid| {
-            let n_samp = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let base = if tid == 0 {
-                0
-            } else {
-                remainder + tid * samples_per_thread
-            };
-            let mut yb = vec![0.0f64; n_steps];
-            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
-            (0..n_samp)
-                .map(|j| {
-                    let s = base + j;
-                    let x = &remove_x[s * n_steps..(s + 1) * n_steps];
-                    let z = &remove_zeta[s * n_steps..(s + 1) * n_steps];
-                    y_from_x_and_zeta(&coef, n_steps, x, z, sigma, &mut yb);
-                    evaluator.evaluate(&yb)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    let mut add_samples: Vec<f64> = (0..n_threads)
-        .into_par_iter()
-        .flat_map(|tid| {
-            let n_samp = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let base = if tid == 0 {
-                0
-            } else {
-                remainder + tid * samples_per_thread
-            };
-            let mut yb = vec![0.0f64; n_steps];
-            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
-            (0..n_samp)
-                .map(|j| {
-                    let s = base + j;
-                    let eta = &add_eta[s * n_steps..(s + 1) * n_steps];
-                    for i in 0..n_steps {
-                        yb[i] = sigma * eta[i];
-                    }
-                    -evaluator.evaluate(&yb)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    rayon::join(
+        || {
+            remove_samples
+                .par_iter_mut()
+                .zip(
+                    remove_x
+                        .par_chunks(n_steps)
+                        .zip(remove_zeta.par_chunks(n_steps)),
+                )
+                .for_each_init(
+                    || vec![0.0; n_steps],
+                    |y, (sample, (x, zeta))| {
+                        y_from_x_and_zeta(strategy_coef, n_steps, x, zeta, sigma, y);
+                        *sample = WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
+                    },
+                );
+        },
+        || {
+            add_samples
+                .par_iter_mut()
+                .zip(add_eta.par_chunks(n_steps))
+                .for_each_init(
+                    || vec![0.0; n_steps],
+                    |y, (sample, eta)| {
+                        for (value, noise) in y.iter_mut().zip(eta) {
+                            *value = sigma * noise;
+                        }
+                        *sample =
+                            -WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
+                    },
+                );
+        },
+    );
 
     let (pmf_remove, remove_resolution) = samples_to_pmf(&mut remove_samples, config, 2)?;
     let (pmf_add, add_resolution) = samples_to_pmf(&mut add_samples, config, 2)?;
@@ -371,57 +365,51 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
     }
     let bands = strategy_coef.len();
     let sigma2 = sigma * sigma;
-    let n_threads = rayon::current_num_threads().max(1);
-    let samples_per_thread = num_samples / n_threads;
-    let remainder = num_samples - samples_per_thread * n_threads;
+    let mut remove_samples = vec![0.0; num_samples];
+    let mut add_samples = vec![0.0; num_samples];
 
-    let coef = strategy_coef.to_vec();
-
-    let mut remove_samples: Vec<f64> = (0..n_threads)
-        .into_par_iter()
-        .flat_map(|tid| {
-            let n_samp = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));
-            let mut xb = vec![0.0f64; n_steps];
-            let mut zb = vec![0.0f64; n_steps];
-            let mut yb = vec![0.0f64; n_steps];
-            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
-            (0..n_samp)
-                .map(|_| {
-                    sample_x_under_p(n_steps, bands, p, &mut rng, &mut xb);
-                    for v in zb.iter_mut() {
-                        *v = rng.sample::<f64, _>(StandardNormal);
-                    }
-                    y_from_x_and_zeta(&coef, n_steps, &xb, &zb, sigma, &mut yb);
-                    evaluator.evaluate(&yb)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    let mut add_samples: Vec<f64> = (0..n_threads)
-        .into_par_iter()
-        .flat_map(|tid| {
-            let n_samp = if tid == 0 {
-                samples_per_thread + remainder
-            } else {
-                samples_per_thread
-            };
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
-            let mut yb = vec![0.0f64; n_steps];
-            let mut evaluator = WarmLogLikelihoodRatio::new(&coef, p, sigma2);
-            (0..n_samp)
-                .map(|_| {
-                    sample_y_under_q(n_steps, sigma, &mut rng, &mut yb);
-                    -evaluator.evaluate(&yb)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    rayon::join(
+        || {
+            remove_samples
+                .par_chunks_mut(SAMPLES_PER_SHARD)
+                .enumerate()
+                .for_each_init(
+                    || (vec![0.0; n_steps], vec![0.0; n_steps], vec![0.0; n_steps]),
+                    |state, (shard, samples)| {
+                        let (x, zeta, y) = state;
+                        let mut rng = StdRng::seed_from_u64(shard_seed(
+                            seed,
+                            shard,
+                            AdjacencyDirection::Remove,
+                        ));
+                        for sample in samples {
+                            sample_x_under_p(n_steps, bands, p, &mut rng, x);
+                            sample_eta_under_q(n_steps, &mut rng, zeta);
+                            y_from_x_and_zeta(strategy_coef, n_steps, x, zeta, sigma, y);
+                            *sample =
+                                WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
+                        }
+                    },
+                );
+        },
+        || {
+            add_samples
+                .par_chunks_mut(SAMPLES_PER_SHARD)
+                .enumerate()
+                .for_each_init(
+                    || vec![0.0; n_steps],
+                    |y, (shard, samples)| {
+                        let mut rng =
+                            StdRng::seed_from_u64(shard_seed(seed, shard, AdjacencyDirection::Add));
+                        for sample in samples {
+                            sample_y_under_q(n_steps, sigma, &mut rng, y);
+                            *sample =
+                                -WarmLogLikelihoodRatio::new(strategy_coef, p, sigma2).evaluate(y);
+                        }
+                    },
+                );
+        },
+    );
 
     let (pmf_remove, remove_resolution) = samples_to_pmf(&mut remove_samples, config, 2)?;
     let (pmf_add, add_resolution) = samples_to_pmf(&mut add_samples, config, 2)?;
@@ -440,7 +428,9 @@ mod tests {
     use crate::amplification::poisson_pld;
     use crate::discretization::DiscretizationConfig;
     use crate::mechanisms::gaussian_pld;
+    use crate::pld::Pmf;
     use approx::assert_abs_diff_eq;
+    use std::collections::HashSet;
 
     fn warm_path_probability(mask: u64, n: usize, bands: usize, p: f64) -> f64 {
         let denominator = 1.0 + (bands - 1) as f64 * p;
@@ -495,6 +485,62 @@ mod tests {
                 probability * log_ratio.exp()
             })
             .sum()
+    }
+
+    fn assert_float_slices_eq(left: &[f64], right: &[f64]) {
+        assert_eq!(left.len(), right.len());
+        for (index, (left, right)) in left.iter().zip(right).enumerate() {
+            assert_eq!(left.to_bits(), right.to_bits(), "index {index}");
+        }
+    }
+
+    fn with_threads<T: Send>(num_threads: usize, op: impl FnOnce() -> T + Send) -> T {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap()
+            .install(op)
+    }
+
+    fn assert_pmf_eq(left: &Pmf, right: &Pmf) {
+        assert_eq!(
+            left.discretization.to_bits(),
+            right.discretization.to_bits()
+        );
+        assert_eq!(left.lower_loss_index, right.lower_loss_index);
+        assert_float_slices_eq(&left.probs, &right.probs);
+        assert_eq!(left.infinity_mass.to_bits(), right.infinity_mass.to_bits());
+        assert_eq!(
+            left.negative_infinity_mass.to_bits(),
+            right.negative_infinity_mass.to_bits()
+        );
+        assert_eq!(left.max_grid_size, right.max_grid_size);
+        assert_eq!(
+            left.right_tail_budget.to_bits(),
+            right.right_tail_budget.to_bits()
+        );
+        assert_eq!(
+            left.left_tail_budget.to_bits(),
+            right.left_tail_budget.to_bits()
+        );
+    }
+
+    fn assert_pld_eq(left: &PrivacyLossDistribution, right: &PrivacyLossDistribution) {
+        assert_pmf_eq(&left.pmf_remove, &right.pmf_remove);
+        match (&left.pmf_add, &right.pmf_add) {
+            (Some(left), Some(right)) => assert_pmf_eq(left, right),
+            (None, None) => {}
+            _ => panic!("adjacency mismatch"),
+        }
+        assert_eq!(
+            left.estimation_failure_probability().to_bits(),
+            right.estimation_failure_probability().to_bits()
+        );
+        assert_eq!(
+            left.mc_resolution().to_bits(),
+            right.mc_resolution().to_bits()
+        );
+        assert_eq!(left.gaussian_source(), right.gaussian_source());
     }
 
     fn default_config() -> DiscretizationConfig {
@@ -642,7 +688,22 @@ mod tests {
     }
 
     #[test]
-    fn transcripts_match_one_shot_epsilon() {
+    fn shard_seeds_separate_adjacency_directions() {
+        let num_samples = DiscretizationConfig::default()
+            .resolved_num_mc_samples(2)
+            .unwrap();
+        let num_shards = num_samples.div_ceil(SAMPLES_PER_SHARD);
+        let mut seeds = HashSet::with_capacity(2 * num_shards);
+
+        for shard in 0..num_shards {
+            for direction in [AdjacencyDirection::Remove, AdjacencyDirection::Add] {
+                assert!(seeds.insert(shard_seed(u64::MAX - 10, shard, direction)));
+            }
+        }
+    }
+
+    #[test]
+    fn transcripts_match_one_shot() {
         let coef = vec![0.8_f64.sqrt(), 0.2_f64.sqrt(), 0.0];
         let mut cfg = default_config();
         cfg.seed = 99;
@@ -654,12 +715,51 @@ mod tests {
         let pld_t =
             bandmf_b_min_sep_pld_from_transcripts(&rx, &rz, &ae, &coef, n, p, sigma, &cfg).unwrap();
         let pld_1 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
-        let d = 1e-2;
-        let e1 = pld_1.epsilon_at(d);
-        let e2 = pld_t.epsilon_at(d);
-        assert!(
-            (e1 - e2).abs() < 0.05,
-            "epsilon mismatch: one_shot={e1} transcripts={e2}"
-        );
+        assert_pld_eq(&pld_1, &pld_t);
+    }
+
+    #[test]
+    fn transcripts_are_identical_across_thread_counts() {
+        let coef = vec![0.7, 0.2, 0.1];
+        let prepare = || bandmf_b_min_sep_prepare_transcripts(&coef, 7, 0.08, 2_065, 173).unwrap();
+        let single_thread = with_threads(1, prepare);
+        let many_threads = with_threads(8, prepare);
+
+        assert_float_slices_eq(&single_thread.0, &many_threads.0);
+        assert_float_slices_eq(&single_thread.1, &many_threads.1);
+        assert_float_slices_eq(&single_thread.2, &many_threads.2);
+    }
+
+    #[test]
+    fn transcript_evaluation_is_identical_across_thread_counts() {
+        let coef = vec![0.7, 0.2, 0.1];
+        let mut cfg = default_config();
+        cfg.seed = 173;
+        let n = 12;
+        let p = 0.08;
+        let sigma = 1.2;
+        let num_samples = cfg.resolved_num_mc_samples(2).unwrap();
+        let (x, zeta, eta) =
+            bandmf_b_min_sep_prepare_transcripts(&coef, n, p, num_samples, cfg.seed).unwrap();
+        let evaluate = || {
+            bandmf_b_min_sep_pld_from_transcripts(&x, &zeta, &eta, &coef, n, p, sigma, &cfg)
+                .unwrap()
+        };
+
+        let single_thread = with_threads(1, evaluate);
+        let many_threads = with_threads(8, evaluate);
+        assert_pld_eq(&single_thread, &many_threads);
+    }
+
+    #[test]
+    fn mc_pld_is_identical_across_thread_counts() {
+        let coef = vec![0.8_f64.sqrt(), 0.2_f64.sqrt(), 0.0];
+        let mut cfg = default_config();
+        cfg.seed = 173;
+        let build = || bandmf_b_min_sep_warm_mc_pld(&coef, 25, 0.06, 1.15, &cfg).unwrap();
+        let single_thread = with_threads(1, build);
+        let many_threads = with_threads(8, build);
+
+        assert_pld_eq(&single_thread, &many_threads);
     }
 }

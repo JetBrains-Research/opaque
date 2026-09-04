@@ -118,16 +118,27 @@ mod tests {
         let n = 35;
         let p = 0.07;
         let sigma = 1.05;
-        let mut cfg = DiscretizationConfig::default();
-        cfg.seed = 55;
-        cfg.mc_resolution = 5e-3;
-        cfg.mc_failure_probability = 1e-2;
+        let cfg = DiscretizationConfig {
+            seed: 55,
+            mc_resolution: 5e-3,
+            mc_failure_probability: 1e-2,
+            ..DiscretizationConfig::default()
+        };
         let s = cfg.resolved_num_mc_samples(2).unwrap();
         let h = register_b_min_sep_transcripts(&coef, n, p, s, 55).unwrap();
         let p1 = pld_from_transcript_handle(h, &coef, p, sigma, &cfg).unwrap();
         let p2 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
-        let d = 1e-2;
-        assert!((p1.epsilon_at(d) - p2.epsilon_at(d)).abs() < 0.06);
+        for delta in [1e-2, 2e-2, 5e-2] {
+            assert_eq!(
+                p1.epsilon_at(delta).to_bits(),
+                p2.epsilon_at(delta).to_bits()
+            );
+        }
+        assert_eq!(
+            p1.estimation_failure_probability().to_bits(),
+            p2.estimation_failure_probability().to_bits()
+        );
+        assert_eq!(p1.mc_resolution().to_bits(), p2.mc_resolution().to_bits());
         drop_b_min_sep_transcript_handle(h);
         assert!(registry().lock().unwrap().get(&h).is_none());
     }

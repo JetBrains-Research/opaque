@@ -163,8 +163,9 @@ class DiscretizationConfig:
             Default: 10,000,000.
         tail_mass_truncation: Total tail mass budget for Chernoff truncation
             during composition. Default: 1e-15.
-        seed: RNG seed for reproducible Monte Carlo PLD computation.
-            Default: 42.
+        seed: RNG seed for reproducibility across worker counts within a fixed
+            Opaque and dependency build. Exact streams may change across
+            releases. Default: 42.
         max_conv_grid: Maximum convolution grid size for the
             random-allocation PLD transform. Default: 32,768.
         mc_resolution: Maximum unresolved Monte Carlo mass. Default: 1e-5.
