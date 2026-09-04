@@ -81,16 +81,14 @@ class MfGaussian(DpProcess):
             else self.n_steps
         )
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+    def _pld_cache_key(self) -> tuple[object, ...]:
         return (
             "MfGaussian",
             self.noise_multiplier,
             self.n_steps,
             self.min_sep,
             self.max_participations,
-            strategy_cache_key(
-                self.strategy, self.n_steps if n_steps is None else n_steps
-            ),
+            strategy_cache_key(self.strategy, self.n_steps),
         )
 
     @pld_cache(maxsize=8)

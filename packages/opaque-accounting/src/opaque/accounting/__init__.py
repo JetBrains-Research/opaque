@@ -44,7 +44,6 @@ from opaque.api.accounting.core import (
     identity,
     mechanisms,
     nonprivate,
-    per_step,
     register_budget_serializer,
     repeat,
     risk_budget,
@@ -72,7 +71,6 @@ __all__ = [
     "repeat",
     "compose",
     "cached",
-    "per_step",
     # Calibration / budgets
     "epsilon_budget",
     "delta_budget",

@@ -134,6 +134,13 @@ jobs:
         env:
           DEPENDENCY_SELECTION: ${{ inputs.dependency-selection }}
         run: bash .github/scripts/setup_python_test_environment.sh
+      # A lane that only selects CUDA-marked tests must not be able to pass on a
+      # host without CUDA: pytest skips those tests and exits 0, so the lane
+      # would report green while validating nothing. The script is a no-op for
+      # every marker expression that excludes CUDA.
+      - name: CUDA preflight
+        shell: bash
+        run: bash .github/scripts/assert_cuda_available.sh
       - name: Run test group
         env:
           TEST_PATHS: ${{ matrix.suite.paths }}

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from opaque.api.accounting.core.composition._cached import CachedProcess
 from opaque.api.accounting.core.composition._composed import Composed
-from opaque.api.accounting.core.composition._per_step import PerStep
 from opaque.api.accounting.core.composition._repeated import Repeated
 
-__all__ = ["CachedProcess", "Composed", "PerStep", "Repeated"]
+__all__ = ["CachedProcess", "Composed", "Repeated"]

@@ -174,24 +174,6 @@ class TestBuildAmplifierFactory:
             )
 
 
-class TestPerStepWrapper:
-    def test_wraps_to_per_step(self):
-        strategy = _dpftrl.build_strategy("mf_identity", {})
-        amp = _dpftrl.build_amplifier_factory(
-            sampling_mode="poisson",
-            strategy=strategy,
-            sample_rate=0.01,
-            n_steps=50,
-            num_bins=5,
-            dataset_size=1000,
-            truncated_batch_size=None,
-        )
-        step_factory = _dpftrl.build_step_mechanism_factory(amp)
-        from opaque.api.accounting.core.composition._per_step import PerStep
-
-        assert isinstance(step_factory(1.0), PerStep)
-
-
 def _mf_band_context(bands: int, sample_rate: float, n_steps: int) -> _dpftrl.MFContext:
     """Build an ``MFContext`` for BandMF tests — strategy + amplifier."""
     strategy = _dpftrl.build_strategy("mf_band", {"bands": bands})

@@ -47,6 +47,15 @@ def _has_kernel_runtime() -> bool:
     return fused_kernels_available()
 
 
+def _is_hf_pretrained_model(model: nn.Module) -> bool:
+    """Whether ``model`` is a Hugging Face model expected to receive compat patches."""
+    try:
+        from transformers import PreTrainedModel
+    except ImportError:
+        return False
+    return isinstance(model, PreTrainedModel)
+
+
 def _patch_forward(
     target_cls: type[nn.Module] | None,
     factory: Callable | None,
@@ -123,15 +132,17 @@ def apply_transformers_model_patches(
     family = detect_family(model)
     apply_fn = get_family_apply_fn(family) if family is not None else None
     if family is None or apply_fn is None:
-        # Only raise if user explicitly requested dropout/batchify for unknown family
-        if (dropout_explicit and dropout) or (batchify_explicit and batchify):
+        unknown_hf_family = _is_hf_pretrained_model(model)
+        if (unknown_hf_family and compat) or (
+            (dropout_explicit and dropout) or (batchify_explicit and batchify)
+        ):
             raise ConfigurationError(
                 *(
-                    "opaque: dropout/batchify patches require a registered "
+                    "opaque: compatibility/dropout/batchify patches require a registered "
                     f"transformers family; got {family!r} ({type(model).__name__})",
                 )
             )
-        logger.debug(
+        logger.warning(
             "opaque: no registered apply function for model family %s; "
             "no model-level patches applied.",
             family or type(model).__name__,

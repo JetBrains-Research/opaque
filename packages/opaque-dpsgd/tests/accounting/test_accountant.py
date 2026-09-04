@@ -505,29 +505,27 @@ class TestAccountantCached:
         # Inner process should be the same CachedProcess (not double-wrapped)
         assert acct1.process is acct2.process
 
-    def test_cached_k_out_of_t_step_preserves_prefix(self):
+    def test_cached_k_out_of_t_preserves_full_horizon(self):
         horizon = dpsgd_acc.k_out_of_t(
             dpsgd_acc.gaussian(1.0),
             k=2,
             t=4,
             allocation="block",
         )
-        step = acc.per_step(horizon)
-        cached_step = acc.cached(step)
+        cached_horizon = acc.cached(horizon)
 
-        assert cached_step is not step
-        assert (cached_step * 2).pld() is horizon.pld_at(2)
+        assert cached_horizon is not horizon
+        assert cached_horizon.pld() is horizon.pld()
 
-    def test_cached_k_out_of_t_accountant_warns_and_skips_boundary(self):
+    def test_cached_k_out_of_t_accountant_wraps_horizon(self):
         horizon = dpsgd_acc.k_out_of_t(
             dpsgd_acc.gaussian(1.0),
             k=2,
             t=4,
             allocation="block",
         )
-        accountant = Accountant() | acc.per_step(horizon)
+        accountant = Accountant(prefix=horizon)
+        cached_accountant = acc.cached(accountant)
 
-        with pytest.warns(RuntimeWarning, match="whole-horizon"):
-            cached_accountant = acc.cached(accountant)
-
-        assert cached_accountant is accountant
+        assert cached_accountant is not accountant
+        assert cached_accountant.epsilon_at(1e-5) == accountant.epsilon_at(1e-5)

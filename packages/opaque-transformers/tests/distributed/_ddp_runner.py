@@ -35,6 +35,8 @@ from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
 class TinyConfig(PretrainedConfig):
+    # This test-only family implements a vmap-compatible forward directly.
+    # It is intentionally not part of opaque's production patch registry.
     model_type = "tiny_dp"
 
     def __init__(self, vocab_size: int = 64, hidden_size: int = 8, **kwargs):
@@ -163,6 +165,7 @@ def scenario_runtime_foundation(
         privacy_target_delta=1e-5,
         report_to=[],
         use_cpu=use_cpu,
+        use_compat_patches=False,
     )
     ds = TinyDataset(n=32, seq_len=8, vocab=cfg.vocab_size)
     trainer = DPTrainer(
@@ -251,6 +254,7 @@ def _run_eval_gather_case(
         seed=11,
         privacy_noise_multiplier=0.0,
         use_cpu=use_cpu,
+        use_compat_patches=False,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
     eval_ds = TinyDataset(n=eval_size, seq_len=4, vocab=cfg.vocab_size, seed=99)
@@ -337,6 +341,7 @@ def scenario_batch_eval_metrics(
         include_for_metrics=["inputs", "loss"],
         privacy_noise_multiplier=0.0,
         use_cpu=use_cpu,
+        use_compat_patches=False,
     )
     train_ds = TinyDataset(n=16, seq_len=4, vocab=cfg.vocab_size)
     eval_ds = TinyDataset(n=20, seq_len=4, vocab=cfg.vocab_size, seed=101)
@@ -383,6 +388,7 @@ def scenario_rank_gating_and_worker_seed(
         dataloader_num_workers=2,
         privacy_noise_multiplier=0.0,
         use_cpu=use_cpu,
+        use_compat_patches=False,
     )
     trainer = DPTrainer(
         model=model,
@@ -460,6 +466,7 @@ def scenario_env_backend_diagnostic(
         ddp_backend="xccl",
         privacy_noise_multiplier=0.0,
         use_cpu=use_cpu,
+        use_compat_patches=False,
     )
     try:
         DPTrainer(

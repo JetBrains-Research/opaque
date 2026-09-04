@@ -22,6 +22,7 @@ import torch
 from torch.utils.data import Dataset
 
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+from opaque.exceptions import CheckpointError
 from opaque.transformers import TrainingArguments
 
 
@@ -79,7 +80,8 @@ def _args(
     mechanism: str,
     max_steps: int,
     save_steps: int | None = None,
-    noise_multiplier: float = 1.0,
+    noise_multiplier: float | None = 1.0,
+    target_epsilon: float | None = None,
     clipping_norm: float | str = 1.0,
     sampling_mode: str = "auto",
     sampling_kwargs: dict[str, object] | None = None,
@@ -96,6 +98,7 @@ def _args(
         sampling_mode=sampling_mode,
         sampling_kwargs=sampling_kwargs,
         privacy_noise_multiplier=noise_multiplier,
+        privacy_target_epsilon=target_epsilon,
         clipping_norm=clipping_norm,
         learning_rate=1e-3,
         optim="sgd",
@@ -140,6 +143,31 @@ class TestDpFtrlTrain:
         # Every MF mechanism reports the same privacy metric surface.
         assert "privacy_epsilon" in out.metrics
         assert out.metrics["privacy_noise_multiplier"] == pytest.approx(1.0)
+
+    def test_step_logs_report_only_full_horizon_epsilon(self, tmp_path):
+        args = _args(
+            output_dir=str(tmp_path / "full-horizon-logs"),
+            mechanism="mf_identity",
+            max_steps=4,
+        )
+        args.logging_strategy = "steps"
+        args.logging_steps = 1
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        out = trainer.train()
+        logged = [
+            row["privacy_epsilon"]
+            for row in trainer.state.log_history
+            if "privacy_epsilon" in row
+        ]
+
+        assert logged
+        assert logged == pytest.approx([out.metrics["privacy_epsilon"]] * len(logged))
 
 
 class TestDpFtrlSamplerDispatch:
@@ -295,6 +323,178 @@ class TestDpFtrlCheckpointRoundTrip:
         assert out1.metrics["privacy_epsilon"] == pytest.approx(
             out2.metrics["privacy_epsilon"], rel=1e-3
         )
+
+    def test_k_out_of_t_resume_rejects_parameter_drift(self, tmp_path):
+        outdir = tmp_path / "k-out-of-t"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="gaussian",
+                max_steps=4,
+                save_steps=2,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 2, "allocation": "block"},
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "k-out-of-t-resumed"),
+                mechanism="gaussian",
+                max_steps=4,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 1, "allocation": "block"},
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="horizon_process_state"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+    def test_calibrated_horizon_resume_restores_noise_multiplier(self, tmp_path):
+        outdir = tmp_path / "calibrated"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=None,
+                target_epsilon=5.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        original = trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "calibrated-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=None,
+                target_epsilon=5.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        resumed = trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+        assert resumed.metrics["privacy_noise_multiplier"] == pytest.approx(
+            original.metrics["privacy_noise_multiplier"]
+        )
+        assert resumed.metrics["privacy_epsilon"] == pytest.approx(
+            original.metrics["privacy_epsilon"]
+        )
+
+    def test_calibrated_horizon_resume_rejects_target_drift(self, tmp_path):
+        outdir = tmp_path / "calibrated-target-drift"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=None,
+                target_epsilon=5.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "calibrated-target-drift-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=None,
+                target_epsilon=20.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="privacy_target_epsilon drift"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+    def test_fixed_horizon_resume_rejects_calibrated_mode(self, tmp_path):
+        outdir = tmp_path / "fixed-to-calibrated"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=0.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "fixed-to-calibrated-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=None,
+                target_epsilon=1.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="calibration mode drift"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+
+    def test_fixed_horizon_resume_rejects_noise_multiplier_drift(self, tmp_path):
+        outdir = tmp_path / "fixed-noise"
+        ds = _TinyDS()
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+                noise_multiplier=1.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "fixed-noise-resumed"),
+                mechanism="mf_identity",
+                max_steps=4,
+                noise_multiplier=2.0,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="privacy_noise_multiplier drift"):
+            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
 
 
 class TestDpFtrlLrScheduleIntegration:

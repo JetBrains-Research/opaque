@@ -66,32 +66,32 @@ __all__ = ["DpProcess", "Pld"]
 _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 
-def _freeze_cache_key(value: object, *, n_steps: int | None) -> Hashable:
+def _freeze_cache_key(value: object) -> Hashable:
     """Return a process-free, hashable representation of a dataclass value."""
     if isinstance(value, DpProcess):
-        return value._pld_cache_key(n_steps=n_steps)
+        return value._pld_cache_key()
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return (
             type(value),
             tuple(
-                _freeze_cache_key(getattr(value, field.name), n_steps=n_steps)
+                _freeze_cache_key(getattr(value, field.name))
                 for field in dataclasses.fields(value)
             ),
         )
     if isinstance(value, tuple):
-        return tuple(_freeze_cache_key(item, n_steps=n_steps) for item in value)
+        return tuple(_freeze_cache_key(item) for item in value)
     if isinstance(value, list):
-        return tuple(_freeze_cache_key(item, n_steps=n_steps) for item in value)
+        return tuple(_freeze_cache_key(item) for item in value)
     if isinstance(value, dict):
         return frozenset(
             (
-                _freeze_cache_key(key, n_steps=n_steps),
-                _freeze_cache_key(item, n_steps=n_steps),
+                _freeze_cache_key(key),
+                _freeze_cache_key(item),
             )
             for key, item in value.items()
         )
     if isinstance(value, set):
-        return frozenset(_freeze_cache_key(item, n_steps=n_steps) for item in value)
+        return frozenset(_freeze_cache_key(item) for item in value)
     return value
 
 
@@ -378,7 +378,7 @@ class DpProcess(ABC):
         """
         return (self, 1)
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> Hashable:
+    def _pld_cache_key(self) -> Hashable:
         """Return every process-free input that can affect the requested PLD.
 
         Ordinary frozen process dataclasses use a process-free structural
@@ -388,7 +388,7 @@ class DpProcess(ABC):
         return (
             type(self),
             tuple(
-                _freeze_cache_key(getattr(self, field.name), n_steps=n_steps)
+                _freeze_cache_key(getattr(self, field.name))
                 for field in dataclasses.fields(self)
             ),
         )
@@ -398,7 +398,7 @@ class DpProcess(ABC):
 
         The enclosing :class:`Repeated` key records ``count``. The default
         implementation composes the ordinary PLD; count-sensitive overrides
-        must return the identity of their repeated computation.
+        return the identity of their repeated computation.
         """
         del count
         return self._pld_cache_key()

@@ -129,11 +129,10 @@ _PRIVACY_SUMMARY_KEYS = {
     "privacy_noise_std",
     "train_converged_microbatch_size",
 }
-# Subset of summary keys that are also dropped from the per-step ``wandb.log``
-# stream because their value is fixed for the run — only ``epsilon`` (which
-# accumulates), ``delta`` and ``noise_multiplier`` (useful for multi-run
-# comparison) are kept per-step.
-_PRIVACY_PER_STEP_SKIP_KEYS = {
+# Subset of summary keys dropped from the timeline stream because their value
+# is fixed for the run. Epsilon remains: it accumulates for independent
+# mechanisms and is the declared full-run bound for horizon mechanisms.
+_PRIVACY_STREAM_SKIP_KEYS = {
     "privacy_calibration_source",
     "privacy_calibration_noise_multiplier",
     "privacy_calibration_achieved_epsilon",
@@ -221,7 +220,7 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
                         key: value
                         for key, value in raw_logs.items()
                         if key not in single_value_scalars
-                        and key not in _PRIVACY_PER_STEP_SKIP_KEYS
+                        and key not in _PRIVACY_STREAM_SKIP_KEYS
                     }
                     self._wandb.log(
                         {
@@ -246,7 +245,7 @@ def wrap_reporting_callback_class(callback_cls: type[Any]) -> type[Any]:
                     raw = {
                         key: value
                         for key, value in (logs or {}).items()
-                        if key not in _PRIVACY_PER_STEP_SKIP_KEYS
+                        if key not in _PRIVACY_STREAM_SKIP_KEYS
                     }
                     for key, value in rewrite_logs_for_reporting(raw).items():
                         if isinstance(value, (int, float)):

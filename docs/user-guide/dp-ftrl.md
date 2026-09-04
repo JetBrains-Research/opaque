@@ -95,14 +95,10 @@ Each amplification factory wraps a mechanism into a single
 strategy object** to `mf_gaussian_noise` and the accounting factory — that is
 how DP correctness is preserved.
 
-### Step-by-step ε reporting (`per_step`)
+### Whole-process ε reporting
 
-DP-FTRL processes are *whole-process*: feeding the bare process to
-`Accountant`'s `acct |= step` would over-count. Wrap with
-`acc.per_step(...)` to get a step-shaped adapter whose
-`per_step(proc) * K` materialises the strategy-aware K-prefix PLD —
-identical in shape to the DP-SGD `acct |= step` idiom but with the
-correct K-step bound under MF correlations:
+DP-FTRL processes are whole-process mechanisms. Include the process once at
+its declared `n_steps`; composing it once per optimizer step would over-count:
 
 ```python
 proc = dpftrl_acc.poisson(
@@ -110,19 +106,13 @@ proc = dpftrl_acc.poisson(
     sample_rate=0.01,
     n_steps=1000,
 )
-step = acc.per_step(proc)
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
-
-for batch in dataloader:
-    # ... train ...
-    acct |= step
-    eps_so_far = acct.epsilon_at(delta=1e-5)
+acct |= proc
+epsilon = acct.epsilon_at(delta=1e-5)
 ```
 
-For analytic PLDs, K-step ε is monotone and bounded by full-horizon ε.
-For Monte Carlo-backed b-min-sep and correlated Balls-in-Bins, every nonzero
-prefix charges the full-horizon confidence bound, preserving those invariants
-at the cost of prefix tightness. `K > proc.n_steps` raises.
+The reported epsilon covers the full declared horizon. Prefix queries and
+privacy-based early stopping are unsupported for these correlated mechanisms.
 
 ## 3. Clipping
 

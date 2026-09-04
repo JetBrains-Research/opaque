@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
 
 from opaque.api.accounting.core._base import DpProcess, Pld
-from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.accounting.core._pld_cache import pld_cache
-
-from ._per_step import PerStep
 
 if TYPE_CHECKING:
     from opaque.api.accounting.core._accountant import Accountant
@@ -58,10 +54,10 @@ class CachedProcess(DpProcess):
 
         return iter_repr(self)
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
+    def _pld_cache_key(self) -> tuple[object, ...]:
         from ._iter_cache_key import iter_cache_key
 
-        return iter_cache_key(self, n_steps=n_steps)
+        return iter_cache_key(self)
 
     @pld_cache(maxsize=16)
     def pld(
@@ -97,6 +93,7 @@ class CachedProcess(DpProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
+        """Preserve a wrapped process's count-sensitive repetition contract."""
         return self.inner.repeated_pld(
             count,
             discretization=discretization,
@@ -132,8 +129,6 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     :meth:`epsilon_at` so that the PLD is populated on the first query
     and reused as an opaque boundary for subsequent composition.
 
-    A frozen whole-horizon prefix is returned unchanged with a warning.
-
     Example::
 
         training = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01) * 1000)
@@ -156,54 +151,15 @@ def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
         process: The process (or Accountant) to cache.
 
     Returns:
-        A :class:`CachedProcess` wrapping *process*, unless it contains a
-        whole-horizon process, or a new :class:`Accountant`.
+        A :class:`CachedProcess` wrapping *process*, or a new
+        :class:`Accountant`.
     """
     from opaque.api.accounting.core._accountant import Accountant
 
     match process:
-        case Accountant() if _contains_horizon_process(process.process):
-            warnings.warn(
-                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
-                "before accumulation instead.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return process
         case Accountant():
             return Accountant(budget=process._budget, prefix=cached(process.process))
-        case PerStep():
-            return CachedProcess(inner=process)
-        case DpProcess() if _contains_horizon_process(process):
-            warnings.warn(
-                "cached() skipped a whole-horizon prefix; cache its PerStep adapter "
-                "before accumulation instead.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return process
         case CachedProcess():
             return process
         case _:
             return CachedProcess(process)
-
-
-def _contains_horizon_process(process: DpProcess) -> bool:
-    """Return whether a process tree contains a whole-horizon mechanism."""
-    from ._composed import Composed
-    from ._repeated import Repeated
-
-    stack = [process]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, DpHorizonProcess):
-            return True
-        if isinstance(node, CachedProcess):
-            stack.append(node.inner)
-        elif isinstance(node, Composed):
-            stack.extend((node.left, node.right))
-        elif isinstance(node, Repeated):
-            stack.append(node.inner)
-        elif isinstance(node, PerStep):
-            stack.append(node.process)
-    return False

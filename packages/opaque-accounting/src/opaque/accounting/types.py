@@ -16,7 +16,6 @@ from opaque.api.accounting.core.types import (
     EpsilonBudget,
     Identity,
     NonPrivate,
-    PerStep,
     Repeated,
     RiskBudget,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "EpsilonBudget",
     "Identity",
     "NonPrivate",
-    "PerStep",
     "Repeated",
     "RiskBudget",
 ]

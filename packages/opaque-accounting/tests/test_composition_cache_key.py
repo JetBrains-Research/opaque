@@ -11,13 +11,13 @@ from opaque.api.accounting.core.composition.types import (
 
 
 class _CacheKeyProbe(DpProcess):
-    """Leaf that records whether ordinary or repeated key selection is used."""
+    """Leaf that records ordinary versus count-sensitive key selection."""
 
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def _pld_cache_key(self, *, n_steps: int | None = None) -> tuple[object, ...]:
-        return ("pld", self.name, n_steps)
+    def _pld_cache_key(self) -> tuple[object, ...]:
+        return ("pld", self.name)
 
     def _repeated_pld_cache_key(self, count: int) -> tuple[object, ...]:
         return ("repeated_pld", self.name, count)
@@ -26,7 +26,7 @@ class _CacheKeyProbe(DpProcess):
         raise AssertionError("cache-key tests must not compute a PLD")
 
 
-def test_repeated_key_preserves_override_through_cached_wrapper() -> None:
+def test_repeated_key_preserves_cached_wrapper_structure() -> None:
     process = Repeated(CachedProcess(_CacheKeyProbe("leaf")), 7)
 
     assert process._pld_cache_key() == (
@@ -47,6 +47,6 @@ def test_repeated_composed_key_uses_ordinary_child_pld_keys() -> None:
         "Repeated",
         7,
         "Composed",
-        ("pld", "left", None),
-        ("pld", "right", None),
+        ("pld", "left"),
+        ("pld", "right"),
     )

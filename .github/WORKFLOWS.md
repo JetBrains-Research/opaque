@@ -60,11 +60,12 @@ credentials, publication, cross-package validation, or pipeline gates.
 ### `.github/workflows/python-tests.yml`
 
 This private `workflow_call` workflow runs the shared Python test matrix:
-Rust/Python/uv setup, dependency synchronization, pytest with coverage, and
-Codecov upload. Each caller provides one runner environment plus its Python
-version, dependency selection, pytest marker filter, and xdist arguments. Its
-five fixed test-group matrix legs keep each caller collapsed as one
-environment block in the Actions graph while the groups still run in parallel.
+Rust/Python/uv setup, dependency synchronization, a CUDA preflight, pytest with
+coverage, and Codecov upload. Each caller provides one runner environment plus
+its Python version, dependency selection, pytest marker filter, and xdist
+arguments. Its five fixed test-group matrix legs keep each caller collapsed as
+one environment block in the Actions graph while the groups still run in
+parallel.
 Dependency selection is `locked`, `minimum` (uv `lowest-direct`), or `latest`
 (`uv` `highest`). Validation callers report every test phase taking at
 least five seconds, so newly slow tests cannot disappear behind a fixed-size
@@ -75,6 +76,9 @@ and workflow failure blocks its caller.
 Linux amd64 tests, minimum and latest dependency boundaries, and macOS arm64,
 Linux arm64, and CUDA platform coverage. Main and release include slow tests in
 platform lanes. Fork pull requests never receive the self-hosted CUDA runner.
+
+Lanes selecting `cuda` run `.github/scripts/assert_cuda_available.sh` and fail
+when the host has no usable CUDA device; lanes excluding `cuda` skip it.
 
 ### `.github/workflows/rust-tests.yml`
 
