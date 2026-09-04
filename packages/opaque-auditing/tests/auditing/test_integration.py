@@ -39,9 +39,9 @@ def test_basic_audit_workflow():
     eps = result.eps_delta().epsilon_at(significance=0.05, delta=1e-5, threshold=4.0)
     assert eps > 0, "Should detect privacy leakage"
 
-    # Test epsilon with Bonferroni (default)
-    eps_bonf = result.eps_delta().epsilon_at(significance=0.05, delta=1e-5)
-    assert eps_bonf > 0, "Bonferroni should also detect leakage"
+    # Test epsilon with the threshold-free (Pareto-argmax) path
+    eps_threshold_free = result.eps_delta().epsilon_at(significance=0.05, delta=1e-5)
+    assert eps_threshold_free > 0, "Threshold-free estimation should detect leakage"
 
     # Test utility metrics
     assert 0.5 < result.attack_auc() < 1.0, "AUC should be above random"
