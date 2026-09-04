@@ -110,9 +110,20 @@ class TestBuildStrategy:
         strategy = _dpftrl.build_strategy(mechanism, kwargs)
         assert isinstance(strategy, cls)
 
-    def test_identity_ignores_kwargs(self):
-        strategy = _dpftrl.build_strategy("mf_identity", {"ignored": 1})
-        assert isinstance(strategy, IdentityStrategy)
+    @pytest.mark.parametrize(
+        "mechanism",
+        [
+            "mf_band",
+            "mf_blt",
+            "mf_bisr",
+            "mf_bsr",
+            "mf_lambda_cgd",
+            "mf_identity",
+        ],
+    )
+    def test_rejects_unknown_kwargs(self, mechanism):
+        with pytest.raises(TypeError):
+            _dpftrl.build_strategy(mechanism, {"ignored": 1})
 
 
 class TestBuildAmplifierFactory:
