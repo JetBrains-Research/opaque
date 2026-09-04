@@ -3345,12 +3345,12 @@ dataset with the <code>opaque.alignment.data</code> helpers: install
 </code></pre></div>
 <p>The collator reads <code>completion_mask</code> and sets <code>labels</code> to <code>-100</code>
 everywhere the mask is <code>0</code>, so the loss only sees assistant tokens.
-<code>get_training_chat_template</code> recognizes explicit assistant branches and
-supported shared-render templates such as Gemma and Qwen, then validates that
-the generated spans exclude user content. It raises <code>ValueError</code> for an
-unsupported template instead of guessing. The markers are mandatory:
-<code>apply_chat_template_with_mask</code> raises if the active template lacks
-<code>{% generation %}</code> (HF cannot recover the mask otherwise).</p>
+<code>get_training_chat_template</code> recognizes validated explicit assistant branches
+and selected shared-render forms, then validates that generated spans exclude
+user content. It raises <code>ValueError</code> for an unsupported template instead of
+guessing. The markers are mandatory: <code>apply_chat_template_with_mask</code> raises if
+the active template lacks a Transformers-recognized generation tag (including
+Jinja whitespace-control variants; HF cannot recover the mask otherwise).</p>
 <h2 id="2-per-example-loss">2. Per-example loss<a class="headerlink" href="#2-per-example-loss" title="Permanent link">&para;</a></h2>
 <p>The loss runs <em>inside</em> <code>vmap(grad(...))</code>, so it is written for a single
 example and returns a per-example scalar (no mean over the batch — the
