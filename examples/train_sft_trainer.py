@@ -281,7 +281,11 @@ def main() -> int:
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_name)
+    bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    model_dtype = torch.bfloat16 if bf16 else torch.float32
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name, torch_dtype=model_dtype
+    )
 
     # When a chat template is cloned in, the trainer marks the added tokens'
     # embedding rows trainable on this config (trainable_token_indices + lm_head)
@@ -340,7 +344,7 @@ def main() -> int:
         save_strategy="no",
         seed=args.seed,
         use_cpu=not torch.cuda.is_available(),
-        bf16=torch.cuda.is_available(),
+        bf16=bf16,
         # W&B
         report_to=report_to,
         run_name=run_name,
