@@ -978,14 +978,17 @@ class TestFusedLoRAQKV:
             Aq,
             Bq,
             scaling,
+            None,
             Wk,
             Ak,
             Bk,
             scaling,
+            None,
             Wv,
             Av,
             Bv,
             scaling,
+            None,
         )
 
         # PyTorch reference
@@ -1029,14 +1032,17 @@ class TestFusedLoRAQKV:
             Aq,
             Bq,
             scaling,
+            None,
             Wk,
             Ak,
             Bk,
             scaling,
+            None,
             Wv,
             Av,
             Bv,
             scaling,
+            None,
         )
         (Q.sum() + K.sum() + V.sum()).backward()
 

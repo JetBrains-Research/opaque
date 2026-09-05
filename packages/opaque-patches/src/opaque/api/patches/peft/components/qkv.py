@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sys
 
-from ._utils import _active_lora_dtype, _extract_lora_params
+from ._utils import _active_lora_dtype, _extract_lora_params_and_bias
 
 _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "LlamaAttention",
@@ -15,6 +15,7 @@ _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "Gemma2Attention",
     "GraniteAttention",
     "Cohere2Attention",
+    "Qwen2Attention",
 }
 
 
@@ -28,9 +29,9 @@ def _opaque_fused_lora_qkv(self, hidden_states):
 
     dtype = _active_lora_dtype(hidden_states)
 
-    Wq, Aq, Bq, Sq = _extract_lora_params(self.q_proj)
-    Wk, Ak, Bk, Sk = _extract_lora_params(self.k_proj)
-    Wv, Av, Bv, Sv = _extract_lora_params(self.v_proj)
+    Wq, Aq, Bq, Sq, bq = _extract_lora_params_and_bias(self.q_proj)
+    Wk, Ak, Bk, Sk, bk = _extract_lora_params_and_bias(self.k_proj)
+    Wv, Av, Bv, Sv, bv = _extract_lora_params_and_bias(self.v_proj)
 
     # Keep full weights in their parameter dtype across the autograd boundary.
     # The custom Function casts them transiently in forward and backward.
@@ -42,14 +43,17 @@ def _opaque_fused_lora_qkv(self, hidden_states):
         Aq,
         Bq,
         Sq,
+        bq,
         Wk,
         Ak,
         Bk,
         Sk,
+        bk,
         Wv,
         Av,
         Bv,
         Sv,
+        bv,
     )
 
 

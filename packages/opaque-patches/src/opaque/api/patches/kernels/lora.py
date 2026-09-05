@@ -482,28 +482,28 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     """Fused LoRA for Q, K, V projections with vmap support.
 
     Computes:
-        Q = X @ Wq.T + X @ Aq @ Bq * scaling_q
-        K = X @ Wk.T + X @ Ak @ Bk * scaling_k
-        V = X @ Wv.T + X @ Av @ Bv * scaling_v
+        Q = X @ Wq.T + bq + X @ Aq @ Bq * scaling_q
+        K = X @ Wk.T + bk + X @ Ak @ Bk * scaling_k
+        V = X @ Wv.T + bv + X @ Av @ Bv * scaling_v
     """
 
     @staticmethod
-    def forward(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+    def forward(X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv):
         """Forward pass for Q, K, V projections."""
-        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
-            active_cuda_dtype(X), X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(
+            active_cuda_dtype(X), X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv
         )
         X_flat = X.reshape(-1, X.shape[-1])
 
-        Q = F.linear(X, Wq)
+        Q = F.linear(X, Wq, bq)
         if Aq is not None and Bq is not None:
             Q.reshape(-1, Q.shape[-1]).addmm_(X_flat @ Aq, Bq, alpha=Sq, beta=1)
 
-        K = F.linear(X, Wk)
+        K = F.linear(X, Wk, bk)
         if Ak is not None and Bk is not None:
             K.reshape(-1, K.shape[-1]).addmm_(X_flat @ Ak, Bk, alpha=Sk, beta=1)
 
-        V = F.linear(X, Wv)
+        V = F.linear(X, Wv, bv)
         if Av is not None and Bv is not None:
             V.reshape(-1, V.shape[-1]).addmm_(X_flat @ Av, Bv, alpha=Sv, beta=1)
 
@@ -511,7 +511,7 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv = inputs
+        X, Wq, Aq, Bq, Sq, _bq, Wk, Ak, Bk, Sk, _bk, Wv, Av, Bv, Sv, _bv = inputs
         # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
         # Skip saving X when weight grads aren't needed — reduces peak memory.
         needs_weight_grads = _needs_lora_weight_grads((Aq, Bq), (Ak, Bk), (Av, Bv))
@@ -581,24 +581,29 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
             None,
             dAq,
             dBq,
-            None,  # Q: Wq, Aq, Bq, Sq
+            None,
+            None,  # Q: Wq, Aq, Bq, Sq, bq
             None,
             dAk,
             dBk,
-            None,  # K: Wk, Ak, Bk, Sk
+            None,
+            None,  # K: Wk, Ak, Bk, Sk, bk
             None,
             dAv,
             dBv,
-            None,  # V: Wv, Av, Bv, Sv
+            None,
+            None,  # V: Wv, Av, Bv, Sv, bv
         )
 
     @staticmethod
-    def vmap(info, in_dims, X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+    def vmap(
+        info, in_dims, X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv
+    ):
         """Efficient vmap rule: merge vmap batch into regular batch."""
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_QKV", batched_indices={0})
         X_bdim = in_dims[0]
-        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
-            active_cuda_dtype(X), X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(
+            active_cuda_dtype(X), X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv
         )
 
         # Merge vmap batch into regular batch
@@ -608,15 +613,15 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         # Apply LoRA with addmm_ (same as non-vmap forward)
         X_flat = X_merged.reshape(-1, X_merged.shape[-1])
 
-        Q = F.linear(X_merged, Wq)
+        Q = F.linear(X_merged, Wq, bq)
         if Aq is not None and Bq is not None:
             Q.reshape(-1, Q.shape[-1]).addmm_(X_flat @ Aq, Bq, alpha=Sq, beta=1)
 
-        K = F.linear(X_merged, Wk)
+        K = F.linear(X_merged, Wk, bk)
         if Ak is not None and Bk is not None:
             K.reshape(-1, K.shape[-1]).addmm_(X_flat @ Ak, Bk, alpha=Sk, beta=1)
 
-        V = F.linear(X_merged, Wv)
+        V = F.linear(X_merged, Wv, bv)
         if Av is not None and Bv is not None:
             V.reshape(-1, V.shape[-1]).addmm_(X_flat @ Av, Bv, alpha=Sv, beta=1)
 
@@ -1214,8 +1219,28 @@ def opaque_lora_w(X, W, A, B, scaling):
     return Opaque_LoRA_W.apply(X, W, A, B, scaling)
 
 
-def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+def opaque_lora_qkv(
+    X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv, bq=None, bk=None, bv=None
+):
     """Apply LoRA to Q, K, V projections with vmap support.
+
+    Args:
+        X: Input activations.
+        Wq: Frozen Q-projection weight.
+        Aq: Q-projection LoRA A weight.
+        Bq: Q-projection LoRA B weight.
+        Sq: Q-projection LoRA scaling factor.
+        Wk: Frozen K-projection weight.
+        Ak: K-projection LoRA A weight.
+        Bk: K-projection LoRA B weight.
+        Sk: K-projection LoRA scaling factor.
+        Wv: Frozen V-projection weight.
+        Av: V-projection LoRA A weight.
+        Bv: V-projection LoRA B weight.
+        Sv: V-projection LoRA scaling factor.
+        bq: Optional frozen Q-projection base bias.
+        bk: Optional frozen K-projection base bias.
+        bv: Optional frozen V-projection base bias.
 
     Returns:
         Tuple of (Q, K, V)
@@ -1225,16 +1250,21 @@ def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
         Wq,
         Aq,
         Bq,
+        bq,
         Wk,
         Ak,
         Bk,
+        bk,
         Wv,
         Av,
         Bv,
+        bv,
         fn_name="opaque_lora_qkv",
     )
     (X,) = follow_autocast(X)
-    return Opaque_LoRA_QKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
+    return Opaque_LoRA_QKV.apply(
+        X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv
+    )
 
 
 def opaque_lora_mlp(

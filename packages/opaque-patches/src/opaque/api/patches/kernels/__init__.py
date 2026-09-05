@@ -247,7 +247,24 @@ except ModuleNotFoundError as import_error:
         """
         return X @ W.transpose(-1, -2) + (X @ A @ B) * scaling
 
-    def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+    def opaque_lora_qkv(  # noqa: PLR0913, PLR0917
+        X,
+        Wq,
+        Aq,
+        Bq,
+        Sq,
+        Wk,
+        Ak,
+        Bk,
+        Sk,
+        Wv,
+        Av,
+        Bv,
+        Sv,
+        bq=None,
+        bk=None,
+        bv=None,
+    ):
         """Apply LoRA deltas to query, key, and value projections.
 
         Args:
@@ -264,13 +281,16 @@ except ModuleNotFoundError as import_error:
             Av: Value LoRA down-projection weight.
             Bv: Value LoRA up-projection weight.
             Sv: Value LoRA scaling factor.
+            bq: Optional frozen Q-projection base bias.
+            bk: Optional frozen K-projection base bias.
+            bv: Optional frozen V-projection base bias.
 
         Returns:
             A tuple containing projected query, key, and value tensors.
         """
-        Q = X @ Wq.transpose(-1, -2) + (X @ Aq @ Bq) * Sq
-        K = X @ Wk.transpose(-1, -2) + (X @ Ak @ Bk) * Sk
-        V = X @ Wv.transpose(-1, -2) + (X @ Av @ Bv) * Sv
+        Q = F.linear(X, Wq, bq) + (X @ Aq @ Bq) * Sq
+        K = F.linear(X, Wk, bk) + (X @ Ak @ Bk) * Sk
+        V = F.linear(X, Wv, bv) + (X @ Av @ Bv) * Sv
         return Q, K, V
 
     def opaque_lora_mlp(
