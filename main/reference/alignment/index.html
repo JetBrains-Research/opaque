@@ -5730,7 +5730,15 @@ batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/opaque-alignment/src/opaque/api/alignment/sft/collator/_language_modeling.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-199">199</a></span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-191">191</a></span>
+<span class="normal"><a href="#__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
 <span class="normal"><a href="#__codelineno-0-200">200</a></span>
 <span class="normal"><a href="#__codelineno-0-201">201</a></span>
 <span class="normal"><a href="#__codelineno-0-202">202</a></span>
@@ -5767,60 +5775,52 @@ batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
 <span class="normal"><a href="#__codelineno-0-233">233</a></span>
 <span class="normal"><a href="#__codelineno-0-234">234</a></span>
 <span class="normal"><a href="#__codelineno-0-235">235</a></span>
-<span class="normal"><a href="#__codelineno-0-236">236</a></span>
-<span class="normal"><a href="#__codelineno-0-237">237</a></span>
-<span class="normal"><a href="#__codelineno-0-238">238</a></span>
-<span class="normal"><a href="#__codelineno-0-239">239</a></span>
-<span class="normal"><a href="#__codelineno-0-240">240</a></span>
-<span class="normal"><a href="#__codelineno-0-241">241</a></span>
-<span class="normal"><a href="#__codelineno-0-242">242</a></span>
-<span class="normal"><a href="#__codelineno-0-243">243</a></span>
-<span class="normal"><a href="#__codelineno-0-244">244</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-199" name="__codelineno-0-199"></a><span class="k">def</span><span class="w"> </span><span class="nf">language_modeling_collator</span><span class="p">(</span>
-<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="n">pad_token_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<a id="__codelineno-0-201" name="__codelineno-0-201"></a>    <span class="n">max_length</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<a id="__codelineno-0-202" name="__codelineno-0-202"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">completion_only_loss</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="n">pad_to_multiple_of</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="n">LMExample</span><span class="p">]],</span> <span class="n">LMBatch</span><span class="p">]:</span>
-<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="w">    </span><span class="sd">"""Return a callable that collates per-example dicts into a padded :class:`LMBatch`.</span>
-<a id="__codelineno-0-207" name="__codelineno-0-207"></a>
-<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">    This is a factory function: it returns a</span>
-<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">    plain callable, not a user-instantiated class.  The returned callable is</span>
-<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">    stateless and deterministic — the same input list always produces identical</span>
-<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">    output tensors.</span>
-<a id="__codelineno-0-212" name="__codelineno-0-212"></a>
-<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="sd">        pad_token_id: Token id used to right-pad sequences to the batch</span>
-<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">            length.</span>
-<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="sd">        max_length: Maximum sequence length.  Examples longer than this are</span>
-<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">            truncated from the right (keep-start) before padding.</span>
-<a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">        completion_only_loss: When ``True``, positions where</span>
-<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">            ``completion_mask == 0`` are set to ``-100`` in ``labels`` so that</span>
-<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">            prompt tokens do not contribute to the language-modelling loss.</span>
-<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">            Defaults to ``False`` (standard next-token prediction over the</span>
-<a id="__codelineno-0-222" name="__codelineno-0-222"></a><span class="sd">            full sequence).</span>
-<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">        pad_to_multiple_of: When set, the padded length ``L`` is rounded up to</span>
-<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">            the nearest multiple of this value before the batch tensors are</span>
-<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">            allocated.  Useful for tensor-core alignment (e.g. ``8`` or</span>
-<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">            ``64``).  ``None`` disables rounding.</span>
-<a id="__codelineno-0-227" name="__codelineno-0-227"></a>
-<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">        A ``collate(examples: list[LMExample]) -&gt; LMBatch``</span>
-<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">        callable.  See :class:`~opaque.api.alignment.sft.collator.types.LMBatch`</span>
-<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">        for the output schema.</span>
-<a id="__codelineno-0-232" name="__codelineno-0-232"></a>
-<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">    Example::</span>
-<a id="__codelineno-0-234" name="__codelineno-0-234"></a>
-<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">        collate = language_modeling_collator(pad_token_id=0, max_length=16)</span>
-<a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">        batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])</span>
-<a id="__codelineno-0-237" name="__codelineno-0-237"></a><span class="sd">        # batch["input_ids"].shape == (2, 3)</span>
-<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">    """</span>
-<a id="__codelineno-0-239" name="__codelineno-0-239"></a>    <span class="k">return</span> <span class="n">_LMCollator</span><span class="p">(</span>
-<a id="__codelineno-0-240" name="__codelineno-0-240"></a>        <span class="n">pad_token_id</span><span class="o">=</span><span class="n">pad_token_id</span><span class="p">,</span>
-<a id="__codelineno-0-241" name="__codelineno-0-241"></a>        <span class="n">max_length</span><span class="o">=</span><span class="n">max_length</span><span class="p">,</span>
-<a id="__codelineno-0-242" name="__codelineno-0-242"></a>        <span class="n">completion_only_loss</span><span class="o">=</span><span class="n">completion_only_loss</span><span class="p">,</span>
-<a id="__codelineno-0-243" name="__codelineno-0-243"></a>        <span class="n">pad_to_multiple_of</span><span class="o">=</span><span class="n">pad_to_multiple_of</span><span class="p">,</span>
-<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="p">)</span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="k">def</span><span class="w"> </span><span class="nf">language_modeling_collator</span><span class="p">(</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a>    <span class="n">pad_token_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>    <span class="n">max_length</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="n">completion_only_loss</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>    <span class="n">pad_to_multiple_of</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">list</span><span class="p">[</span><span class="n">LMExample</span><span class="p">]],</span> <span class="n">LMBatch</span><span class="p">]:</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a><span class="w">    </span><span class="sd">"""Return a callable that collates per-example dicts into a padded :class:`LMBatch`.</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a><span class="sd">    This is a factory function: it returns a</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a><span class="sd">    plain callable, not a user-instantiated class.  The returned callable is</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a><span class="sd">    stateless and deterministic — the same input list always produces identical</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a><span class="sd">    output tensors.</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a><span class="sd">        pad_token_id: Token id used to right-pad sequences to the batch</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a><span class="sd">            length.</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a><span class="sd">        max_length: Maximum sequence length.  Examples longer than this are</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a><span class="sd">            truncated from the right (keep-start) before padding.</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a><span class="sd">        completion_only_loss: When ``True``, positions where</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a><span class="sd">            ``completion_mask == 0`` are set to ``-100`` in ``labels`` so that</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a><span class="sd">            prompt tokens do not contribute to the language-modelling loss.</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a><span class="sd">            Defaults to ``False`` (standard next-token prediction over the</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="sd">            full sequence).</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a><span class="sd">        pad_to_multiple_of: When set, the padded length ``L`` is rounded up to</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="sd">            the nearest multiple of this value before the batch tensors are</span>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a><span class="sd">            allocated.  Useful for tensor-core alignment (e.g. ``8`` or</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">            ``64``).  ``None`` disables rounding.</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a><span class="sd">        A ``collate(examples: list[LMExample]) -&gt; LMBatch``</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a><span class="sd">        callable.  See :class:`~opaque.api.alignment.sft.collator.types.LMBatch`</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">        for the output schema.</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">    Example::</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">        collate = language_modeling_collator(pad_token_id=0, max_length=16)</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a><span class="sd">        batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">        # batch["input_ids"].shape == (2, 3)</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">    """</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a>    <span class="k">return</span> <span class="n">_LMCollator</span><span class="p">(</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>        <span class="n">pad_token_id</span><span class="o">=</span><span class="n">pad_token_id</span><span class="p">,</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>        <span class="n">max_length</span><span class="o">=</span><span class="n">max_length</span><span class="p">,</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>        <span class="n">completion_only_loss</span><span class="o">=</span><span class="n">completion_only_loss</span><span class="p">,</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>        <span class="n">pad_to_multiple_of</span><span class="o">=</span><span class="n">pad_to_multiple_of</span><span class="p">,</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -5909,7 +5909,9 @@ batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
 <p><code>completion_mask</code>
     Binary mask, shape <code>(B, L)</code>.  Included when <strong>at least one</strong> input
     example in the batch carries a <code>"completion_mask"</code> field.  <code>1</code> on
-    completion tokens, <code>0</code> elsewhere (including pad positions).</p>
+    completion tokens, <code>0</code> elsewhere (including pad positions). If an
+    example in such a mixed batch has no mask, all its real tokens are
+    marked as completion tokens to match its fully supervised labels.</p>
 
 
 
@@ -5958,7 +5960,9 @@ batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
 <span class="normal"><a href="#__codelineno-0-63">63</a></span>
 <span class="normal"><a href="#__codelineno-0-64">64</a></span>
 <span class="normal"><a href="#__codelineno-0-65">65</a></span>
-<span class="normal"><a href="#__codelineno-0-66">66</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="k">class</span><span class="w"> </span><span class="nc">LMBatch</span><span class="p">(</span><span class="n">TypedDict</span><span class="p">):</span>
+<span class="normal"><a href="#__codelineno-0-66">66</a></span>
+<span class="normal"><a href="#__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#__codelineno-0-68">68</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="k">class</span><span class="w"> </span><span class="nc">LMBatch</span><span class="p">(</span><span class="n">TypedDict</span><span class="p">):</span>
 <a id="__codelineno-0-29" name="__codelineno-0-29"></a><span class="w">    </span><span class="sd">"""Output schema for :func:`language_modeling_collator`.</span>
 <a id="__codelineno-0-30" name="__codelineno-0-30"></a>
 <a id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="sd">    All present fields are :class:`torch.Tensor` instances with ``dtype=torch.long``.</span>
@@ -5990,13 +5994,15 @@ batch = collate([{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5]}])
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">    ``completion_mask``</span>
 <a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        Binary mask, shape ``(B, L)``.  Included when **at least one** input</span>
 <a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        example in the batch carries a ``"completion_mask"`` field.  ``1`` on</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">        completion tokens, ``0`` elsewhere (including pad positions).</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    """</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a>    <span class="n">input_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="n">attention_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">labels</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a>    <span class="n">completion_mask</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">        completion tokens, ``0`` elsewhere (including pad positions). If an</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">        example in such a mixed batch has no mask, all its real tokens are</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        marked as completion tokens to match its fully supervised labels.</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">    """</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">input_ids</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a>    <span class="n">attention_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="n">labels</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">completion_mask</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
 </code></pre></div></td></tr></table></div>
               </details>
 

@@ -3628,11 +3628,13 @@ a custom func.</p>
 prompt-completion data, or <code>assistant_only_loss=True</code> to score only assistant
 turns of chat data (the trainer installs the <code>{% generation %}</code>-marked training
 chat template and recovers the assistant-token mask). Left as the default
-<code>None</code>, <code>completion_only_loss</code> auto-detects: <code>True</code> for prompt-completion or
-chat data, <code>False</code> for plain text. Use <code>chat_template_path</code> to clone a chat
-template (and its special tokens) from another tokenizer/Jinja file onto the
-processing class before tokenizing — this resizes the model's embeddings, and
-under PEFT the new token rows are marked trainable.</p>
+<code>None</code>, <code>completion_only_loss</code> auto-detects: <code>True</code> for prompt-completion data
+and <code>False</code> for language-modeling data, including chat. Ordinary chat therefore
+scores the full rendered conversation; enable <code>assistant_only_loss</code> to mask its
+non-assistant tokens. Use <code>chat_template_path</code> to clone a chat template (and its
+special tokens) from another tokenizer/Jinja file onto the processing class
+before tokenizing — this resizes the model's embeddings, and under PEFT the new
+token rows are marked trainable.</p>
 <h3 id="telemetry-and-memory">Telemetry and memory<a class="headerlink" href="#telemetry-and-memory" title="Permanent link">&para;</a></h3>
 <p><code>log_completion_metrics</code> (default <code>True</code>) gates the per-step logits-derived
 diagnostics — <code>entropy</code> and <code>mean_token_accuracy</code> over the supervised
