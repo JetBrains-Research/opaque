@@ -152,6 +152,12 @@ jobs:
             --out ../../dist
             --compatibility pypi
 
+      - name: Strip macOS native wheel symbols
+        if: matrix.target.target == 'aarch64-apple-darwin'
+        run: >-
+          uv run --isolated --no-project --with wheel
+          python .github/scripts/strip_macos_native_wheel.py dist/*.whl
+
       - name: Build sdist
         if: matrix.target.kind == 'sdist'
         run: uv build packages/opaque-accounting --sdist --out-dir dist
