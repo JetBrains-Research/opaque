@@ -655,16 +655,38 @@ class SFTTrainer(DPTrainer):
         )
         inputs = self._prepare_input(inputs)
 
-        # Reuse the base per-example eval closure — it forwards through
-        # ``compute_per_example_loss`` (the DFT head) and returns per-example
-        # ``(loss, logits)``.
-        vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn()
-        if self._ctx is not None:
-            trainable = self._ctx.trainable_params
+        # The loss-only path returns only the per-example DFT loss, preserving
+        # its logits-free fused computation. Metric evaluation uses the cached
+        # logits-producing closure.
+        if prediction_loss_only:
+            if self._ctx is not None:
+                fmodel = self._ctx.fmodel
+                frozen_params = self._ctx.frozen_params
+                batch_keys = self._ctx.batch_keys
+                trainable = self._ctx.trainable_params
+            else:
+                from opaque.functional import make_functional
+
+                fmodel, trainable, frozen_params = make_functional(
+                    self._model, partition_trainable=True
+                )
+                batch_keys = self._discover_batch_keys()
+            loss_fn, batch_argnums = self._build_per_example_loss(
+                fmodel, frozen_params, batch_keys, return_logits=False
+            )
+            vmapped_fn = torch.vmap(
+                loss_fn, in_dims=(None,) + (0,) * len(batch_argnums)
+            )
         else:
-            trainable = {
-                name: p for name, p in self._model.named_parameters() if p.requires_grad
-            }
+            vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn()
+            if self._ctx is not None:
+                trainable = self._ctx.trainable_params
+            else:
+                trainable = {
+                    name: p
+                    for name, p in self._model.named_parameters()
+                    if p.requires_grad
+                }
         # Fail loudly on a mismatched eval collator (base-path parity) —
         # a missing key would otherwise surface as an opaque vmap error.
         missing = [k for k in batch_keys if inputs.get(k) is None]
@@ -686,16 +708,17 @@ class SFTTrainer(DPTrainer):
             with torch.no_grad():
                 if amp_dtype is not None:
                     with torch.autocast(device_type=self._device.type, dtype=amp_dtype):
-                        loss, logits = vmapped_fn(trainable, *batch_args)
+                        result = vmapped_fn(trainable, *batch_args)
                 else:
-                    loss, logits = vmapped_fn(trainable, *batch_args)
+                    result = vmapped_fn(trainable, *batch_args)
         finally:
             if was_training:
                 self._model.train()
 
-        loss = loss.detach()
         if prediction_loss_only:
-            return loss, None, None
+            return result.detach(), None, None
+        loss, logits = result
+        loss = loss.detach()
         # Same logits filtering as the base per-example path
         # (``DPTrainer.prediction_step``).
         preds = (

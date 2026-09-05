@@ -2085,6 +2085,20 @@ def test_sft_dft_eval_loss_consistent_across_metric_modes(tmp_path):
     assert loss_only == pytest.approx(with_metrics, rel=1e-6)
 
 
+def test_sft_dft_loss_only_eval_stays_logits_free(tmp_path):
+    """Loss-only DFT evaluation returns losses without building predictions."""
+    trainer = _dft_trainer(tmp_path)
+    batch = trainer.data_collator([trainer.train_dataset[0]])
+
+    loss, predictions, labels = trainer.prediction_step(
+        trainer.model, batch, prediction_loss_only=True
+    )
+
+    assert loss.ndim == 1
+    assert predictions is None
+    assert labels is None
+
+
 def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
     """#384 review: ignore_keys=['logits'] filters predictions (base parity)."""
     trainer = _dft_trainer(tmp_path)
