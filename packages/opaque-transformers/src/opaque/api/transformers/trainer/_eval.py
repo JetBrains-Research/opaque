@@ -175,7 +175,11 @@ class _PredictionAccumulator:
         # cold chunk corresponds to exactly one batch.
         flush_now = not self.eval_do_concat_batches
         if not flush_now:
-            accumulation_steps = self.eval_accumulation_steps or 1
+            accumulation_steps = (
+                self.eval_accumulation_steps
+                if self.eval_accumulation_steps is not None
+                else 1
+            )
             flush_now = self._num_batches % accumulation_steps == 0
         if flush_now:
             self.flush_to_cpu()

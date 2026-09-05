@@ -198,6 +198,19 @@ class TestDataLoaderArguments:
             )
 
 
+class TestEvalAccumulationArguments:
+    @pytest.mark.parametrize("value", [0, -1, False])
+    def test_non_positive_or_boolean_window_is_rejected(self, value):
+        with pytest.raises(
+            ConfigurationError,
+            match="eval_accumulation_steps must be a positive integer or None",
+        ):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                eval_accumulation_steps=value,
+            )
+
+
 class TestHFFieldNormalization:
     def test_debug_string_coerces_to_debug_options(self):
         args = TrainingArguments(
