@@ -106,6 +106,26 @@ def _assert_precision(
     return {"abs_err": abs_err, "rel_err": rel_err}
 
 
+def _measure_incremental_cuda_memory(fn, warmup=2):
+    """Measure allocations made by ``fn`` above already-resident inputs."""
+    for _ in range(warmup):
+        result = fn()
+        torch.cuda.synchronize()
+        del result
+
+    gc.collect()
+    torch.cuda.empty_cache()
+    baseline = torch.cuda.memory_allocated()
+    torch.cuda.reset_peak_memory_stats()
+
+    result = fn()
+    torch.cuda.synchronize()
+    return result, {
+        "allocated_bytes": torch.cuda.memory_allocated() - baseline,
+        "peak_bytes": torch.cuda.max_memory_allocated() - baseline,
+    }
+
+
 def _measure_time_and_memory(fn, *args, warmup=3, runs=10):
     """Measure execution time and peak CUDA memory.
 
@@ -178,6 +198,12 @@ def assert_precision():
 def measure_time_and_memory():
     """Benchmark execution time and peak CUDA memory."""
     return _measure_time_and_memory
+
+
+@pytest.fixture(scope="session")
+def measure_incremental_cuda_memory():
+    """Measure CUDA allocation and peak growth above resident inputs."""
+    return _measure_incremental_cuda_memory
 
 
 # ============================================================================

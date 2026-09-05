@@ -157,6 +157,7 @@ def _chunked_cross_entropy_forward(
 def _cross_entropy_backward(
     logits_ptr,
     logits_row_stride,
+    grad_logits_ptr,
     dlosses_ptr,
     dlosses_row_stride,
     logsumexp_ptr,
@@ -173,6 +174,7 @@ def _cross_entropy_backward(
     block_idx = tl.program_id(1)
 
     logits_ptr += row_idx * triton_cast(logits_row_stride, tl.int64)
+    grad_logits_ptr += row_idx.to(tl.int64) * VOCAB_SIZE
     logsumexp_ptr += row_idx
     labels_ptr += row_idx
     dlosses_ptr += row_idx * dlosses_row_stride
@@ -229,7 +231,7 @@ def _cross_entropy_backward(
     if DO_SOFTCAPPING:
         y = y * (1.0 - partial * partial)
 
-    tl.store(logits_ptr + col_offsets, dloss * y, mask=mask)
+    tl.store(grad_logits_ptr + col_offsets, dloss * y, mask=mask)
 
 
 def _ce_forward_impl(
@@ -366,10 +368,11 @@ class _CrossEntropyBackward(torch.autograd.Function):
         label_smoothing,
     ):
         original_shape = logits.shape
-        # Write gradients into a fresh buffer so saved forward logits stay
-        # bit-identical after backward.
-        grad_logits = logits.clone().contiguous()
-        logits_flat = grad_logits.reshape(-1, vocab_size)
+        logits_flat = logits.reshape(-1, vocab_size)
+        # The kernel reads saved logits and writes directly into the required
+        # gradient output, avoiding a full-tensor clone before overwriting it.
+        grad_logits = torch.empty_like(logits, memory_format=torch.contiguous_format)
+        grad_logits_flat = grad_logits.reshape(-1, vocab_size)
         logsumexp_flat = logsumexp.reshape(-1)
         labels_flat = labels.reshape(-1)
         grad_losses_flat = grad_losses.reshape(-1)
@@ -384,6 +387,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
             _cross_entropy_backward[grid](
                 logits_flat,
                 logits_flat.stride(0),
+                grad_logits_flat,
                 grad_losses_flat,
                 grad_losses_flat.stride(0) if grad_losses_flat.dim() > 0 else 0,
                 logsumexp_flat,
@@ -446,10 +450,11 @@ class _CrossEntropyBackward(torch.autograd.Function):
             )
 
         original_shape = logits.shape
-        # Merge vmap batch into rows on a cloned buffer so the forward logits
-        # tensor is never mutated by the backward kernel.
-        grad_logits = logits.clone().contiguous()
-        logits_flat = grad_logits.reshape(-1, vocab_size)
+        logits_flat = logits.reshape(-1, vocab_size)
+        # Merge the vmap batch only in the independent writable output; saved
+        # logits remain a read-only kernel input.
+        grad_logits = torch.empty_like(logits, memory_format=torch.contiguous_format)
+        grad_logits_flat = grad_logits.reshape(-1, vocab_size)
         logsumexp_flat = logsumexp.reshape(-1)
         labels_flat = labels.reshape(-1)
         grad_losses_flat = grad_losses.reshape(-1)
@@ -464,6 +469,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
             _cross_entropy_backward[grid](
                 logits_flat,
                 logits_flat.stride(0),
+                grad_logits_flat,
                 grad_losses_flat,
                 grad_losses_flat.stride(0) if grad_losses_flat.dim() > 0 else 0,
                 logsumexp_flat,
