@@ -505,6 +505,8 @@ class DPTrainer:
         # ``None`` here so model rebinding can invalidate the cache.
         self._eval_per_example_loss_fn: Callable | None = None
         self._eval_per_example_loss_fn_model: Any = None
+        self._eval_per_example_loss_only_fn: Callable | None = None
+        self._eval_per_example_loss_only_fn_model: Any = None
         # Per-batch eval telemetry channel: a subclass ``prediction_step`` sets
         # this to a per-example dict that ``evaluation_loop`` collects + means
         # into the eval metrics (symmetric with the train-step aux channel).
@@ -2546,20 +2548,16 @@ class DPTrainer:
             labs = None
 
         # ``'loss' in include_for_metrics`` opts into real per-example
-        # losses via the vmap'd eval closure — one forward pass returns
-        # ``(per_example_loss_1d, logits_batched)``.  Requires labels
-        # (loss-without-labels falls through to the standard path) and
-        # not ``prediction_loss_only`` (the vmap path produces logits
-        # anyway — there's no separate loss-only fast path).
+        # losses via the vmap'd eval closure. Requires labels
+        # (loss-without-labels falls through to the standard path). In
+        # loss-only mode the separate scalar closure avoids returning logits.
         use_per_example_loss = (
-            "loss" in (self.args.include_for_metrics or [])
-            and has_labels
-            and not prediction_loss_only
+            "loss" in (self.args.include_for_metrics or []) and has_labels
         )
 
         if use_per_example_loss:
-            vmapped_fn, _batch_argnums, batch_keys = (
-                self._get_eval_per_example_loss_fn()
+            vmapped_fn, _batch_argnums, batch_keys = self._get_eval_per_example_loss_fn(
+                return_logits=not prediction_loss_only
             )
             if self._ctx is not None:
                 trainable = self._ctx.trainable_params
@@ -2591,13 +2589,14 @@ class DPTrainer:
                 if was_training:
                     self._model.eval()
                 try:
-                    per_example_loss, logits_tensor = vmapped_fn(trainable, *batch_args)
+                    output = vmapped_fn(trainable, *batch_args)
                 finally:
                     if was_training:
                         self._model.train()
-            loss = per_example_loss.detach()
-            # (No ``prediction_loss_only`` early-return here: ``use_per_example_loss``
-            # already requires ``not prediction_loss_only``.)
+            if prediction_loss_only:
+                return output.detach(), None, None
+            loss, logits_tensor = output
+            loss = loss.detach()
             # The per-example path collects only the model's ``logits``
             # tensor (not the full ``ignore_keys``-filtered output tuple the
             # standard path builds).  Surface that once so multi-output
@@ -3592,15 +3591,17 @@ class DPTrainer:
 
     def _get_eval_per_example_loss_fn(
         self,
+        *,
+        return_logits: bool = True,
     ) -> tuple[Callable[..., Any], tuple[int, ...], tuple[str, ...]]:
         """Return a vmap'd per-example eval closure (cached) plus its batch keys.
 
-        Used by :meth:`prediction_step` when the caller has opted into
-        real per-example losses via
-        ``args.include_for_metrics=['loss']``.  The closure returns
-        ``(per_example_loss, logits)`` for one example; ``vmap`` over
-        the batch produces a 1-D loss tensor + batched logits in a
-        single forward pass.
+        Used by :meth:`prediction_step` when the caller needs real per-example
+        losses. With ``return_logits=True`` the closure returns
+        ``(per_example_loss, logits)`` for one example; ``vmap`` over the batch
+        produces a 1-D loss tensor plus batched logits in a single forward pass.
+        ``return_logits=False`` builds a separate loss-only closure so callers
+        that discard predictions do not retain a logits result.
 
         Cached per model identity — invalidated when ``self._model``
         rebinds (the cache key is the live ``self._model`` reference).
@@ -3609,11 +3610,18 @@ class DPTrainer:
         training we run ``make_functional(self._model)`` once on first
         use and reuse the result.
         """
-        if (
-            self._eval_per_example_loss_fn is not None
-            and self._eval_per_example_loss_fn_model is self._model
-        ):
-            fn, batch_argnums, batch_keys = self._eval_per_example_loss_fn
+        cached_fn = (
+            self._eval_per_example_loss_fn
+            if return_logits
+            else self._eval_per_example_loss_only_fn
+        )
+        cached_model = (
+            self._eval_per_example_loss_fn_model
+            if return_logits
+            else self._eval_per_example_loss_only_fn_model
+        )
+        if cached_fn is not None and cached_model is self._model:
+            fn, batch_argnums, batch_keys = cached_fn
             return fn, batch_argnums, batch_keys
 
         ctx = self._ctx
@@ -3629,11 +3637,15 @@ class DPTrainer:
             )
             batch_keys = self._discover_batch_keys()
         fn, batch_argnums = self._build_per_example_loss(
-            fmodel, frozen_params, batch_keys, return_logits=True
+            fmodel, frozen_params, batch_keys, return_logits=return_logits
         )
         vmapped = torch.vmap(fn, in_dims=(None,) + (0,) * len(batch_argnums))
-        self._eval_per_example_loss_fn = (vmapped, batch_argnums, batch_keys)
-        self._eval_per_example_loss_fn_model = self._model
+        if return_logits:
+            self._eval_per_example_loss_fn = (vmapped, batch_argnums, batch_keys)
+            self._eval_per_example_loss_fn_model = self._model
+        else:
+            self._eval_per_example_loss_only_fn = (vmapped, batch_argnums, batch_keys)
+            self._eval_per_example_loss_only_fn_model = self._model
         return vmapped, batch_argnums, batch_keys
 
     def _discover_batch_keys(self) -> tuple[str, ...]:

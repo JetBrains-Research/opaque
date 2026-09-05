@@ -2037,6 +2037,33 @@ def test_sft_dft_eval_loss_consistent_across_metric_modes(tmp_path):
     assert loss_only == pytest.approx(with_metrics, rel=1e-6)
 
 
+def test_sft_dft_loss_only_eval_uses_logits_free_closure(tmp_path, monkeypatch):
+    """Loss-only DFT evaluation must not request a logits result just to discard it."""
+    trainer = _dft_trainer(tmp_path)
+    assert trainer._fused_dft is False  # telemetry normally keeps training eager
+    rows = [dict(r) for r in _varied_len_dataset()]
+    batch = trainer._data_collator(rows)
+    called = 0
+    original = trainer._last_hidden_state
+
+    def logits_free_hidden(*args, **kwargs):
+        nonlocal called
+        called += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(trainer, "_last_hidden_state", logits_free_hidden)
+    loss, preds, labels = trainer.prediction_step(
+        trainer._model, dict(batch), prediction_loss_only=True
+    )
+
+    assert loss.ndim == 1
+    assert preds is None
+    assert labels is None
+    assert called == 1
+    assert trainer._eval_per_example_loss_only_fn is not None
+    assert trainer._eval_per_example_loss_fn is None
+
+
 def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):
     """#384 review: ignore_keys=['logits'] filters predictions (base parity)."""
     trainer = _dft_trainer(tmp_path)
