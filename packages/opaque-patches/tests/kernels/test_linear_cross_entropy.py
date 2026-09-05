@@ -44,6 +44,10 @@ ATOL_BACKWARD = 2e-3
 
 # Vocab sizes: single-chunk (<= 65536) and chunked (> 65536)
 VOCAB_SIZES = [32768, 128256]
+MEMORY_TEST_VOCAB = 128256
+MEMORY_TEST_BATCH = 2
+MEMORY_TEST_SEQ_LEN = 129
+MEMORY_TEST_HIDDEN_DIM = 64
 
 
 # ============================================================================
@@ -611,6 +615,55 @@ class TestLinearCEVmapGrad:
         assert_perf_benefit(
             pt_stats, op_stats, label=f"Linear CE vmap(grad) (V={vocab_size})"
         )
+
+
+# ============================================================================
+# Peak Memory Tests
+# ============================================================================
+
+
+@pytest.mark.cuda
+class TestLinearCEMemory:
+    """Loss-only fused linear-CE does not materialize token-vocabulary logits."""
+
+    def test_hidden_backward_stays_logits_free(self, measure_incremental_cuda_memory):
+        torch.manual_seed(46)
+        hidden = torch.randn(
+            MEMORY_TEST_BATCH,
+            MEMORY_TEST_SEQ_LEN,
+            MEMORY_TEST_HIDDEN_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
+        weight = torch.randn(
+            MEMORY_TEST_VOCAB,
+            MEMORY_TEST_HIDDEN_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        labels = torch.randint(
+            0,
+            MEMORY_TEST_VOCAB,
+            (MEMORY_TEST_BATCH, MEMORY_TEST_SEQ_LEN),
+            device="cuda",
+        )
+
+        def run_backward():
+            loss = opaque_linear_cross_entropy_loss(hidden, weight, labels)
+            return torch.autograd.grad(loss, hidden)[0]
+
+        grad_hidden, stats = measure_incremental_cuda_memory(run_backward)
+        materialized_logits_bytes = (
+            MEMORY_TEST_BATCH
+            * (MEMORY_TEST_SEQ_LEN - 1)
+            * MEMORY_TEST_VOCAB
+            * hidden.element_size()
+        )
+
+        assert stats["peak_bytes"] < materialized_logits_bytes, stats
+        assert stats["allocated_bytes"] < materialized_logits_bytes, stats
+        assert grad_hidden.shape == hidden.shape
 
 
 # ============================================================================

@@ -33,6 +33,9 @@ ATOL_CE_BACKWARD = 1e-6
 
 # Vocab sizes: single-chunk (<= 65536) and chunked (> 65536)
 VOCAB_SIZES = [32768, 128256]
+MEMORY_TEST_VOCAB = 128256
+MEMORY_TEST_ROWS = 256
+MEMORY_SLACK_BYTES = 16 * 1024**2
 
 
 # ============================================================================
@@ -184,6 +187,7 @@ class TestCrossEntropyBackward:
         assert torch.equal(logits.detach(), logits_before), (
             "Backward mutated the forward logits tensor"
         )
+        assert logits.grad.is_contiguous()
 
     def test_backward_ignores_masked_labels(self, mellum_config):
         """Verify -100 labels produce zero gradient (not softmax probs)."""
@@ -333,6 +337,21 @@ class TestCrossEntropyVmapGrad:
             label="per-example gradients",
         )
 
+    def test_vmap_backward_does_not_mutate_forward_logits(self):
+        """Vmapped backward reads logits without using them as gradient storage."""
+        torch.manual_seed(43)
+        logits = torch.randn(2, 2, 8, 32768, device="cuda", dtype=torch.float32)
+        logits_before = logits.clone()
+        labels = torch.randint(0, logits.shape[-1], logits.shape[:-1], device="cuda")
+
+        grads = vmap(grad(opaque_cross_entropy, argnums=0), in_dims=(0, 0))(
+            logits, labels
+        )
+
+        assert torch.equal(logits, logits_before)
+        assert grads.is_contiguous()
+        assert grads.data_ptr() != logits.data_ptr()
+
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
     def test_vmap_grad_performance(
         self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
@@ -371,6 +390,73 @@ class TestCrossEntropyVmapGrad:
         op_stats = measure_time_and_memory(make_op_fn(), logits, labels)
 
         assert_perf_benefit(pt_stats, op_stats, label=f"CE vmap(grad) (V={vocab_size})")
+
+
+# ============================================================================
+# Peak Memory Tests
+# ============================================================================
+
+
+class TestCrossEntropyMemory:
+    """Backward allocates only the required logits-gradient-sized output."""
+
+    @staticmethod
+    def _assert_one_gradient_buffer(stats, grad):
+        grad_bytes = grad.numel() * grad.element_size()
+        assert (
+            grad_bytes <= stats["allocated_bytes"] <= (grad_bytes + MEMORY_SLACK_BYTES)
+        ), stats
+        assert stats["peak_bytes"] <= grad_bytes + MEMORY_SLACK_BYTES, stats
+
+    def test_standalone_backward_peak(self, measure_incremental_cuda_memory):
+        """Standalone backward has no second full-vocabulary allocation."""
+        torch.manual_seed(44)
+        logits = torch.randn(
+            MEMORY_TEST_ROWS,
+            MEMORY_TEST_VOCAB,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
+        labels = torch.randint(0, MEMORY_TEST_VOCAB, (MEMORY_TEST_ROWS,), device="cuda")
+
+        def run_backward():
+            loss = opaque_cross_entropy(logits, labels)
+            return torch.autograd.grad(loss, logits)[0]
+
+        grad_logits, stats = measure_incremental_cuda_memory(run_backward)
+
+        self._assert_one_gradient_buffer(stats, grad_logits)
+        assert grad_logits.is_contiguous()
+        assert grad_logits.data_ptr() != logits.data_ptr()
+
+    def test_vmap_backward_peak(self, measure_incremental_cuda_memory):
+        """Vmapped backward has one gradient buffer for all mapped rows."""
+        torch.manual_seed(45)
+        vmap_batch = 4
+        rows_per_sample = MEMORY_TEST_ROWS // vmap_batch
+        logits = torch.randn(
+            vmap_batch,
+            rows_per_sample,
+            MEMORY_TEST_VOCAB,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        labels = torch.randint(
+            0,
+            MEMORY_TEST_VOCAB,
+            (vmap_batch, rows_per_sample),
+            device="cuda",
+        )
+        mapped_grad = vmap(grad(opaque_cross_entropy, argnums=0), in_dims=(0, 0))
+
+        grad_logits, stats = measure_incremental_cuda_memory(
+            lambda: mapped_grad(logits, labels)
+        )
+
+        self._assert_one_gradient_buffer(stats, grad_logits)
+        assert grad_logits.is_contiguous()
+        assert grad_logits.data_ptr() != logits.data_ptr()
 
 
 # ============================================================================
