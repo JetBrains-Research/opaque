@@ -7,10 +7,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
-
 jobs:
   # ---------------------------------------------------------------------------
   # Rust tests
