@@ -1109,8 +1109,8 @@ class TestFusedLoRAQKV:
         assert has_grad, "No gradients computed"
 
     @pytest.mark.slow
-    def test_qwen2_skips_qkv_fusion(self, device):
-        """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
+    def test_qwen2_fuses_biased_qkv_projections(self, device):
+        """Qwen2 attention fuses its frozen biased Q/K/V projections."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
 
@@ -1126,9 +1126,9 @@ class TestFusedLoRAQKV:
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert not hasattr(attn, "_opaque_fused_qkv"), (
-                "Qwen2 attention should NOT have fused QKV (bias=True)"
-            )
+            assert hasattr(attn, "_opaque_fused_qkv")
+            assert attn.q_proj.base_layer.bias is not None
+            assert not attn.q_proj.base_layer.bias.requires_grad
 
     @pytest.mark.slow
     def test_qwen3_skips_qkv_fusion(self, device):
