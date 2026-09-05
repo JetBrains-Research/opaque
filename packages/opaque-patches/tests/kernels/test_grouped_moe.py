@@ -12,10 +12,13 @@ crucially, the DP-SGD ``vmap(grad)`` **per-sample** expert-weight gradients
 
 from __future__ import annotations
 
+import gc
+
 import pytest
 import torch
 from torch.func import grad, vmap
 
+from opaque.api.patches.kernels import _moe_memory
 from opaque.api.patches.kernels._grouped_moe import (
     Opaque_GroupedMoE,
     grouped_mm_available,
@@ -207,3 +210,85 @@ def test_grouped_moe_grouped_gate_cpu():
 @pytest.mark.mps
 def test_grouped_moe_grouped_gate_mps():
     _check_grouped_gate("mps")
+
+
+@pytest.mark.mps
+def test_grouped_moe_trainable_backward_stays_near_budget(monkeypatch):
+    from opaque.device import device_capabilities
+    from opaque.profiling import get_memory_stats, reset_peak_memory
+
+    if not device_capabilities("mps").peak_memory_trackable:
+        pytest.skip("MPS allocator peak statistics require PyTorch 2.13+")
+    budget = 4 * 1024**2
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", budget)
+    torch.manual_seed(924)
+    B, T, K, E, H, I = 1, 1024, 4, 16, 64, 128
+    x = torch.randn(B, T, H, device="mps", dtype=torch.bfloat16)
+    gate_up = torch.randn(E, 2 * I, H, device="mps", dtype=torch.bfloat16)
+    down = torch.randn(E, H, I, device="mps", dtype=torch.bfloat16)
+    index = torch.randint(E, (B, T, K), device="mps")
+    weights = torch.rand(B, T, K, device="mps", dtype=torch.bfloat16)
+
+    def loss(xx, g, d, ii, ww):
+        return Opaque_GroupedMoE.apply(xx, g, d, ii, ww).float().square().mean()
+
+    def run():
+        return vmap(grad(loss, argnums=(0, 1, 2, 4)), in_dims=(0, None, None, 0, 0))(
+            x, gate_up, down, index, weights
+        )
+
+    result = run()
+    torch.mps.synchronize()
+    del result
+    gc.collect()
+    torch.mps.empty_cache()
+    reset_peak_memory("mps")
+    baseline = get_memory_stats("mps").allocated_gb * 1024**3
+    result = run()
+    torch.mps.synchronize()
+    peak = get_memory_stats("mps").peak_gb * 1024**3 - baseline
+    required = sum(t.numel() * t.element_size() for t in result)
+    # grouped_mm has a backend-owned fixed workspace, so the estimator bounds
+    # visible route tensors to the budget and allows one budget of backend slack.
+    assert peak - required <= 2 * budget
+
+
+@pytest.mark.mps
+def test_grouped_moe_chunking_reduces_mps_forward_peak(monkeypatch):
+    from opaque.device import device_capabilities
+    from opaque.profiling import get_memory_stats, reset_peak_memory
+
+    if not device_capabilities("mps").peak_memory_trackable:
+        pytest.skip("MPS allocator peak statistics require PyTorch 2.13+")
+    torch.manual_seed(924)
+    N, K, E, H, I = 4096, 4, 16, 64, 128
+    x = torch.randn(N, H, device="mps", dtype=torch.bfloat16)
+    gate_up = torch.randn(E, 2 * I, H, device="mps", dtype=torch.bfloat16)
+    down = torch.randn(E, H, I, device="mps", dtype=torch.bfloat16)
+    index = torch.randint(E, (N, K), device="mps")
+    weights = torch.rand(N, K, device="mps", dtype=torch.bfloat16)
+
+    def run():
+        return Opaque_GroupedMoE.apply(x, gate_up, down, index, weights)
+
+    def peak_bytes():
+        out = run()
+        torch.mps.synchronize()
+        del out
+        gc.collect()
+        torch.mps.empty_cache()
+        reset_peak_memory("mps")
+        baseline = get_memory_stats("mps").allocated_gb * 1024**3
+        out = run()
+        torch.mps.synchronize()
+        peak = get_memory_stats("mps").peak_gb * 1024**3 - baseline
+        del out
+        return peak
+
+    unchunked = peak_bytes()
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 8 * 1024**2)
+    chunked = peak_bytes()
+    assert chunked < 0.75 * unchunked, (
+        f"expected chunking to reduce MPS peak: {chunked / 1024**2:.1f} MiB vs "
+        f"{unchunked / 1024**2:.1f} MiB"
+    )
