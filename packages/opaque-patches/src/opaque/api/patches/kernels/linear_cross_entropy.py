@@ -178,7 +178,7 @@ def _linear_ce_forward_kernel(
     logits = logits.cast(tl.float32)
 
     # Store neg_correct_logit = -logits[b, target[b]] in logical token order.
-    this_targets = tl.load(Targets + source_offs_b, mask=offs_b < BMax, other=V + 1)
+    this_targets = tl.load(Targets + source_offs_b + 1, mask=offs_b < BMax, other=V + 1)
     direct_offs_b = (pid_b * BLOCK_B + tl.arange(0, BLOCK_B)).to(tl.int64)
     neg_correct_logit_ptrs = NegCorrectLogit + direct_offs_b
     neg_correct_logit_ptrs = tl.broadcast_to(
@@ -389,7 +389,7 @@ def _linear_ce_backward_kernel(
     d_accum = tl.exp(accum - lse[:, None])
     d_accum = tl.where(offs_v[None, :] < V, d_accum, 0.0)
 
-    targets = tl.load(Targets + source_offs_b, mask=offs_b < BMax, other=V + 1)
+    targets = tl.load(Targets + source_offs_b + 1, mask=offs_b < BMax, other=V + 1)
     is_target = targets[:, None] == offs_v[None, :]
     if label_smoothing > 0:
         d_accum = tl.where(offs_v[None, :] < V, d_accum - label_smoothing / V, d_accum)
