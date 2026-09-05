@@ -112,6 +112,7 @@ def test_fused_ce_wrapper_matches_hf_loss_on_cpu(family):
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
+            opaque_fused_loss_only=True,
             return_dict=True,
         )
 
