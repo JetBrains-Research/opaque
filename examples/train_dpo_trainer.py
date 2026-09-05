@@ -68,6 +68,23 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from opaque.transformers.trl import DPOConfig, DPOTrainer
 
+
+def _model_dtype() -> tuple[bool, torch.dtype]:
+    """Return whether bf16 is usable and the matching checkpoint dtype."""
+    bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    return bf16, torch.bfloat16 if bf16 else torch.float32
+
+
+def _load_causal_lm(model_name: str, dtype: torch.dtype):
+    """Load a causal LM at ``dtype``, supporting older model implementations."""
+    try:
+        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
+    except TypeError as exc:
+        if "unexpected keyword argument 'dtype'" not in str(exc):
+            raise
+        return AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
+
+
 # A run is reference-free only when *every* head is in this set, so the trainer
 # skips the reference precompute and ``--ref-model`` is not required.
 _REFERENCE_FREE_HEADS = frozenset({"sft", "simpo", "cpo", "orpo"})
@@ -361,7 +378,8 @@ def main() -> int:
             "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
         )
 
-    model = AutoModelForCausalLM.from_pretrained(args.model)
+    bf16, model_dtype = _model_dtype()
+    model = _load_causal_lm(args.model, model_dtype)
 
     # PEFT policy: pass the LoRA config to the trainer (it calls get_peft_model),
     # so the frozen base can serve as the reference via the null-ref path.
@@ -385,7 +403,7 @@ def main() -> int:
         ref_model = args.ref_model  # DPOTrainer accepts a string and loads it
     else:
         # Auto-load a frozen copy from the policy's own path.
-        ref_model = AutoModelForCausalLM.from_pretrained(args.model)
+        ref_model = _load_causal_lm(args.model, model_dtype)
 
     raw = load_dataset(args.dataset, split=args.dataset_split, streaming=True)
     eval_count = args.num_eval_samples if args.eval_steps else 0
@@ -456,7 +474,8 @@ def main() -> int:
         save_strategy="no",
         seed=args.seed,
         use_cpu=not torch.cuda.is_available(),
-        bf16=torch.cuda.is_available(),
+        bf16=bf16,
+        model_init_kwargs={"dtype": model_dtype},
         use_performance_kernels=not args.no_performance_kernels,
         gradient_checkpointing=args.gradient_checkpointing,
         activation_offloading=args.activation_offloading,
