@@ -73,13 +73,13 @@ def _model_dtype() -> tuple[bool, torch.dtype]:
 
 
 def _load_causal_lm(model_name: str, dtype: torch.dtype):
-    """Load a causal LM at ``dtype``, supporting older model implementations."""
+    """Load a causal LM at ``dtype``, supporting newer model implementations."""
     try:
-        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
-    except TypeError as exc:
-        if "unexpected keyword argument 'dtype'" not in str(exc):
-            raise
         return AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
+    except TypeError as exc:
+        if "unexpected keyword argument 'torch_dtype'" not in str(exc):
+            raise
+        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
 
 
 def _require_configured(parser, args, required=("model_name", "dataset")):

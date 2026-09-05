@@ -76,13 +76,13 @@ def _model_dtype() -> tuple[bool, torch.dtype]:
 
 
 def _load_causal_lm(model_name: str, dtype: torch.dtype):
-    """Load a causal LM at ``dtype``, supporting older model implementations."""
+    """Load a causal LM at ``dtype``, supporting newer model implementations."""
     try:
-        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
-    except TypeError as exc:
-        if "unexpected keyword argument 'dtype'" not in str(exc):
-            raise
         return AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
+    except TypeError as exc:
+        if "unexpected keyword argument 'torch_dtype'" not in str(exc):
+            raise
+        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
 
 
 # A run is reference-free only when *every* head is in this set, so the trainer
@@ -475,7 +475,7 @@ def main() -> int:
         seed=args.seed,
         use_cpu=not torch.cuda.is_available(),
         bf16=bf16,
-        model_init_kwargs={"dtype": model_dtype},
+        model_init_kwargs={"torch_dtype": model_dtype},
         use_performance_kernels=not args.no_performance_kernels,
         gradient_checkpointing=args.gradient_checkpointing,
         activation_offloading=args.activation_offloading,
