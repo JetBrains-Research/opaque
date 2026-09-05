@@ -17,6 +17,8 @@ match independent references within bf16 noise across:
 # ``I`` is the intermediate dim in the (E, K, H, I, T) shape tuple — intentional.
 # ruff: noqa: E741
 
+import gc
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -24,6 +26,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
+from opaque.api.patches.kernels import _moe_memory
 from opaque.api.patches.kernels.fused_moe import opaque_fused_moe
 from opaque.api.patches.kernels.moe import opaque_moe, torch_reference_moe
 
@@ -164,6 +167,44 @@ def test_vmap_grad_per_sample(assert_precision):
     assert (g_op[2][0] - g_op[2][1]).abs().max().item() > 0
 
 
+def test_trainable_vmap_grad_forced_route_chunks(assert_precision, monkeypatch):
+    x, gate_up, down, ti, tw = _inputs()
+    xb, tib, twb = x.unsqueeze(0), ti.unsqueeze(0), tw.unsqueeze(0)
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 480 * 1024)
+
+    def loss(xs, t, w, g1, g2):
+        return opaque_fused_moe(xs, g1, g2, t, w).square().mean()
+
+    def reference(xs, t, w, g1, g2):
+        return torch_reference_moe(xs, g1, g2, t, w).square().mean()
+
+    actual = vmap(grad(loss, argnums=(0, 3, 4)), in_dims=(0, 0, 0, None, None))(
+        xb, tib, twb, gate_up, down
+    )
+    expected = grad(reference, argnums=(0, 3, 4))(x, ti, tw, gate_up, down)
+    for name, result, target in zip(
+        ("dx", "dgate_up", "ddown"), actual, expected, strict=True
+    ):
+        assert_precision(result[0], target, rtol=2e-2, atol=2e-2, label=name)
+
+
+@pytest.mark.parametrize(("argnum", "label"), [(3, "dgate_up"), (4, "ddown")])
+def test_vmap_grad_selective_expert_weight(assert_precision, argnum, label):
+    x, gate_up, down, ti, tw = _inputs()
+
+    def loss(xs, t, w, g1, g2):
+        return opaque_fused_moe(xs, g1, g2, t, w).square().mean()
+
+    def reference(xs, t, w, g1, g2):
+        return torch_reference_moe(xs, g1, g2, t, w).square().mean()
+
+    actual = vmap(grad(loss, argnums=argnum), in_dims=(0, 0, 0, None, None))(
+        x.unsqueeze(0), ti.unsqueeze(0), tw.unsqueeze(0), gate_up, down
+    )
+    expected = grad(reference, argnums=argnum)(x, ti, tw, gate_up, down)
+    assert_precision(actual[0], expected, rtol=2e-2, atol=2e-2, label=label)
+
+
 def test_vmap_grad_frozen_experts(assert_precision):
     """Frozen experts (attention-only LoRA): only ``x``/``tw`` need grad, so the
     backward takes the ``compute_wgrad=False`` skip. ``dx``/``dtw`` must still
@@ -211,3 +252,38 @@ def test_empty_expert_routing(assert_precision):
     out = opaque_fused_moe(x, gate_up, down, ti, tw)
     ref = torch_reference_moe(x, gate_up, down, ti, tw)
     assert_precision(out, ref, rtol=1e-2, atol=1e-2, label="empty experts")
+
+
+def test_chunking_reduces_cuda_forward_peak(monkeypatch):
+    torch.manual_seed(924)
+    n = 4096
+    x = torch.randn(n, H, device="cuda", dtype=torch.bfloat16)
+    gate_up = torch.randn(E, 2 * I, H, device="cuda", dtype=torch.bfloat16)
+    down = torch.randn(E, H, I, device="cuda", dtype=torch.bfloat16)
+    ti = torch.randint(E, (n, K), device="cuda")
+    tw = torch.rand(n, K, device="cuda", dtype=torch.bfloat16)
+
+    def run():
+        return opaque_fused_moe(x, gate_up, down, ti, tw)
+
+    def peak_bytes():
+        out = run()
+        torch.cuda.synchronize()
+        del out
+        gc.collect()
+        torch.cuda.empty_cache()
+        baseline = torch.cuda.memory_allocated()
+        torch.cuda.reset_peak_memory_stats()
+        out = run()
+        torch.cuda.synchronize()
+        peak = torch.cuda.max_memory_allocated() - baseline
+        del out
+        return peak
+
+    unchunked = peak_bytes()
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 8 * 1024**2)
+    chunked = peak_bytes()
+    assert chunked < 0.8 * unchunked, (
+        f"expected chunking to reduce CUDA peak: {chunked / 1024**2:.1f} MiB vs "
+        f"{unchunked / 1024**2:.1f} MiB"
+    )

@@ -33,6 +33,12 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
+from ._moe_memory import (
+    chunk_size,
+    grouped_backward_bytes_per_route,
+    grouped_forward_bytes_per_route,
+)
+
 
 def grouped_mm_available() -> bool:
     """True when ``torch._grouped_mm`` exists (the sparse path's GEMM backend)."""
@@ -50,23 +56,18 @@ def _grouped_mm(A, Bw, ends):
     return torch._grouped_mm(A.contiguous(), Bw, offs=ends)
 
 
-def _grouped_AtB(A, B, seg_offs, G):
-    """``out[g] = A[group g]^T @ B[group g]`` for row-groups defined by ``seg_offs``
-    (exclusive prefix, length G+1). ``A`` (M,P), ``B`` (M,Q) -> ``out`` (G,P,Q).
-
-    Per-group matmul loop (G is E or B*E — small). fp32 accumulate, cast to
-    ``A.dtype``. Same op as ``torch._grouped_mm(A.mT, B, offs)`` (2D×2D layout);
-    done as an explicit loop because these functions run inside vmap rules
-    (regular tensors), so a Python loop + in-place group writes are safe.
-    """
+def _grouped_AtB(A, B, seg_offs, G, *, out=None):
+    """Compute grouped ``A^T @ B`` without full-size fp32 conversion copies."""
     P, Q = A.shape[1], B.shape[1]
-    out = torch.zeros(G, P, Q, dtype=A.dtype, device=A.device)
+    if out is None:
+        out = torch.zeros(G, P, Q, dtype=A.dtype, device=A.device)
     bounds = seg_offs.tolist()
-    Af, Bf = A.float(), B.float()
     for g in range(G):
         lo, hi = bounds[g], bounds[g + 1]
         if hi > lo:
-            out[g] = (Af[lo:hi].t() @ Bf[lo:hi]).to(A.dtype)
+            out[g] = (A[lo:hi].float().t() @ B[lo:hi].float()).to(A.dtype)
+        else:
+            out[g].zero_()
     return out
 
 
@@ -84,28 +85,186 @@ def _seg_offsets(group_of_row, n_groups):
     return torch.cat([counts.new_zeros(1), counts.cumsum(0)]).to(torch.int32)
 
 
-def _flat_routing(N, K, device):
-    """``tok_of_row`` (N*K,): the token index for each flattened (token,k) row."""
-    return torch.arange(N, device=device).repeat_interleave(K)
-
-
-def _fused_moe_forward(x_flat, W1, W2, expert_of_row, tok_of_row, tw_row, E, N, H, I):
-    """Sparse grouped MoE forward. ``x_flat`` (N,H); shared weights ``W1`` (E,2I,H),
-    ``W2`` (E,H,I); routing flattened to (N*K,) rows, grouped by real expert."""
+def _fused_moe_forward(x_flat, W1, W2, expert_of_row, tw_row, K):
+    """Sparse grouped MoE forward with planner-bounded routing and activations."""
+    N, H = x_flat.shape
+    E = W1.shape[0]
+    I = W1.shape[1] // 2
     dt = x_flat.dtype
-    sort_idx, ends = _route_sort(expert_of_row, E)
-    tok_s = tok_of_row[sort_idx]
-    x_s = x_flat[tok_s]  # (NK, H)
-
-    gate_up = _grouped_mm(x_s, W1.mT, ends)  # (NK, 2I)
-    g, u = gate_up[:, :I], gate_up[:, I:]
-    h = F.silu(g.float()).to(dt) * u  # silu in fp32, matches dense
-    y = _grouped_mm(h, W2.mT, ends)  # (NK, H)
-
-    yw = (y * tw_row[sort_idx].unsqueeze(-1)).float()
     out = torch.zeros(N, H, dtype=torch.float32, device=x_flat.device)
-    out.index_add_(0, tok_s, yw)  # fp32 expert-sum reduction
+    per_route = grouped_forward_bytes_per_route(H, I, x_flat.element_size())
+    route_chunk = chunk_size(
+        expert_of_row.numel(),
+        per_route,
+        x_flat.device,
+        fixed_bytes=out.numel() * out.element_size(),
+    )
+    for lo in range(0, expert_of_row.numel(), route_chunk):
+        hi = min(lo + route_chunk, expert_of_row.numel())
+        local_sort, ends = _route_sort(expert_of_row[lo:hi], E)
+        sidx = lo + local_sort
+        tok_s = torch.div(sidx, K, rounding_mode="floor")
+        x_s = x_flat[tok_s]
+        gate_up = _grouped_mm(x_s, W1.mT, ends)
+        g, u = gate_up[:, :I], gate_up[:, I:]
+        h = F.silu(g.float()).to(dt) * u
+        y = _grouped_mm(h, W2.mT, ends)
+        yw = (y * tw_row[sidx].unsqueeze(-1)).float()
+        out.index_add_(0, tok_s, yw)
     return out.to(dt)
+
+
+def _route_groups(real_eor, routes, K, E, tokens_per_sample):
+    experts = real_eor[routes]
+    if tokens_per_sample is None:
+        return experts
+    tokens = torch.div(routes, K, rounding_mode="floor")
+    samples = torch.div(tokens, tokens_per_sample, rounding_mode="floor")
+    return samples * E + experts
+
+
+def _weight_grad_terms(
+    x_flat, grad_flat, W1, W2, tw_row, routes, K, expert, *, need_dgu=True
+):
+    """Recompute the routed terms needed by requested expert weight gradients."""
+    I = W1.shape[1] // 2
+    tokens = torch.div(routes, K, rounding_mode="floor")
+    xx = x_flat[tokens]
+    gate_up = F.linear(xx, W1[expert])
+    gate, up = gate_up[:, :I], gate_up[:, I:]
+    sig = torch.sigmoid(gate.float())
+    silu = (gate.float() * sig).to(x_flat.dtype)
+    hidden = silu * up
+    go = grad_flat[tokens]
+    dy = (tw_row[routes].unsqueeze(-1) * go).to(x_flat.dtype)
+    if not need_dgu:
+        return xx, hidden, dy, None
+    dh = F.linear(dy, W2[expert].t())
+    dsilu = (sig * (1.0 + gate.float() * (1.0 - sig))).to(x_flat.dtype)
+    dgu = torch.cat([dh * up * dsilu, dh * silu], dim=-1)
+    return xx, hidden, dy, dgu
+
+
+def _group_route_chunks(
+    real_eor, group, K, E, tokens_per_sample, chunk, fixed_bytes, per_route
+):
+    chunk = chunk_size(chunk, per_route, real_eor.device, fixed_bytes=fixed_bytes)
+    for lo in range(0, real_eor.numel(), chunk):
+        routes = torch.arange(
+            lo, min(lo + chunk, real_eor.numel()), device=real_eor.device
+        )
+        groups = _route_groups(real_eor, routes, K, E, tokens_per_sample)
+        yield routes[groups == group]
+
+
+def _stream_grouped_weight_grads(
+    x_flat,
+    grad_flat,
+    W1,
+    W2,
+    real_eor,
+    tw_row,
+    K,
+    tokens_per_sample,
+    n_groups,
+    dW1,
+    dW2,
+    per_route,
+):
+    """Recompute bounded route and output tiles, one final group at a time."""
+    E = W1.shape[0]
+    I = W1.shape[1] // 2
+    H = x_flat.shape[1]
+    dW1_rows = chunk_size(2 * I, H * 4, x_flat.device) if dW1 is not None else 1
+    dW2_rows = chunk_size(H, I * 4, x_flat.device) if dW2 is not None else 1
+    combine = (
+        dW1 is not None
+        and dW2 is not None
+        and chunk_size(2 * I, H * 4, x_flat.device, fixed_bytes=H * I * 4) == 2 * I
+        and chunk_size(H, I * 4, x_flat.device, fixed_bytes=2 * I * H * 4) == H
+    )
+
+    for group in range(n_groups):
+        expert = group % E
+        if combine:
+            dW1_acc = torch.zeros(2 * I, H, dtype=torch.float32, device=x_flat.device)
+            dW2_acc = torch.zeros(H, I, dtype=torch.float32, device=x_flat.device)
+            for routes in _group_route_chunks(
+                real_eor,
+                group,
+                K,
+                E,
+                tokens_per_sample,
+                real_eor.numel(),
+                3 * I * H * 4,
+                per_route,
+            ):
+                if routes.numel() == 0:
+                    continue
+                xx, hidden, dy, dgu = _weight_grad_terms(
+                    x_flat, grad_flat, W1, W2, tw_row, routes, K, expert
+                )
+                dW1_acc.add_(dgu.float().t() @ xx.float())
+                dW2_acc.add_(dy.float().t() @ hidden.float())
+            dW1[group] = dW1_acc.to(W1.dtype)
+            dW2[group] = dW2_acc.to(W2.dtype)
+            continue
+
+        if dW1 is not None:
+            for out_lo in range(0, 2 * I, dW1_rows):
+                out_hi = min(out_lo + dW1_rows, 2 * I)
+                acc = torch.zeros(
+                    out_hi - out_lo, H, dtype=torch.float32, device=x_flat.device
+                )
+                for routes in _group_route_chunks(
+                    real_eor,
+                    group,
+                    K,
+                    E,
+                    tokens_per_sample,
+                    real_eor.numel(),
+                    acc.numel() * 4,
+                    per_route,
+                ):
+                    if routes.numel() == 0:
+                        continue
+                    xx, _, _, dgu = _weight_grad_terms(
+                        x_flat, grad_flat, W1, W2, tw_row, routes, K, expert
+                    )
+                    acc.add_(dgu[:, out_lo:out_hi].float().t() @ xx.float())
+                dW1[group, out_lo:out_hi] = acc.to(W1.dtype)
+
+        if dW2 is not None:
+            for out_lo in range(0, H, dW2_rows):
+                out_hi = min(out_lo + dW2_rows, H)
+                acc = torch.zeros(
+                    out_hi - out_lo, I, dtype=torch.float32, device=x_flat.device
+                )
+                for routes in _group_route_chunks(
+                    real_eor,
+                    group,
+                    K,
+                    E,
+                    tokens_per_sample,
+                    real_eor.numel(),
+                    acc.numel() * 4,
+                    per_route,
+                ):
+                    if routes.numel() == 0:
+                        continue
+                    _, hidden, dy, _ = _weight_grad_terms(
+                        x_flat,
+                        grad_flat,
+                        W1,
+                        W2,
+                        tw_row,
+                        routes,
+                        K,
+                        expert,
+                        need_dgu=False,
+                    )
+                    acc.add_(dy[:, out_lo:out_hi].float().t() @ hidden.float())
+                dW2[group, out_lo:out_hi] = acc.to(W2.dtype)
 
 
 def _fused_moe_backward(
@@ -114,73 +273,145 @@ def _fused_moe_backward(
     W1,
     W2,
     real_eor,
-    tok_of_row,
     tw_row,
-    group_of_row,
-    n_groups,
-    N,
-    H,
-    I,
     K,
-    compute_wgrad=True,
+    n_groups,
+    tokens_per_sample=None,
+    compute_x_grad=True,
+    compute_route_grad=True,
+    compute_gate_wgrad=True,
+    compute_down_wgrad=True,
+    wgrad_out=None,
 ):
-    """Manual grouped MoE backward. Returns ``dx`` (N,H), ``dW1`` (n_groups,2I,H),
-    ``dW2`` (n_groups,H,I), ``dtw`` (N,K).
-
-    Mode-1 GEMMs (forward recompute, ``dh``, ``dx``) use real-expert grouping with
-    the shared weights. The mode-2 per-group weight grads use ``group_of_row``
-    (== real expert for the summed path, or the virtual expert ``b*E+e`` for the
-    per-sample DP path) through :func:`_grouped_AtB`.
-
-    ``compute_wgrad=False`` skips the mode-2 weight grads entirely (returns
-    ``dW1=dW2=None``). When the expert weights are frozen (DP-SGD LoRA on
-    attention only), those per-sample ``(n_groups, ...)`` buffers are pure waste —
-    the same OOM the Triton ``_fused_moe_backward`` avoids — so this mirrors that
-    skip for the non-Triton MPS/CPU grouped path."""
+    """Manual grouped backward with planner-bounded routing and activations."""
+    N, H = x_flat.shape
+    I = W1.shape[1] // 2
     dt = x_flat.dtype
     E = W1.shape[0]
-    sort_idx, ends = _route_sort(real_eor, E)
-    tok_s = tok_of_row[sort_idx]
-    x_s = x_flat[tok_s]  # (NK, H), real-expert order
+    dx = (
+        torch.zeros(N, H, dtype=torch.float32, device=x_flat.device)
+        if compute_x_grad
+        else None
+    )
+    dtw = (
+        torch.zeros(N * K, dtype=torch.float32, device=x_flat.device)
+        if compute_route_grad
+        else None
+    )
+    if wgrad_out is None:
+        dW1 = W1.new_empty(n_groups, 2 * I, H) if compute_gate_wgrad else None
+        dW2 = W2.new_empty(n_groups, H, I) if compute_down_wgrad else None
+    else:
+        dW1, dW2 = wgrad_out
+    compute_wgrad = compute_gate_wgrad or compute_down_wgrad
 
-    # Recompute forward intermediates (vmap rules have no ctx; cheap vs the GEMMs).
-    gate_up = _grouped_mm(x_s, W1.mT, ends)
-    g, u = gate_up[:, :I], gate_up[:, I:]
-    sig = torch.sigmoid(g.float())
-    silu = (g.float() * sig).to(dt)
-    h = silu * u
-    y = _grouped_mm(h, W2.mT, ends)  # (NK, H)
+    per_route = grouped_backward_bytes_per_route(H, I, x_flat.element_size())
+    fixed_bytes = sum(
+        buffer.numel() * buffer.element_size()
+        for buffer in (dx, dtw)
+        if buffer is not None
+    )
+    route_chunk = chunk_size(
+        real_eor.numel(), per_route, x_flat.device, fixed_bytes=fixed_bytes
+    )
+    weight_grads_fit = (
+        not compute_gate_wgrad
+        or chunk_size(
+            2 * I,
+            H * 4,
+            x_flat.device,
+            fixed_bytes=H * I * 4 if compute_down_wgrad else 0,
+        )
+        == 2 * I
+    ) and (
+        not compute_down_wgrad
+        or chunk_size(
+            H,
+            I * 4,
+            x_flat.device,
+            fixed_bytes=2 * I * H * 4 if compute_gate_wgrad else 0,
+        )
+        == H
+    )
+    fast_gate_wgrad = (
+        compute_gate_wgrad and route_chunk == real_eor.numel() and weight_grads_fit
+    )
+    fast_down_wgrad = (
+        compute_down_wgrad and route_chunk == real_eor.numel() and weight_grads_fit
+    )
+    need_dy = compute_x_grad or fast_gate_wgrad or fast_down_wgrad
+    need_dgu = compute_x_grad or fast_gate_wgrad
+    run_main = compute_route_grad or need_dy
 
-    go_s = grad_flat[tok_s]  # (NK, H)
-    tw_s = tw_row[sort_idx]
-    dy = (tw_s.unsqueeze(-1) * go_s).to(dt)  # (NK, H)
+    if run_main:
+        for lo in range(0, real_eor.numel(), route_chunk):
+            hi = min(lo + route_chunk, real_eor.numel())
+            local_sort, ends = _route_sort(real_eor[lo:hi], E)
+            sidx = lo + local_sort
+            tok_s = torch.div(sidx, K, rounding_mode="floor")
+            x_s = x_flat[tok_s]
+            gate_up = _grouped_mm(x_s, W1.mT, ends)
+            g, u = gate_up[:, :I], gate_up[:, I:]
+            sig = torch.sigmoid(g.float())
+            silu = (g.float() * sig).to(dt)
+            h = silu * u
+            go_s = grad_flat[tok_s]
+            tw_s = tw_row[sidx]
+            if compute_route_grad:
+                y = _grouped_mm(h, W2.mT, ends)
+                dtw[sidx] = (go_s.float() * y.float()).sum(-1)
+            if need_dy:
+                dy = (tw_s.unsqueeze(-1) * go_s).to(dt)
+                if need_dgu:
+                    dh = _grouped_mm(dy, W2, ends)
+                    dsilu = (sig * (1.0 + g.float() * (1.0 - sig))).to(dt)
+                    dgu = torch.cat([dh * u * dsilu, dh * silu], dim=-1)
+                    if compute_x_grad:
+                        dx_s = _grouped_mm(dgu, W1, ends)
+                        dx.index_add_(0, tok_s, dx_s.float())
 
-    # dtw: ∂L/∂routing_weight = sum_h grad_out * y, scattered back to (N, K).
-    dtw_row = (go_s.float() * y.float()).sum(-1)  # (NK,)
-    dtw = torch.zeros(N * K, dtype=torch.float32, device=x_flat.device)
-    dtw[sort_idx] = dtw_row
-    dtw = dtw.reshape(N, K).to(dt)
-
-    dh = _grouped_mm(dy, W2, ends)  # (NK, I)
-    dsilu = (sig * (1.0 + g.float() * (1.0 - sig))).to(dt)
-    dgu = torch.cat([dh * u * dsilu, dh * silu], dim=-1)  # (NK, 2I)
-
-    dx_s = _grouped_mm(dgu, W1, ends)  # (NK, H)
-    dx = torch.zeros(N, H, dtype=torch.float32, device=x_flat.device)
-    dx.index_add_(0, tok_s, dx_s.float())  # fp32 token reduction
-    dx = dx.to(dt)
-
-    # Frozen experts (DP-SGD LoRA on attention only): the mode-2 weight grads are
-    # discarded by autograd, so skip the two giant ``(n_groups, ...)`` allocations.
+    dx = None if dx is None else dx.to(dt)
+    dtw = None if dtw is None else dtw.reshape(N, K).to(dt)
     if not compute_wgrad:
         return dx, None, None, dtw
-
-    # Per-group weight grads (mode-2): re-sort the real-expert-ordered rows into
-    # ``group_of_row`` order, then keep each group separate (never summed across).
-    vperm = torch.argsort(group_of_row[sort_idx], stable=True)
-    seg = _seg_offsets(group_of_row, n_groups)
-    dW1 = _grouped_AtB(dgu[vperm], x_s[vperm], seg, n_groups)  # (n_groups, 2I, H)
-    dW2 = _grouped_AtB(dy[vperm], h[vperm], seg, n_groups)  # (n_groups, H, I)
+    if fast_gate_wgrad or fast_down_wgrad:
+        group_sorted = _route_groups(real_eor, sidx, K, E, tokens_per_sample)
+        vperm = torch.argsort(group_sorted, stable=True)
+        seg = _seg_offsets(group_sorted, n_groups)
+        if fast_gate_wgrad:
+            _grouped_AtB(dgu[vperm], x_s[vperm], seg, n_groups, out=dW1)
+        if fast_down_wgrad:
+            _grouped_AtB(dy[vperm], h[vperm], seg, n_groups, out=dW2)
+    else:
+        if run_main and real_eor.numel() > 0:
+            del local_sort, ends, sidx, tok_s, x_s, gate_up, g, u, sig, silu
+            del h, go_s, tw_s
+            if compute_route_grad:
+                del y
+            if need_dy:
+                del dy
+            if need_dgu:
+                del dh, dsilu, dgu
+            if compute_x_grad:
+                del dx_s
+            if x_flat.device.type == "cuda":
+                torch.cuda.synchronize(x_flat.device)
+            elif x_flat.device.type == "mps":
+                torch.mps.synchronize()
+        _stream_grouped_weight_grads(
+            x_flat,
+            grad_flat,
+            W1,
+            W2,
+            real_eor,
+            tw_row,
+            K,
+            tokens_per_sample,
+            n_groups,
+            dW1,
+            dW2,
+            per_route,
+        )
     return dx, dW1, dW2, dtw
 
 
@@ -194,29 +425,33 @@ class _GroupedMoEBackward(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        grad_out, x, gate_up_proj, down_proj, top_k_index, top_k_weights, compute_wgrad
+        grad_out,
+        x,
+        gate_up_proj,
+        down_proj,
+        top_k_index,
+        top_k_weights,
+        compute_x_grad,
+        compute_route_grad,
+        compute_gate_wgrad,
+        compute_down_wgrad,
     ):
-        N, H = x.shape
         K = top_k_index.shape[-1]
         E = gate_up_proj.shape[0]
-        I = gate_up_proj.shape[1] // 2
         eor = top_k_index.reshape(-1)
-        tor = _flat_routing(N, K, x.device)
         dx, dW1, dW2, dtw = _fused_moe_backward(
             grad_out,
             x,
             gate_up_proj,
             down_proj,
             eor,
-            tor,
             top_k_weights.reshape(-1),
-            group_of_row=eor,
+            K,
             n_groups=E,
-            N=N,
-            H=H,
-            I=I,
-            K=K,
-            compute_wgrad=compute_wgrad,
+            compute_x_grad=compute_x_grad,
+            compute_route_grad=compute_route_grad,
+            compute_gate_wgrad=compute_gate_wgrad,
+            compute_down_wgrad=compute_down_wgrad,
         )
         return dx, dW1, dW2, dtw
 
@@ -238,58 +473,81 @@ class _GroupedMoEBackward(torch.autograd.Function):
         down_proj,
         top_k_index,
         top_k_weights,
-        compute_wgrad,
+        compute_x_grad,
+        compute_route_grad,
+        compute_gate_wgrad,
+        compute_down_wgrad,
     ):
         B, T, H = x.shape
         K = top_k_index.shape[-1]
         E = gate_up_proj.shape[0]
         I = gate_up_proj.shape[1] // 2
-        N = B * T
-        xf = x.reshape(N, H)
-        gf = grad_out.reshape(N, H)
-        tif = top_k_index.reshape(N, K)
-        twf = top_k_weights.reshape(N, K)
-        tor = _flat_routing(N, K, x.device)
-        eor = tif.reshape(-1)
-        # Virtual experts: sample b's tokens for real expert e -> group b*E + e.
-        virtual = (tor // T) * E + eor
-        dx, dW1, dW2, dtw = _fused_moe_backward(
-            gf,
-            xf,
-            gate_up_proj,
-            down_proj,
-            eor,
-            tor,
-            twf.reshape(-1),
-            group_of_row=virtual,
-            n_groups=B * E,
-            N=N,
-            H=H,
-            I=I,
-            K=K,
-            compute_wgrad=compute_wgrad,
-        )
-        if not compute_wgrad:
-            # Frozen experts: emit a single unbatched zero weight grad with
-            # ``out_dim=None`` so vmap broadcasts it, instead of materialising the
-            # per-sample ``(B, E, ...)`` buffers that OOM at large batch scale.
-            return (
-                (
-                    dx.reshape(B, T, H),
-                    gate_up_proj.new_zeros(gate_up_proj.shape),
-                    down_proj.new_zeros(down_proj.shape),
-                    dtw.reshape(B, T, K),
-                ),
-                (0, None, None, 0),
+        dx = torch.empty_like(x) if compute_x_grad else None
+        dtw = torch.empty_like(top_k_weights) if compute_route_grad else None
+        dW1 = gate_up_proj.new_empty(B, E, 2 * I, H) if compute_gate_wgrad else None
+        dW2 = down_proj.new_empty(B, E, H, I) if compute_down_wgrad else None
+        compute_wgrad = compute_gate_wgrad or compute_down_wgrad
+        per_example = T * K * grouped_backward_bytes_per_route(H, I, x.element_size())
+        example_chunk = chunk_size(B, per_example, x.device)
+
+        for blo in range(0, B, example_chunk):
+            bhi = min(blo + example_chunk, B)
+            current_batch = bhi - blo
+            N = current_batch * T
+            xf = x[blo:bhi].reshape(N, H)
+            gf = grad_out[blo:bhi].reshape(N, H)
+            tif = top_k_index[blo:bhi].reshape(N, K)
+            twf = top_k_weights[blo:bhi].reshape(N, K)
+            eor = tif.reshape(-1)
+            wgrad_out = (
+                None
+                if not compute_wgrad
+                else (
+                    (
+                        dW1[blo:bhi].reshape(current_batch * E, 2 * I, H)
+                        if compute_gate_wgrad
+                        else None
+                    ),
+                    (
+                        dW2[blo:bhi].reshape(current_batch * E, H, I)
+                        if compute_down_wgrad
+                        else None
+                    ),
+                )
             )
+            dx_chunk, _, _, dtw_chunk = _fused_moe_backward(
+                gf,
+                xf,
+                gate_up_proj,
+                down_proj,
+                eor,
+                twf.reshape(-1),
+                K,
+                n_groups=current_batch * E,
+                tokens_per_sample=T,
+                compute_x_grad=compute_x_grad,
+                compute_route_grad=compute_route_grad,
+                compute_gate_wgrad=compute_gate_wgrad,
+                compute_down_wgrad=compute_down_wgrad,
+                wgrad_out=wgrad_out,
+            )
+            if compute_x_grad:
+                dx[blo:bhi] = dx_chunk.reshape(current_batch, T, H)
+            if compute_route_grad:
+                dtw[blo:bhi] = dtw_chunk.reshape(current_batch, T, K)
+
+        x_result = dx if compute_x_grad else None
+        route_result = dtw if compute_route_grad else None
+        gate_result = dW1 if compute_gate_wgrad else None
+        down_result = dW2 if compute_down_wgrad else None
         return (
+            (x_result, gate_result, down_result, route_result),
             (
-                dx.reshape(B, T, H),
-                dW1.reshape(B, E, 2 * I, H),
-                dW2.reshape(B, E, H, I),
-                dtw.reshape(B, T, K),
+                0 if compute_x_grad else None,
+                0 if compute_gate_wgrad else None,
+                0 if compute_down_wgrad else None,
+                0 if compute_route_grad else None,
             ),
-            (0, 0, 0, 0),
         )
 
 
@@ -299,22 +557,14 @@ class Opaque_GroupedMoE(torch.autograd.Function):
 
     @staticmethod
     def forward(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
-        N, H = x.shape
         K = top_k_index.shape[-1]
-        I = gate_up_proj.shape[1] // 2
-        eor = top_k_index.reshape(-1)
-        tor = _flat_routing(N, K, x.device)
         return _fused_moe_forward(
             x,
             gate_up_proj,
             down_proj,
-            eor,
-            tor,
+            top_k_index.reshape(-1),
             top_k_weights.reshape(-1),
-            E=gate_up_proj.shape[0],
-            N=N,
-            H=H,
-            I=I,
+            K,
         )
 
     @staticmethod
@@ -324,11 +574,17 @@ class Opaque_GroupedMoE(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out):
         # needs_input_grad: (x, gate_up_proj, down_proj, top_k_index, top_k_weights).
-        # Frozen experts (DP-SGD LoRA on attention only) => skip the per-sample
-        # mode-2 weight grads; mirrors Opaque_FusedMoE / _fused_moe_backward.
-        compute_wgrad = ctx.needs_input_grad[1] or ctx.needs_input_grad[2]
+        compute_x_grad = ctx.needs_input_grad[0]
+        compute_gate_wgrad = ctx.needs_input_grad[1]
+        compute_down_wgrad = ctx.needs_input_grad[2]
+        compute_route_grad = ctx.needs_input_grad[4]
         dx, dW1, dW2, dtw = _GroupedMoEBackward.apply(
-            grad_out, *ctx.saved_tensors, compute_wgrad
+            grad_out,
+            *ctx.saved_tensors,
+            compute_x_grad,
+            compute_route_grad,
+            compute_gate_wgrad,
+            compute_down_wgrad,
         )
         # inputs: x, gate_up_proj, down_proj, top_k_index (int, no grad), top_k_weights
         return dx, dW1, dW2, None, dtw
@@ -338,23 +594,16 @@ class Opaque_GroupedMoE(torch.autograd.Function):
         # Forward is token-independent: merge the vmap batch into the token dim.
         B, T, H = x.shape
         K = top_k_index.shape[-1]
-        I = gate_up_proj.shape[1] // 2
         N = B * T
         xf = x.reshape(N, H)
         tif = top_k_index.reshape(N, K)
         twf = top_k_weights.reshape(N, K)
-        eor = tif.reshape(-1)
-        tor = _flat_routing(N, K, x.device)
         out = _fused_moe_forward(
             xf,
             gate_up_proj,
             down_proj,
-            eor,
-            tor,
+            tif.reshape(-1),
             twf.reshape(-1),
-            E=gate_up_proj.shape[0],
-            N=N,
-            H=H,
-            I=I,
+            K,
         )
         return out.reshape(B, T, H), 0
