@@ -115,6 +115,7 @@ def _measure_incremental_cuda_memory(fn, warmup=2):
 
     gc.collect()
     torch.cuda.empty_cache()
+    torch.cuda.synchronize()
     baseline = torch.cuda.memory_allocated()
     torch.cuda.reset_peak_memory_stats()
 
