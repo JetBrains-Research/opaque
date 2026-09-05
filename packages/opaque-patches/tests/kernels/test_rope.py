@@ -174,8 +174,8 @@ class TestRoPEQK:
         out_op = Opaque_RoPE_QK.apply(Q_op, K_op, cos, sin, None)
         torch.testing.assert_close(out_op[0], out_ref[0], rtol=1e-6, atol=1e-6)
         torch.testing.assert_close(out_op[1], out_ref[1], rtol=1e-6, atol=1e-6)
-        torch.testing.assert_close(Q_op, Q_before)
-        torch.testing.assert_close(K_op, K_before)
+        torch.testing.assert_close(Q_op, Q_before, rtol=0, atol=0)
+        torch.testing.assert_close(K_op, K_before, rtol=0, atol=0)
 
         (out_ref[0].square().mean() + out_ref[1].square().mean()).backward()
         (out_op[0].square().mean() + out_op[1].square().mean()).backward()
