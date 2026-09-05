@@ -203,11 +203,15 @@ def _validate_native_module(
             return [
                 f"wheel {wheel_path.name} native module is not a 64-bit arm64 Mach-O"
             ]
-    elif "manylinux_2_28_x86_64" in wheel_path.name:
+    elif "x86_64" in wheel_path.name and (
+        "manylinux_2_28" in wheel_path.name or "linux_x86_64" in wheel_path.name
+    ):
         return _validate_elf_architecture(
             wheel_path, binary, expected_machine=62, expected_architecture="x86_64"
         )
-    elif "manylinux_2_28_aarch64" in wheel_path.name:
+    elif "aarch64" in wheel_path.name and (
+        "manylinux_2_28" in wheel_path.name or "linux_aarch64" in wheel_path.name
+    ):
         return _validate_elf_architecture(
             wheel_path, binary, expected_machine=183, expected_architecture="aarch64"
         )
