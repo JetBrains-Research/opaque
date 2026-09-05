@@ -225,9 +225,14 @@ class SFTTrainer(DPTrainer):
         self._fused_nll = self._fused_loss_eligible and args.loss_type == "nll"
         self._fused_dft = self._fused_loss_eligible and args.loss_type == "dft"
         # Resolve the backbone-prefix + lm_head param-key once for the ``dft``
-        # fused primitive (robust to tied embeddings); ``None`` → stay eager.
+        # fused primitive (robust to tied embeddings). Loss-only evaluation does
+        # not consume telemetry or predictions, so it can use this path even
+        # when those features keep training or metric evaluation eager.
         self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
-            model, self._fused_dft
+            model, args.loss_type == "dft"
+        )
+        self._fused_dft_loss_only = (
+            args.loss_type == "dft" and self._lm_head_param_name is not None
         )
         self._fused_dft = self._fused_dft and self._lm_head_param_name is not None
 
@@ -574,7 +579,7 @@ class SFTTrainer(DPTrainer):
             )
             loss = out["loss"]
             logits = out.get("logits")  # None on the fused path
-        elif self._fused_dft:
+        elif self._fused_dft or (not return_logits and self._fused_dft_loss_only):
             # ``dft`` has no model-level fused forward, so project the backbone's
             # last hidden state ``(T, H)`` through ``fused_dft_loss`` (falls back
             # to the eager logits form on CPU / non-half).
@@ -635,10 +640,13 @@ class SFTTrainer(DPTrainer):
         )
         inputs = self._prepare_input(inputs)
 
-        # Reuse the base per-example eval closure — it forwards through
-        # ``compute_per_example_loss`` (the DFT head) and returns per-example
-        # ``(loss, logits)``.
-        vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn()
+        # Loss-only evaluation must retain the per-example DFT scalars for plain
+        # per-example aggregation, but has no consumer for logits. Ask the base
+        # helper for its separate no-logits closure so this call can also take
+        # DFT's fused logits-free path despite telemetry being enabled elsewhere.
+        vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn(
+            return_logits=not prediction_loss_only
+        )
         if self._ctx is not None:
             trainable = self._ctx.trainable_params
         else:
@@ -666,16 +674,17 @@ class SFTTrainer(DPTrainer):
             with torch.no_grad():
                 if amp_dtype is not None:
                     with torch.autocast(device_type=self._device.type, dtype=amp_dtype):
-                        loss, logits = vmapped_fn(trainable, *batch_args)
+                        output = vmapped_fn(trainable, *batch_args)
                 else:
-                    loss, logits = vmapped_fn(trainable, *batch_args)
+                    output = vmapped_fn(trainable, *batch_args)
         finally:
             if was_training:
                 self._model.train()
 
-        loss = loss.detach()
         if prediction_loss_only:
-            return loss, None, None
+            return output.detach(), None, None
+        loss, logits = output
+        loss = loss.detach()
         # Same logits filtering as the base per-example path
         # (``DPTrainer.prediction_step``).
         preds = (
