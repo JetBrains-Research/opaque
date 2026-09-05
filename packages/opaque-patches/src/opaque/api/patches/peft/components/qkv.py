@@ -16,6 +16,7 @@ _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "GraniteAttention",
     "Cohere2Attention",
     "Qwen2Attention",
+    "Glm4Attention",
 }
 
 

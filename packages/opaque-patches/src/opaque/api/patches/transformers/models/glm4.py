@@ -23,6 +23,10 @@ _MODULE_PATH = "transformers.models.glm4.modeling_glm4"
 apply_glm4_family_patches = make_apply_family_patches(
     family="glm4",
     module_path=_MODULE_PATH,
+    # GLM4's `apply_rotary_pos_emb` interleaves cos/sin over a partial rotary
+    # dimension rather than the contiguous rotate_half split the default
+    # kernel implements; leave RoPE unpatched to avoid incorrect math.
+    rope_replacement=None,
 )
 
 
