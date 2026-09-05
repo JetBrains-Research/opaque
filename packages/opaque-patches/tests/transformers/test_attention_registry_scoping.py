@@ -5,11 +5,11 @@
 HuggingFace ships a single ``AttentionInterface`` instance that every
 ``modeling_X`` module imports, so writing ``ALL_ATTENTION_FUNCTIONS["sdpa"]``
 through one family's module reroutes every other family too.  Gemma2 is the
-only family opaque overrides SDPA for (its ``softcap`` cannot be expressed by
-``scaled_dot_product_attention``), and its shim used to land in that shared
-instance — which mattered for families that forward ``softcap`` into the
-interface: vaultgemma defaults ``attn_logit_softcapping`` to 50.0 and was
-therefore pulled into gemma2's eager fallback.
+only family opaque overrides SDPA for (its ``softcap`` needs a chunked
+implementation), and its shim used to land in that shared instance — which
+mattered for families that forward ``softcap`` into the interface: vaultgemma
+defaults ``attn_logit_softcapping`` to 50.0 and was therefore pulled into
+gemma2's implementation.
 """
 
 import pytest
@@ -89,10 +89,10 @@ def test_gemma2_module_gets_a_private_interface(patched_gemma2_family):
     )
 
 
-def test_gemma2_softcap_still_uses_the_eager_fallback(
+def test_gemma2_softcap_avoids_the_eager_fallback(
     patched_gemma2_family, softcap_fallback_spy
 ):
-    """Positive control: the shim is live where it is meant to be."""
+    """Gemma2's SDPA shim keeps softcapping on the chunked path."""
     config = modeling_gemma2.Gemma2Config(**_TINY_CONFIG)
     config._attn_implementation = "sdpa"
     model = modeling_gemma2.Gemma2ForCausalLM(config).eval()
@@ -100,9 +100,7 @@ def test_gemma2_softcap_still_uses_the_eager_fallback(
     with torch.no_grad():
         model(input_ids=torch.tensor([[1, 2, 3, 4]]))
 
-    assert softcap_fallback_spy == [config.attn_logit_softcapping] * (
-        config.num_hidden_layers
-    )
+    assert softcap_fallback_spy == []
     assert config.attn_logit_softcapping is not None
 
 

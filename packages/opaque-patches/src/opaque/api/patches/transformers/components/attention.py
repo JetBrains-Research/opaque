@@ -4,6 +4,10 @@
 
 import torch
 
+# Bound the largest temporary to (..., heads, 64, key_length), rather than
+# materializing the full (..., heads, query_length, key_length) matrix.
+_GEMMA2_QUERY_CHUNK = 64
+
 
 def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """vmap-compatible repeat_kv for expanding key/value heads to match query heads.
@@ -41,6 +45,21 @@ def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(*new_shape)
 
 
+def _apply_attention_mask(
+    attn_weights: torch.Tensor,
+    attention_mask: torch.Tensor,
+    q_len: int,
+    kv_len: int,
+) -> torch.Tensor:
+    """Apply either an SDPA Boolean mask or an eager additive mask."""
+    causal_mask = attention_mask[..., :q_len, :kv_len]
+    if causal_mask.dtype == torch.bool:
+        return attn_weights.masked_fill(
+            ~causal_mask, torch.finfo(attn_weights.dtype).min
+        )
+    return attn_weights + causal_mask
+
+
 def vmap_eager_attention_forward(
     module: torch.nn.Module,
     query: torch.Tensor,
@@ -68,16 +87,11 @@ def vmap_eager_attention_forward(
     attn_weights = torch.matmul(query, key_states.transpose(-2, -1)) * scaling
 
     if attention_mask is not None:
-        # Slice mask to match query and key lengths
-        # attention_mask shape: (..., 1, full_q_len, full_kv_len) or (..., num_heads, q_len, kv_len)
-        # attn_weights shape: (..., num_heads, q_len, kv_len)
         q_len = query.shape[-2]
         kv_len = key_states.shape[-2]
-
-        # Handle both mask formats: (..., 1, q, kv) or (..., h, q, kv)
-        # Slice the last two dimensions to match actual sequence lengths
-        causal_mask = attention_mask[..., :q_len, :kv_len]
-        attn_weights = attn_weights + causal_mask
+        attn_weights = _apply_attention_mask(
+            attn_weights, attention_mask, q_len, kv_len
+        )
 
     attn_weights = torch.nn.functional.softmax(
         attn_weights, dim=-1, dtype=torch.float32
@@ -132,16 +146,11 @@ def vmap_eager_attention_forward_gemma2(
         attn_weights = attn_weights * softcap
 
     if attention_mask is not None:
-        # Slice mask to match query and key lengths
-        # attention_mask shape: (..., 1, full_q_len, full_kv_len) or (..., num_heads, q_len, kv_len)
-        # attn_weights shape: (..., num_heads, q_len, kv_len)
         q_len = query.shape[-2]
         kv_len = key_states.shape[-2]
-
-        # Handle both mask formats: (..., 1, q, kv) or (..., h, q, kv)
-        # Slice the last two dimensions to match actual sequence lengths
-        causal_mask = attention_mask[..., :q_len, :kv_len]
-        attn_weights = attn_weights + causal_mask
+        attn_weights = _apply_attention_mask(
+            attn_weights, attention_mask, q_len, kv_len
+        )
 
     attn_weights = torch.nn.functional.softmax(
         attn_weights, dim=-1, dtype=torch.float32
@@ -157,6 +166,141 @@ def vmap_eager_attention_forward_gemma2(
     return attn_output, attn_weights
 
 
+def _gemma2_mask_chunk(
+    attention_mask: torch.Tensor,
+    query_start: int,
+    query_end: int,
+    key_length: int,
+) -> torch.Tensor:
+    if attention_mask.shape[-2] == 1:
+        return attention_mask[..., :, :key_length]
+    return attention_mask[..., query_start:query_end, :key_length]
+
+
+def _gemma2_softcap_probabilities(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    scaling: float,
+    softcap: float,
+    query_start: int,
+    query_end: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    query_chunk = query[..., query_start:query_end, :]
+    logits = torch.matmul(query_chunk, key.transpose(-2, -1)) * scaling
+    capped_logits = torch.tanh(logits / softcap) * softcap
+
+    softmax_input = capped_logits
+    if attention_mask is not None:
+        mask = _gemma2_mask_chunk(attention_mask, query_start, query_end, key.shape[-2])
+        if mask.dtype == torch.bool:
+            softmax_input = capped_logits.masked_fill(
+                ~mask, torch.finfo(capped_logits.dtype).min
+            )
+        else:
+            softmax_input = capped_logits + mask
+
+    probabilities = torch.nn.functional.softmax(
+        softmax_input, dim=-1, dtype=torch.float32
+    )
+    return query_chunk, capped_logits, probabilities
+
+
+class _ChunkedGemma2Attention(torch.autograd.Function):
+    """Softcapped attention without retaining a full query-by-key matrix."""
+
+    generate_vmap_rule = True
+
+    @staticmethod
+    def forward(query, key, value, attention_mask, scaling, softcap):
+        output_chunks = []
+        for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
+            query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
+            _, _, probabilities = _gemma2_softcap_probabilities(
+                query,
+                key,
+                attention_mask,
+                scaling,
+                softcap,
+                query_start,
+                query_end,
+            )
+            output_chunks.append(torch.matmul(probabilities.to(query.dtype), value))
+        return torch.cat(output_chunks, dim=-2)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        del output
+        query, key, value, attention_mask, scaling, softcap = inputs
+        if attention_mask is None:
+            ctx.save_for_backward(query, key, value)
+        else:
+            ctx.save_for_backward(query, key, value, attention_mask)
+        ctx.has_attention_mask = attention_mask is not None
+        ctx.scaling = float(scaling)
+        ctx.softcap = float(softcap)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        if ctx.has_attention_mask:
+            query, key, value, attention_mask = ctx.saved_tensors
+        else:
+            query, key, value = ctx.saved_tensors
+            attention_mask = None
+
+        grad_query_chunks = []
+        grad_key = torch.zeros_like(key)
+        grad_value = torch.zeros_like(value)
+        for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
+            query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
+            query_chunk, capped_logits, probabilities = _gemma2_softcap_probabilities(
+                query,
+                key,
+                attention_mask,
+                ctx.scaling,
+                ctx.softcap,
+                query_start,
+                query_end,
+            )
+            grad_output_chunk = grad_output[..., query_start:query_end, :]
+            probabilities_input_dtype = probabilities.to(query.dtype)
+
+            grad_value.add_(
+                torch.matmul(
+                    probabilities_input_dtype.transpose(-2, -1), grad_output_chunk
+                )
+            )
+            grad_probabilities = torch.matmul(
+                grad_output_chunk, value.transpose(-2, -1)
+            ).to(probabilities.dtype)
+            grad_softmax_input = probabilities * (
+                grad_probabilities
+                - (grad_probabilities * probabilities).sum(dim=-1, keepdim=True)
+            )
+            grad_capped_logits = grad_softmax_input.to(capped_logits.dtype)
+            if attention_mask is not None and attention_mask.dtype == torch.bool:
+                mask = _gemma2_mask_chunk(
+                    attention_mask, query_start, query_end, key.shape[-2]
+                )
+                grad_capped_logits = grad_capped_logits.masked_fill(~mask, 0.0)
+            grad_logits = grad_capped_logits * (
+                1.0 - (capped_logits / ctx.softcap) ** 2
+            )
+            grad_logits = grad_logits * ctx.scaling
+
+            grad_query_chunks.append(torch.matmul(grad_logits, key))
+            grad_key.add_(torch.matmul(grad_logits.transpose(-2, -1), query_chunk))
+
+        return (
+            torch.cat(grad_query_chunks, dim=-2),
+            grad_key,
+            grad_value,
+            None,
+            None,
+            None,
+        )
+
+
 def vmap_sdpa_attention_forward_gemma2(
     module: torch.nn.Module,
     query: torch.Tensor,
@@ -168,8 +312,21 @@ def vmap_sdpa_attention_forward_gemma2(
     softcap: float | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """Use eager attention when Gemma2's softcap cannot be expressed by SDPA."""
+    """Use chunked attention for Gemma2 softcap, which SDPA cannot express."""
     if softcap is not None:
+        if not module.training or dropout == 0.0:
+            key_states = vmap_repeat_kv(key, module.num_key_value_groups)
+            value_states = vmap_repeat_kv(value, module.num_key_value_groups)
+            attn_output = _ChunkedGemma2Attention.apply(
+                query,
+                key_states,
+                value_states,
+                attention_mask,
+                1.0 if scaling is None else scaling,
+                softcap,
+            )
+            return attn_output.transpose(-3, -2).contiguous(), None
+
         return vmap_eager_attention_forward_gemma2(
             module,
             query,

@@ -15,6 +15,7 @@ import torch
 from opaque_test_support import prepare_lora_model, run_clipped_grad_test
 
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.patches.transformers.components import attention as attention_components
 from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward_gemma2,
     vmap_sdpa_attention_forward_gemma2,
@@ -40,7 +41,7 @@ def _expected_gemma2_softcap_attention(query, key, value, softcap):
     return weights @ value, weights
 
 
-def _assert_gemma2_softcap_attention(attention):
+def _assert_gemma2_softcap_attention(attention, *, returns_weights):
     query, key, value = (tensor.requires_grad_() for tensor in _gemma2_softcap_inputs())
     output, weights = attention(
         _Gemma2Attention(), query, key, value, None, scaling=1.0, softcap=1.0
@@ -53,7 +54,10 @@ def _assert_gemma2_softcap_attention(attention):
     )
 
     torch.testing.assert_close(output, expected_output.transpose(-3, -2))
-    torch.testing.assert_close(weights, expected_weights)
+    if returns_weights:
+        torch.testing.assert_close(weights, expected_weights)
+    else:
+        assert weights is None
     actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
     expected_grads = torch.autograd.grad(
         expected_output.square().sum(), (ref_query, ref_key, ref_value)
@@ -62,10 +66,125 @@ def _assert_gemma2_softcap_attention(attention):
         torch.testing.assert_close(actual, expected)
 
 
-def test_gemma2_softcap_attention_matches_reference():
+def test_gemma2_softcap_attention_matches_reference(monkeypatch):
     """Keep scaled scores near and far beyond the cap before softmax."""
-    _assert_gemma2_softcap_attention(vmap_eager_attention_forward_gemma2)
-    _assert_gemma2_softcap_attention(vmap_sdpa_attention_forward_gemma2)
+    _assert_gemma2_softcap_attention(
+        vmap_eager_attention_forward_gemma2, returns_weights=True
+    )
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    _assert_gemma2_softcap_attention(
+        vmap_sdpa_attention_forward_gemma2, returns_weights=False
+    )
+
+
+def test_gemma2_softcap_attention_accepts_boolean_sdpa_mask():
+    query, key, value = (tensor.requires_grad_() for tensor in _gemma2_softcap_inputs())
+    mask = torch.ones((1, 1, 3, 3), dtype=torch.bool).tril_()
+    mask[..., 0, :] = False
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        _Gemma2Attention(), query, key, value, mask, scaling=1.0, softcap=1.0
+    )
+
+    scores = query @ key.transpose(-2, -1)
+    scores = torch.tanh(scores)
+    scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
+    expected_weights = torch.softmax(scores, dim=-1)
+    expected_output = expected_weights @ value
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+    assert weights is None
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        expected_output.square().sum(), (query, key, value)
+    )
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_attention_broadcasts_additive_mask_across_chunks(
+    monkeypatch,
+):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    query, key, value = (tensor.requires_grad_() for tensor in _gemma2_softcap_inputs())
+    attention_mask = torch.tensor([[[[0.0, -1.0, -2.0]]]])
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        _Gemma2Attention(),
+        query,
+        key,
+        value,
+        attention_mask,
+        scaling=0.5,
+        softcap=1.0,
+    )
+
+    reference_scores = 0.5 * (query @ key.transpose(-2, -1))
+    reference_scores = torch.tanh(reference_scores) + attention_mask
+    reference_weights = torch.softmax(reference_scores, dim=-1)
+    reference_output = reference_weights @ value
+    torch.testing.assert_close(output, reference_output.transpose(-3, -2))
+    assert weights is None
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        reference_output.square().sum(), (query, key, value)
+    )
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    query, key, value = _gemma2_softcap_inputs()
+    query = torch.cat((query, query * 0.5), dim=0)
+    key = torch.cat((key, key * 1.5), dim=0)
+    value = torch.cat((value, value * 0.75), dim=0)
+
+    def loss(q, k, v):
+        output, _ = vmap_sdpa_attention_forward_gemma2(
+            _Gemma2Attention(), q, k, v, None, scaling=1.0, softcap=1.0
+        )
+        return output.square().sum()
+
+    def reference_loss(q, k, v):
+        output, _ = _expected_gemma2_softcap_attention(q, k, v, 1.0)
+        return output.square().sum()
+
+    actual = torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(query, key, value)
+    expected = torch.vmap(torch.func.grad(reference_loss, argnums=(0, 1, 2)))(
+        query, key, value
+    )
+
+    for actual_grad, expected_grad in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_gemma2_softcap_sdpa_does_not_materialize_full_attention(
+    monkeypatch,
+    dtype,
+):
+    query = torch.randn(1, 2, 5, 3, dtype=dtype)
+    key = torch.randn(1, 2, 7, 3, dtype=dtype)
+    value = torch.randn(1, 2, 7, 3, dtype=dtype)
+    matmul_shapes = []
+    real_matmul = torch.matmul
+
+    def record_matmul(left, right):
+        result = real_matmul(left, right)
+        matmul_shapes.append(result.shape)
+        return result
+
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2, raising=False)
+    monkeypatch.setattr(torch, "matmul", record_matmul)
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        _Gemma2Attention(), query, key, value, None, scaling=1.0, softcap=1.0
+    )
+
+    assert output.shape == (1, 5, 2, 3)
+    assert weights is None
+    assert not any(shape[-2:] == (5, 7) for shape in matmul_shapes)
 
 
 class TestAttentionImplementations:

@@ -293,7 +293,7 @@ class TestSlidingWindowWithoutPaddingMask:
     """
 
     @staticmethod
-    def _make_mask(attn_impl, sliding_window, seq_len=8):
+    def _make_mask(attn_impl, sliding_window, seq_len=8, batch_size=1):
         config = type(
             "Cfg",
             (),
@@ -301,7 +301,7 @@ class TestSlidingWindowWithoutPaddingMask:
         )()
         return vmap_create_sliding_window_causal_mask(
             config,
-            inputs_embeds=torch.randn(1, seq_len, 8),
+            inputs_embeds=torch.randn(batch_size, seq_len, 8),
             attention_mask=None,
             past_key_values=None,
         )
@@ -309,12 +309,21 @@ class TestSlidingWindowWithoutPaddingMask:
     def test_binding_window_is_materialized_for_sdpa(self):
         mask = self._make_mask("sdpa", sliding_window=2, seq_len=8)
         assert mask is not None, "binding window must not fall back to is_causal"
-        neg_inf = torch.finfo(mask.dtype).min
-        assert mask[0, 0, 3, 2] == 0.0, "in-window key must be visible"
-        assert mask[0, 0, 3, 1] == neg_inf, "out-of-window key must be blocked"
+        assert mask.dtype == torch.bool
+        assert mask[0, 0, 3, 2], "in-window key must be visible"
+        assert not mask[0, 0, 3, 1], "out-of-window key must be blocked"
+
+    def test_binding_sdpa_mask_broadcasts_without_batch_copies(self):
+        seq_len = 8
+        mask = self._make_mask("sdpa", sliding_window=2, seq_len=seq_len, batch_size=4)
+        assert mask.shape == (4, 1, seq_len, seq_len)
+        assert mask.untyped_storage().nbytes() == seq_len * seq_len
 
     def test_non_binding_window_keeps_the_is_causal_fast_path(self):
         assert self._make_mask("sdpa", sliding_window=64, seq_len=8) is None
+
+    def test_window_equal_to_sequence_keeps_the_is_causal_fast_path(self):
+        assert self._make_mask("sdpa", sliding_window=8, seq_len=8) is None
 
     def test_flash_backend_keeps_the_is_causal_fast_path(self):
         # Flash kernels receive ``sliding_window`` and mask in-kernel.
