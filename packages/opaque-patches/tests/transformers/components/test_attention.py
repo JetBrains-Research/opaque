@@ -265,13 +265,14 @@ def test_gemma2_softcap_sdpa_keeps_nonzero_training_dropout_fallback(monkeypatch
     eager_attention = attention_components.vmap_eager_attention_forward_gemma2
 
     def record_eager(*args, **kwargs):
-        eager_calls.append(kwargs["dropout"])
+        eager_calls.append((args[4], kwargs["dropout"], kwargs["scaling"]))
         return eager_attention(*args, **kwargs)
 
     monkeypatch.setattr(
         attention_components, "vmap_eager_attention_forward_gemma2", record_eager
     )
     module = _Gemma2Attention()
+    module.is_causal = True
     query, key, value = _gemma2_softcap_inputs()
 
     module.eval()
@@ -284,7 +285,10 @@ def test_gemma2_softcap_sdpa_keeps_nonzero_training_dropout_fallback(monkeypatch
     vmap_sdpa_attention_forward_gemma2(
         module, query, key, value, None, dropout=0.25, softcap=1.0
     )
-    assert eager_calls == [0.25]
+    causal_mask, dropout, scaling = eager_calls[0]
+    torch.testing.assert_close(causal_mask, torch.ones(3, 3, dtype=torch.bool).tril())
+    assert dropout == 0.25
+    assert scaling == query.shape[-1] ** -0.5
 
 
 def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
@@ -364,6 +368,8 @@ def _cuda_peak_delta(fn):
     torch.cuda.synchronize()
     peak = torch.cuda.max_memory_allocated() - baseline
     del result
+    gc.collect()
+    torch.cuda.empty_cache()
     return peak
 
 

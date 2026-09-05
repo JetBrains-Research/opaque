@@ -205,7 +205,9 @@ def _gemma2_softcap_probabilities(
         ).unsqueeze(-1)
         key_positions = torch.arange(key.shape[-2], device=query.device)
         probability_mask = key_positions <= query_positions
-        softmax_input = capped_logits.masked_fill(~probability_mask, -torch.inf)
+        softmax_input = capped_logits.masked_fill(
+            ~probability_mask, torch.finfo(capped_logits.dtype).min
+        )
 
     probabilities = torch.nn.functional.softmax(
         softmax_input, dim=-1, dtype=torch.float32
@@ -327,17 +329,17 @@ def vmap_sdpa_attention_forward_gemma2(
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Use chunked attention for Gemma2 softcap, which SDPA cannot express."""
     if softcap is not None:
+        scaling = query.shape[-1] ** -0.5 if scaling is None else scaling
+        is_causal = kwargs.get("is_causal")
+        if is_causal is None:
+            is_causal = getattr(module, "is_causal", True)
+        is_causal = query.shape[-2] > 1 and attention_mask is None and is_causal
+
+        if is_causal and key.shape[-2] > query.shape[-2]:
+            key = key[..., : query.shape[-2], :]
+            value = value[..., : query.shape[-2], :]
+
         if not module.training or dropout == 0.0:
-            scaling = query.shape[-1] ** -0.5 if scaling is None else scaling
-            is_causal = kwargs.get("is_causal")
-            if is_causal is None:
-                is_causal = getattr(module, "is_causal", True)
-            is_causal = query.shape[-2] > 1 and attention_mask is None and is_causal
-
-            if is_causal and key.shape[-2] > query.shape[-2]:
-                key = key[..., : query.shape[-2], :]
-                value = value[..., : query.shape[-2], :]
-
             key_states = vmap_repeat_kv(key, module.num_key_value_groups)
             value_states = vmap_repeat_kv(value, module.num_key_value_groups)
             attn_output = _ChunkedGemma2Attention.apply(
@@ -351,6 +353,10 @@ def vmap_sdpa_attention_forward_gemma2(
             )
             return attn_output.transpose(-3, -2).contiguous(), None
 
+        if is_causal:
+            attention_mask = torch.ones(
+                query.shape[-2], key.shape[-2], dtype=torch.bool, device=query.device
+            ).tril()
         return vmap_eager_attention_forward_gemma2(
             module,
             query,
