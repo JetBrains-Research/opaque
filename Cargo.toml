@@ -16,6 +16,9 @@ unsafe_code = "warn"
 [profile.release]
 opt-level = 3
 lto = true
+# Retain line tables: stripping all debuginfo can create a Mach-O with an
+# unaligned LINKEDIT string pool on current Xcode linkers.
+debug = 1
 
 # The Monte-Carlo / PLD numerical tests (amplification::*, balls_in_bins) are
 # ~10-100x slower at opt-level 0, which made `cargo test` the slowest CI job by
