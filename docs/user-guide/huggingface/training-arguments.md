@@ -29,6 +29,11 @@ this once before tuning:
   logical batch or the sample rate (privacy-neutral). The same flag also
   halves `per_device_eval_batch_size` on an eval/predict CUDA-OOM
   (eval has no grad-accumulation, so shrinking it is privacy-neutral).
+- When `per_device_eval_batch_size` is omitted, it defaults to an explicit
+  `microbatch_size` so eval's single batched forward stays within the
+  configured physical memory bound. Without a configured microbatch, it
+  defaults to `per_device_train_batch_size`. Set an explicit eval batch size
+  to choose a different evaluation-throughput tradeoff.
 
 To grow the effective batch, raise `per_device_train_batch_size` (the
 expected Poisson round size); the physical vmap chunk (`microbatch_size`,
