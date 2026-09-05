@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+import opaque.api.transformers.trainer._eval as _eval_mod
 from opaque.api.transformers.trainer._eval import (
     EvalPrediction,
     EvaluationResult,
@@ -100,15 +101,65 @@ class TestPredictionAccumulator:
         acc.finalize()
         assert len(acc._cold_logits) == 3
 
-    def test_accumulation_steps_none_no_intermediate_flushes(self):
+    def test_accumulation_steps_none_flushes_each_batch(self):
         acc = _PredictionAccumulator(eval_accumulation_steps=None)
         for _ in range(4):
             _add_batch(acc, 0.5)
-        # No flushes happen during ``add`` when accumulation_steps is None.
-        assert acc._cold_logits == []
+        # The default effective window is one batch, bounding device retention.
+        assert len(acc._cold_logits) == 4
         acc.finalize()
-        # ``finalize`` performs the single trailing flush.
-        assert len(acc._cold_logits) == 1
+        # No trailing hot batch remains after the per-batch flushes.
+        assert len(acc._cold_logits) == 4
+
+    def test_freeze_moves_payloads_before_cpu_concatenation(self, monkeypatch):
+        events: list[str] = []
+        original_to_cpu = _eval_mod._to_cpu_nested
+        original_concat = _eval_mod._concat_nested_chunks
+
+        def recording_to_cpu(value):
+            events.append("to_cpu")
+            return original_to_cpu(value)
+
+        def recording_concat(tensors, *, padding_value):
+            assert events
+            events.append("concat")
+            return original_concat(tensors, padding_value=padding_value)
+
+        monkeypatch.setattr(_eval_mod, "_to_cpu_nested", recording_to_cpu)
+        monkeypatch.setattr(_eval_mod, "_concat_nested_chunks", recording_concat)
+
+        _eval_mod._freeze_hot_chunk([torch.ones(1), torch.ones(1)])
+
+        assert events[-1] == "concat"
+
+    def test_accumulation_windows_preserve_finalized_values(self):
+        batches = [
+            (torch.tensor([[1.0, 2.0]]), torch.tensor([[1, 2]])),
+            (torch.tensor([[3.0], [4.0]]), torch.tensor([[3], [4]])),
+            (torch.tensor([[5.0, 6.0, 7.0]]), torch.tensor([[5, 6, 7]])),
+        ]
+
+        outputs = []
+        for window in (None, 2):
+            acc = _PredictionAccumulator(eval_accumulation_steps=window)
+            for logits, labels in batches:
+                acc.add(
+                    loss=None,
+                    logits=logits,
+                    labels=labels,
+                    inputs=None,
+                    batch_size=int(logits.shape[0]),
+                )
+            outputs.append(acc.finalize())
+
+        default_preds, default_labels, _, _ = outputs[0]
+        explicit_preds, explicit_labels, _, _ = outputs[1]
+        assert torch.equal(
+            torch.from_numpy(default_preds), torch.from_numpy(explicit_preds)
+        )
+        assert torch.equal(
+            torch.from_numpy(default_labels), torch.from_numpy(explicit_labels)
+        )
 
     def test_include_inputs_populates_finalize(self):
         # HF parity: ``EvalPrediction.inputs`` is a bare tensor (the

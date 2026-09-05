@@ -720,6 +720,18 @@ class TrainingArguments:
                 )
             )
 
+        if self.eval_accumulation_steps is not None and not (
+            isinstance(self.eval_accumulation_steps, int)
+            and not isinstance(self.eval_accumulation_steps, bool)
+            and self.eval_accumulation_steps > 0
+        ):
+            raise ConfigurationError(
+                *(
+                    "eval_accumulation_steps must be a positive integer or None, "
+                    f"got {self.eval_accumulation_steps!r}.",
+                )
+            )
+
         if self.use_cpu:
             self.dataloader_pin_memory = False
 

@@ -85,13 +85,13 @@ class _PredictionAccumulator:
     - ``_cold_*`` lists hold previously-flushed chunks already moved to CPU
       and concatenated so each entry is a single tensor (a "frozen chunk").
 
-    ``flush_to_cpu`` concatenates and moves the hot buffers to CPU,
+    An unset ``eval_accumulation_steps`` flushes after every batch, bounding
+    on-device prediction storage to one batch. An explicit value retains at
+    most that many batches. ``flush_to_cpu`` moves every hot payload to CPU
+    before concatenating it,
     appends each result as one tensor to its cold list, then resets the
-    hot buffers.  This makes per-flush work O(N) in the size of the
-    *current* group (not the full accumulated history) — overall
-    ``K`` flushes over a run that produces ``K·N`` batches cost
-    ``O(K·N)`` rather than the ``O(K²·N)`` of repeatedly moving
-    already-flushed tensors.
+    hot buffers. This avoids allocating a full on-device concatenation result.
+    Already-frozen chunks are never re-flushed.
 
     When ``eval_do_concat_batches`` is ``True`` (HF default), ``finalize``
     concatenates the cold + trailing-hot chunks into one tensor.  When
@@ -174,8 +174,13 @@ class _PredictionAccumulator:
         # per-batch tensors").  Force a flush after every add so each
         # cold chunk corresponds to exactly one batch.
         flush_now = not self.eval_do_concat_batches
-        if not flush_now and self.eval_accumulation_steps is not None:
-            flush_now = self._num_batches % self.eval_accumulation_steps == 0
+        if not flush_now:
+            accumulation_steps = (
+                self.eval_accumulation_steps
+                if self.eval_accumulation_steps is not None
+                else 1
+            )
+            flush_now = self._num_batches % accumulation_steps == 0
         if flush_now:
             self.flush_to_cpu()
 
@@ -382,15 +387,13 @@ def _freeze_hot_chunk(
     *,
     pad_value: int | float = 0,
 ) -> Any:
-    """Concatenate a hot list and move the result to CPU as a single tensor.
+    """Move a hot list to CPU and concatenate it as a single CPU chunk.
 
     Variable trailing-dim sizes (common for causal-LM eval logits) are
     right-padded with ``pad_value`` before concat.
     """
-    if len(tensors) == 1:
-        return _to_cpu_nested(tensors[0])
-    concatenated = _concat_nested_chunks(tensors, padding_value=pad_value)
-    return _to_cpu_nested(concatenated)
+    cpu_tensors = [_to_cpu_nested(tensor) for tensor in tensors]
+    return _concat_nested_chunks(cpu_tensors, padding_value=pad_value)
 
 
 # ---------------------------------------------------------------------------
