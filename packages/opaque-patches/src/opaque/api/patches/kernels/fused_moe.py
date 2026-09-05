@@ -37,7 +37,7 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
-from ._utils import follow_autocast, torch_gpu_device
+from ._utils import active_cuda_dtype, cast_to_dtype, follow_autocast, torch_gpu_device
 
 # ---------------------------------------------------------------------------
 # Custom Triton kernel: grouped A^T @ B (the mode-2 per-group weight grad)
@@ -402,6 +402,9 @@ class Opaque_FusedMoE(torch.autograd.Function):
 
     @staticmethod
     def forward(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
+        x, gate_up_proj, down_proj, top_k_weights = cast_to_dtype(
+            active_cuda_dtype(x), x, gate_up_proj, down_proj, top_k_weights
+        )
         N, H = x.shape
         K = top_k_index.shape[-1]
         I = gate_up_proj.shape[1] // 2
@@ -423,14 +426,25 @@ class Opaque_FusedMoE(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         ctx.save_for_backward(*inputs)
+        ctx.compute_dtype = output.dtype
 
     @staticmethod
     def backward(ctx, grad_out):
         # needs_input_grad: (x, gate_up_proj, down_proj, top_k_index, top_k_weights).
         # Skip the mode-2 weight grads when neither expert weight requires grad.
         compute_wgrad = ctx.needs_input_grad[1] or ctx.needs_input_grad[2]
+        x, gate_up_proj, down_proj, top_k_index, top_k_weights = ctx.saved_tensors
+        x, gate_up_proj, down_proj, top_k_weights = cast_to_dtype(
+            ctx.compute_dtype, x, gate_up_proj, down_proj, top_k_weights
+        )
         dx, dW1, dW2, dtw = _FusedMoEBackward.apply(
-            grad_out, *ctx.saved_tensors, compute_wgrad
+            grad_out,
+            x,
+            gate_up_proj,
+            down_proj,
+            top_k_index,
+            top_k_weights,
+            compute_wgrad,
         )
         # inputs: x, gate_up_proj, down_proj, top_k_index (int, no grad), top_k_weights
         return dx, dW1, dW2, None, dtw
@@ -438,6 +452,9 @@ class Opaque_FusedMoE(torch.autograd.Function):
     @staticmethod
     def vmap(info, in_dims, x, gate_up_proj, down_proj, top_k_index, top_k_weights):
         # Forward is token-independent: merge the vmap batch into the token dim.
+        x, gate_up_proj, down_proj, top_k_weights = cast_to_dtype(
+            active_cuda_dtype(x), x, gate_up_proj, down_proj, top_k_weights
+        )
         B, T, H = x.shape
         K = top_k_index.shape[-1]
         I = gate_up_proj.shape[1] // 2
@@ -465,7 +482,5 @@ class Opaque_FusedMoE(torch.autograd.Function):
 def opaque_fused_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights):
     """Sparse grouped-GEMM MoE expert FFN (CUDA bf16/fp16). Autograd +
     ``vmap(grad)`` (DP-SGD) flow through the two-Function pair above."""
-    x, gate_up_proj, down_proj, top_k_weights = follow_autocast(
-        x, gate_up_proj, down_proj, top_k_weights
-    )
+    x, top_k_weights = follow_autocast(x, top_k_weights)
     return Opaque_FusedMoE.apply(x, gate_up_proj, down_proj, top_k_index, top_k_weights)

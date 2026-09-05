@@ -1,10 +1,11 @@
 """``torch.autocast`` over the opaque-patches Triton kernels.
 
 Validates that the public ``opaque_*`` wrappers honor an active
-``torch.autocast`` context: when autocast is enabled, kernel inputs are
-cast to the autocast dtype at the wrapper boundary and the kernel runs
-in that dtype end-to-end. Backward dtype follows forward, so the upstream
-gradient propagation stays consistent.
+``torch.autocast`` context: when autocast is enabled, each kernel runs in the
+autocast dtype end-to-end. Boundary tensors are cast before dispatch; fused
+weight kernels cast full weights transiently inside their custom Functions.
+Backward dtype follows forward, so upstream gradient propagation stays
+consistent.
 
 Without this wrapper-side cast, the kernels are dtype-passthrough — they
 preserve their input dtype regardless of autocast — which produces a

@@ -54,18 +54,9 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
         Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
 
-        # Cast all kernel operands (X, base W, LoRA A/B) to the active kernel
-        # dtype, mirroring follow_autocast: the vmap backward does `grad_out @ W`
-        # with no autocast dispatch and reuses saved X as a same-dtype output
-        # buffer, so all operands must share the autocast dtype.
+        # Keep full weights in their parameter dtype across the autograd boundary.
+        # The custom Function casts them transiently in forward and backward.
         x = x.to(dtype)
-        Wg, Wu, Wd = Wg.to(dtype), Wu.to(dtype), Wd.to(dtype)
-        if Ag is not None:
-            Ag, Bg = Ag.to(dtype), Bg.to(dtype)
-        if Au is not None:
-            Au, Bu = Au.to(dtype), Bu.to(dtype)
-        if Ad is not None:
-            Ad, Bd = Ad.to(dtype), Bd.to(dtype)
 
         out, _gate, _up, _h = Opaque_LoRA_MLP.apply(
             x,

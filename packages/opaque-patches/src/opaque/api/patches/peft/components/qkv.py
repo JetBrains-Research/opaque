@@ -32,18 +32,9 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Wk, Ak, Bk, Sk = _extract_lora_params(self.k_proj)
     Wv, Av, Bv, Sv = _extract_lora_params(self.v_proj)
 
-    # Cast all kernel operands (X, base W, LoRA A/B) to the active kernel dtype,
-    # mirroring follow_autocast: the vmap backward does `grad_out @ W` with no
-    # autocast dispatch and reuses saved X as a same-dtype output buffer, so all
-    # operands must share the autocast dtype.
+    # Keep full weights in their parameter dtype across the autograd boundary.
+    # The custom Function casts them transiently in forward and backward.
     hidden_states = hidden_states.to(dtype)
-    Wq, Wk, Wv = Wq.to(dtype), Wk.to(dtype), Wv.to(dtype)
-    if Aq is not None:
-        Aq, Bq = Aq.to(dtype), Bq.to(dtype)
-    if Ak is not None:
-        Ak, Bk = Ak.to(dtype), Bk.to(dtype)
-    if Av is not None:
-        Av, Bv = Av.to(dtype), Bv.to(dtype)
 
     return Opaque_LoRA_QKV.apply(
         hidden_states,

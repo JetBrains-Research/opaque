@@ -202,9 +202,7 @@ def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, groupe
         if _TRITON_AVAILABLE and x.is_cuda:
             from ._utils import follow_autocast
 
-            x, gate_up_proj, down_proj, top_k_weights = follow_autocast(
-                x, gate_up_proj, down_proj, top_k_weights
-            )
+            x, top_k_weights = follow_autocast(x, top_k_weights)
             if x.dtype in (torch.bfloat16, torch.float16):
                 from .fused_moe import Opaque_FusedMoE
 
