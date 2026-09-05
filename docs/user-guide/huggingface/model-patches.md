@@ -173,7 +173,7 @@ which fused Triton kernels are applied per model:
 | Phi-3 | 3.8B | SwiGLU | Yes | Yes | Yes | — | — |
 | Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | Yes | QKV + MLP |
 | Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes | Yes (softcap) | QKV + MLP |
-| Gemma3 (text) | 1B, 4B (tiny config) | GeGLU Approx | Yes | Yes | Yes | Yes | MLP only |
+| Gemma3 (text) | 1B, 4B (tiny config) | GeGLU Approx | Yes | Yes | Yes | Yes | QKV + MLP |
 | Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Cohere | 8B | SwiGLU | — | Yes | Yes | Yes | MLP only |
 | Cohere2 | 8B | SwiGLU | — | Yes | Yes | Yes | QKV + MLP |
@@ -275,7 +275,7 @@ K have different head counts. The underlying position encoding follows
 [*RoFormer: Enhanced Transformer with Rotary Position Embedding*](https://arxiv.org/abs/2104.09864).
 
 Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi-3, Gemma, Gemma2,
-Granite.
+Gemma3, Granite.
 
 ### Cross-entropy
 

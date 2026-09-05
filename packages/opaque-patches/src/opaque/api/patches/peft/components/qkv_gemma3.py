@@ -51,8 +51,13 @@ def _fused_qkv_gemma3_attention_forward(
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     if past_key_values is not None:
+        cache_kwargs = {
+            "sin": sin,
+            "cos": cos,
+            "cache_position": kwargs.get("cache_position"),
+        }
         key_states, value_states = past_key_values.update(
-            key_states, value_states, self.layer_idx
+            key_states, value_states, self.layer_idx, cache_kwargs
         )
 
     eager_attention_forward = model_module.eager_attention_forward
@@ -87,8 +92,8 @@ def _fused_qkv_gemma3_attention_forward(
 def _make_fused_qkv_gemma3_attention_forward(original_forward):
     """Create a Gemma3 attention forward with fused QKV LoRA projection.
 
-    The fused kernel only runs on CUDA; every other device falls back to the
-    unmodified Gemma3 forward.
+    The fused kernel only runs on CUDA; every other device — and any call that
+    omits ``position_embeddings`` — falls back to the unmodified Gemma3 forward.
 
     Args:
         original_forward: Bound method of the attention instance.
@@ -102,7 +107,7 @@ def _make_fused_qkv_gemma3_attention_forward(original_forward):
         past_key_values=None,
         **kwargs,
     ):
-        if not hidden_states.is_cuda:
+        if not hidden_states.is_cuda or position_embeddings is None:
             return original_forward(
                 hidden_states,
                 position_embeddings,
