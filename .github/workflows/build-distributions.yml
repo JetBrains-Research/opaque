@@ -162,6 +162,26 @@ jobs:
           uv run --isolated --no-project --with packaging==25.0
           python .github/scripts/check_wheel_internal_pins.py --wheel-dir dist
 
+      - name: Import native extension from wheel
+        if: matrix.target.kind == 'wheel'
+        run: |
+          wheels=(dist/*.whl)
+          if [[ "${#wheels[@]}" -ne 1 ]]; then
+            echo "::error::Expected one wheel, found ${#wheels[@]}"
+            exit 1
+          fi
+          python3 -m venv wheel-import
+          wheel-import/bin/python -m pip install --no-deps "${wheels[0]}"
+          wheel-import/bin/python -c '
+          import ctypes
+          from pathlib import Path
+
+          native = next(
+              Path("wheel-import").glob("**/opaque_accounting.abi3.so")
+          )
+          ctypes.CDLL(native)
+          '
+
       - name: Validate artifact policy
         run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
 
@@ -174,6 +194,10 @@ jobs:
             exit 1
           fi
           uv build "${sdists[0]}" --wheel --out-dir rebuilt
+
+      - name: Validate rebuilt wheel artifact policy
+       if: matrix.target.kind == 'sdist'
+       run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir rebuilt
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
