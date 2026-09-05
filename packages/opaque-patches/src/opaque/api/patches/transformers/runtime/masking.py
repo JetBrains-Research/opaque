@@ -57,6 +57,24 @@ def _query_length(input_embeds: torch.Tensor) -> int:
     )
 
 
+def _sdpa_sliding_window_mask(
+    input_embeds: torch.Tensor, sliding_window: int
+) -> torch.Tensor:
+    """Build one broadcastable Boolean SDPA band without dense temporaries."""
+    batch_size = (
+        1
+        if input_embeds.ndim == 2  # noqa: PLR2004 - batchless embeddings are 2D
+        else input_embeds.shape[0]
+    )
+    seq_len = _query_length(input_embeds)
+    mask = torch.ones(
+        (1, 1, seq_len, seq_len), dtype=torch.bool, device=input_embeds.device
+    )
+    mask.tril_()
+    mask.triu_(diagonal=1 - sliding_window)
+    return mask.expand(batch_size, -1, -1, -1)
+
+
 def vmap_create_causal_mask(
     config,
     inputs_embeds: torch.Tensor | None = None,
@@ -219,9 +237,10 @@ def vmap_create_sliding_window_causal_mask(
 
     The stock implementation uses BlockMask / Flex Attention helpers that rely
     on data-dependent control flow incompatible with vmap.  This replacement
-    builds a dense additive mask that enforces both the causal constraint
-    (no future attention) and the sliding-window look-back limit
-    (``config.sliding_window``).
+    builds a mask that enforces both the causal constraint (no future
+    attention) and the sliding-window look-back limit
+    (``config.sliding_window``). SDPA receives its native Boolean mask format;
+    eager attention receives an additive mask.
 
     For each query at absolute position ``q_abs`` (given by ``cache_position``),
     key positions ``k_abs < q_abs - sliding_window + 1`` are set to ``-inf``.
@@ -236,17 +255,33 @@ def vmap_create_sliding_window_causal_mask(
     """
     input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
     sliding_window = getattr(config, "sliding_window", None)
+    attn_impl = getattr(config, "_attn_implementation", None)
+    past_seen_tokens = _safe_seq_length(past_key_values)
+
+    # This is the memory-critical training path. SDPA accepts a Boolean mask,
+    # so construct the band directly and share it across the batch instead of
+    # allocating Bx1xQxK additive storage plus two QxK Boolean intermediates.
+    if (
+        sliding_window is not None
+        and input_embeds is not None
+        and attention_mask is None
+        and attn_impl == "sdpa"
+        and past_seen_tokens == 0
+        and cache_position is None
+    ):
+        target_length = _query_length(input_embeds)
+        if allow_is_causal_skip and target_length <= sliding_window:
+            return None
+        return _sdpa_sliding_window_mask(input_embeds, sliding_window)
 
     if (
         allow_is_causal_skip
         and sliding_window is not None
         and input_embeds is not None
-        and not _backend_enforces_sliding_window(
-            getattr(config, "_attn_implementation", None)
-        )
+        and not _backend_enforces_sliding_window(attn_impl)
     ):
-        target_length = _safe_seq_length(past_key_values) + _query_length(input_embeds)
-        allow_is_causal_skip = target_length < sliding_window
+        target_length = past_seen_tokens + _query_length(input_embeds)
+        allow_is_causal_skip = target_length <= sliding_window
 
     causal_mask = vmap_create_causal_mask(
         config,
@@ -270,8 +305,6 @@ def vmap_create_sliding_window_causal_mask(
     seq_len = causal_mask.shape[-2]
     device = input_embeds.device
     mask_dtype = causal_mask.dtype
-
-    past_seen_tokens = _safe_seq_length(past_key_values)
 
     # Re-derive cache_position the same way vmap_create_causal_mask does.
     if cache_position is None:
