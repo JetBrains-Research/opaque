@@ -166,11 +166,13 @@ def _fused_linear_ce_loss_is_supported(
 def _make_fused_ce_causal_lm_forward(original):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
-    When a loss-only caller sets ``opaque_fused_loss_only`` and labels are
+    When a loss-only caller sets ``opaque_fused_loss_only=True`` and labels are
     provided, skips ``lm_head`` and computes loss from
     ``hidden_states @ lm_head.weight.T`` (CCE), unless ``loss_function`` would
     need unsupported options — then defers to the original forward (e.g.
-    non-zero ``logits_to_keep``, ``shift_labels``, class ``weight``).
+    non-zero ``logits_to_keep``, ``shift_labels``, class ``weight``). Omitting
+    the marker retains the legacy fused behavior; pass ``False`` when logits
+    are needed.
     """
 
     def forward(
@@ -187,7 +189,7 @@ def _make_fused_ce_causal_lm_forward(original):
         return_dict=None,
         cache_position=None,
         logits_to_keep: int | torch.Tensor = 0,
-        opaque_fused_loss_only: bool = False,
+        opaque_fused_loss_only: bool | None = None,
         **kwargs,
     ):
         # No labels → inference → use original forward
@@ -244,10 +246,11 @@ def _make_fused_ce_causal_lm_forward(original):
         # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
         # log-sum-exp over vocab chunks (no full-logit materialization). The
         # fused path returns ``logits=None`` — but ``fused_linear_cross_entropy``
-        # is opt-in (default off) precisely because of that. The caller must
-        # explicitly mark this forward as loss-only.
+        # is opt-in (default off) precisely because of that. ``None`` preserves
+        # the original labels-imply-fusion behavior for direct callers; the SFT
+        # trainer passes an explicit bool for its loss-only vs metrics paths.
         use_fused_ce = (
-            opaque_fused_loss_only
+            opaque_fused_loss_only is not False
             and _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs)
             and (
                 (

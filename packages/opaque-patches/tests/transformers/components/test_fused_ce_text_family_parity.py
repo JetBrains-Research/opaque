@@ -119,6 +119,23 @@ def test_fused_ce_wrapper_matches_hf_loss_on_cpu(family):
     assert torch.allclose(out_base.loss, out_wrapped.loss, atol=1e-4, rtol=1e-4)
 
 
+def test_fused_ce_explicitly_preserves_logits_for_metrics():
+    """The SFT metrics path can opt out without changing legacy callers."""
+    model = _tiny_model("olmo2")
+    _bind_fused_forward(model)
+    input_ids = torch.randint(0, model.config.vocab_size, (2, 9))
+
+    with torch.no_grad():
+        output = model(
+            input_ids=input_ids,
+            labels=input_ids,
+            opaque_fused_loss_only=False,
+            return_dict=True,
+        )
+
+    assert output.logits is not None
+
+
 @pytest.mark.parametrize("family", sorted(_FAMILY_SPECS))
 def test_fused_ce_wrapper_preserves_logits_to_keep(family):
     """T1: wrapper must preserve HF logits slicing semantics."""
