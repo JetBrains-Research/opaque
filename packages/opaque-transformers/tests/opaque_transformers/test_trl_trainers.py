@@ -1404,6 +1404,54 @@ def test_sft_fused_eligible_when_telemetry_off(tmp_path):
     assert trainer.args.performance_kernels_config["fused_linear_cross_entropy"] is True
 
 
+def test_sft_metric_configured_loss_only_eval_stays_logits_free(tmp_path, monkeypatch):
+    """Metric callbacks do not make an explicitly loss-only eval project logits."""
+    seen = {}
+
+    def compute_metrics(prediction):
+        seen["predictions"] = prediction.predictions
+        seen["labels"] = prediction.label_ids
+        return {}
+
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            log_completion_metrics=False,
+        ),
+        train_dataset=_sft_dataset(),
+        eval_dataset=_sft_dataset(),
+        processing_class=_stub_tokenizer(),
+        compute_metrics=compute_metrics,
+    )
+    assert trainer._fused_nll is True
+
+    lm_head_calls = 0
+    original_lm_head_forward = trainer.model.lm_head.forward
+
+    def lm_head_forward(*args, **kwargs):
+        nonlocal lm_head_calls
+        lm_head_calls += 1
+        return original_lm_head_forward(*args, **kwargs)
+
+    monkeypatch.setattr(trainer.model.lm_head, "forward", lm_head_forward)
+    batch = trainer.data_collator([trainer.train_dataset[0]])
+    loss, predictions, labels = trainer.prediction_step(
+        trainer.model, batch, prediction_loss_only=True
+    )
+    assert torch.isfinite(loss)
+    assert predictions is None
+    assert labels is None
+    assert lm_head_calls == 0
+
+    trainer.evaluate()
+    assert seen["predictions"] is not None
+    assert seen["labels"] is not None
+
+
 def test_sft_dft_fused_eligible_resolves_lm_head(tmp_path):
     trainer = SFTTrainer(
         model=_tiny_model(),

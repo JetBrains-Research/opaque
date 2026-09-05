@@ -15,6 +15,7 @@ Opaque's per-example :meth:`DPTrainer.compute_per_example_loss` hook.
 
 from __future__ import annotations
 
+import inspect
 from operator import attrgetter
 from typing import TYPE_CHECKING, Any
 
@@ -209,15 +210,13 @@ class SFTTrainer(DPTrainer):
         # active, the loss is computed logits-free — ``nll`` via the model-level
         # ``fused_linear_cross_entropy`` forward (as ``chunked_nll`` does), ``dft``
         # via the ``fused_dft_loss`` primitive over the backbone's last hidden
-        # state. A custom ``compute_loss_func`` needs logits, and ``compute_metrics``
-        # / ``preprocess_logits_for_metrics`` read logits in the eval/metrics path,
-        # so any of those keeps the eager logits path.
+        # state. A custom ``compute_loss_func`` needs logits. Metric callbacks do
+        # not affect eligibility: the fused forward is requested only for
+        # loss-only calls, while prediction-producing evaluation remains eager.
         self._fused_loss_eligible = (
             args.loss_type in ("nll", "dft")
             and not self._log_completion_metrics
             and compute_loss_func is None
-            and compute_metrics is None
-            and preprocess_logits_for_metrics is None
         )
         # ``nll`` rides the model-level fused forward (enables the kernel patch);
         # ``dft`` rides the primitive over the last hidden state. Both fall back to
@@ -278,6 +277,13 @@ class SFTTrainer(DPTrainer):
             optimizers=optimizers,
             optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+        )
+        # Non-HF custom models are supported by DPTrainer but do not necessarily
+        # accept Opaque's private fused-forward marker. They keep the eager
+        # labels-forward behavior.
+        self._fused_forward_uses_marker = (
+            "opaque_fused_loss_only"
+            in inspect.signature(self._model.forward).parameters
         )
 
     # ------------------------------------------------------------------
@@ -571,6 +577,11 @@ class SFTTrainer(DPTrainer):
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
                 labels=inputs["labels"],
+                **(
+                    {"opaque_fused_loss_only": True}
+                    if self._fused_forward_uses_marker
+                    else {}
+                ),
             )
             loss = out["loss"]
             logits = out.get("logits")  # None on the fused path
@@ -625,6 +636,12 @@ class SFTTrainer(DPTrainer):
         the model's CE head and keep the inherited path (#384).
         """
         if self._loss_type != "dft":
+            if (
+                prediction_loss_only
+                and (self._loss_type == "chunked_nll" or self._fused_nll)
+                and self._fused_forward_uses_marker
+            ):
+                inputs = {**inputs, "opaque_fused_loss_only": True}
             return super().prediction_step(
                 model, inputs, prediction_loss_only, ignore_keys
             )
