@@ -46,11 +46,8 @@ def _make_lora_linear_forward(original):
         if not dropout_is_noop:
             return original(self, x, *args, **kwargs)
 
-        # Cast all kernel operands (X, base W, LoRA A, LoRA B) to the active
-        # dtype, mirroring the public ``opaque_lora_w`` wrapper's
-        # ``follow_autocast``: the vmap backward's ``grad_out @ W`` /
-        # ``mm(..., out=X_flat)`` patterns expect operands in the autocast
-        # dtype, including saved X (reused as a same-dtype output buffer).
+        # Keep full weights in their parameter dtype across the autograd boundary.
+        # The custom Function casts them transiently in forward and backward.
         target_dtype = _active_lora_dtype(x)
         x = x.to(target_dtype)
         W = self.base_layer.weight
@@ -58,11 +55,10 @@ def _make_lora_linear_forward(original):
         # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
         if getattr(self, "fan_in_fan_out", False):
             W = W.T
-        W = W.to(target_dtype)
         # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank);
         # lora_B as (out_features, rank), kernel expects (rank, out_features).
-        A = self.lora_A[active].weight.T.to(target_dtype)
-        B = self.lora_B[active].weight.T.to(target_dtype)
+        A = self.lora_A[active].weight.T
+        B = self.lora_B[active].weight.T
         scaling = self.scaling[active]
 
         result = Opaque_LoRA_W.apply(x, W, A, B, scaling)

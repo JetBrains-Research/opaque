@@ -149,6 +149,33 @@ def b_bin_fn(b: int) -> int:
         return 512
 
 
+def cast_to_dtype(dtype: torch.dtype, *tensors):
+    """Cast floating tensors to ``dtype``, preserving all other arguments.
+
+    Tensors already in ``dtype`` are returned unchanged, so callers can use this
+    on the fast path without allocating a copy. ``None`` and non-floating tensors
+    are passed through.
+    """
+    out = []
+    for tensor in tensors:
+        if (
+            isinstance(tensor, torch.Tensor)
+            and tensor.is_floating_point()
+            and tensor.dtype != dtype
+        ):
+            out.append(tensor.to(dtype))
+        else:
+            out.append(tensor)
+    return tuple(out)
+
+
+def active_cuda_dtype(tensor: torch.Tensor) -> torch.dtype:
+    """Return the active CUDA autocast dtype, or ``tensor.dtype`` otherwise."""
+    if tensor.is_cuda and torch.is_autocast_enabled("cuda"):
+        return torch.get_autocast_dtype("cuda")
+    return tensor.dtype
+
+
 def follow_autocast(*tensors):
     """Cast floating-point CUDA tensors to the active autocast dtype, if any.
 
@@ -164,14 +191,7 @@ def follow_autocast(*tensors):
     """
     if not torch.is_autocast_enabled("cuda"):
         return tensors
-    target = torch.get_autocast_dtype("cuda")
-    out = []
-    for t in tensors:
-        if isinstance(t, torch.Tensor) and t.is_floating_point() and t.dtype != target:
-            out.append(t.to(target))
-        else:
-            out.append(t)
-    return tuple(out)
+    return cast_to_dtype(torch.get_autocast_dtype("cuda"), *tensors)
 
 
 def ensure_cuda_tensors(*tensors: torch.Tensor, fn_name: str) -> None:

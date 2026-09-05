@@ -32,7 +32,12 @@ import torch.nn.functional as F
 
 from opaque.exceptions import ConfigurationError
 
-from ._utils import ensure_cuda_tensors, follow_autocast
+from ._utils import (
+    active_cuda_dtype,
+    cast_to_dtype,
+    ensure_cuda_tensors,
+    follow_autocast,
+)
 from .geglu import (
     _triton_geglu_approx_backward_fused,
     _triton_geglu_approx_forward,
@@ -195,6 +200,7 @@ class Opaque_LoRA_W(torch.autograd.Function):
     @staticmethod
     def forward(X, W, A, B, scaling):
         """Forward pass."""
+        X, W, A, B = cast_to_dtype(active_cuda_dtype(X), X, W, A, B)
         out = F.linear(X, W)  # X @ W.T
 
         if A is not None and B is not None:
@@ -224,17 +230,20 @@ class Opaque_LoRA_W(torch.autograd.Function):
             ctx.save_for_backward(W, A, B)
         ctx.needs_weight_grads = needs_weight_grads
         ctx.scaling = scaling
+        ctx.compute_dtype = output.dtype
 
     @staticmethod
     def backward(ctx, grad_out):
         if ctx.needs_weight_grads:
             X, W, A, B = ctx.saved_tensors
+            X, A, B = cast_to_dtype(ctx.compute_dtype, X, A, B)
             dA, dB = _LoRAWBackward.apply(grad_out, X, A, B, ctx.scaling)
             ctx.maybe_clear_saved_tensors()
             del X
+            W, A, B = cast_to_dtype(ctx.compute_dtype, W, A, B)
             dX = _LoRAWBackwardLite.apply(grad_out, W, A, B, ctx.scaling)
         else:
-            W, A, B = ctx.saved_tensors
+            W, A, B = cast_to_dtype(ctx.compute_dtype, *ctx.saved_tensors)
             dX = _LoRAWBackwardLite.apply(grad_out, W, A, B, ctx.scaling)
             dA = dB = None
         return dX, None, dA, dB, None
@@ -249,6 +258,7 @@ class Opaque_LoRA_W(torch.autograd.Function):
         """
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_W", batched_indices={0})
         X_bdim = in_dims[0]
+        X, W, A, B = cast_to_dtype(active_cuda_dtype(X), X, W, A, B)
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
@@ -480,6 +490,9 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     @staticmethod
     def forward(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
         """Forward pass for Q, K, V projections."""
+        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
+            active_cuda_dtype(X), X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        )
         X_flat = X.reshape(-1, X.shape[-1])
 
         Q = F.linear(X, Wq)
@@ -510,6 +523,7 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         ctx.Sq = Sq
         ctx.Sk = Sk
         ctx.Sv = Sv
+        ctx.compute_dtype = output[0].dtype
 
     @staticmethod
     def backward(ctx, grad_Q, grad_K, grad_V):
@@ -517,6 +531,9 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
 
         if ctx.needs_weight_grads:
             X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
+            X, Aq, Bq, Ak, Bk, Av, Bv = cast_to_dtype(
+                ctx.compute_dtype, X, Aq, Bq, Ak, Bk, Av, Bv
+            )
             dAq, dBq, dAk, dBk, dAv, dBv = _LoRAQKVBackward.apply(
                 grad_Q,
                 grad_K,
@@ -538,6 +555,9 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
             Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
             dAq = dBq = dAk = dBk = dAv = dBv = None
 
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
+            ctx.compute_dtype, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        )
         dX = _LoRAQKVBackwardLite.apply(
             grad_Q,
             grad_K,
@@ -577,6 +597,9 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         """Efficient vmap rule: merge vmap batch into regular batch."""
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_QKV", batched_indices={0})
         X_bdim = in_dims[0]
+        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
+            active_cuda_dtype(X), X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        )
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
@@ -986,6 +1009,9 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
     @staticmethod
     def forward(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type):
         """Forward pass for MLP with configurable GLU activation."""
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
+            active_cuda_dtype(X), X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
+        )
         X_flat = X.reshape(-1, X.shape[-1])
 
         gate = F.linear(X, Wg)
@@ -1024,6 +1050,7 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         ctx.Su = Su
         ctx.Sd = Sd
         ctx.activation_type = activation_type
+        ctx.compute_dtype = output[0].dtype
 
     @staticmethod
     def backward(ctx, grad_out, grad_gate, grad_up, grad_h):
@@ -1034,6 +1061,9 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
 
         if ctx.needs_weight_grads:
             X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = ctx.saved_tensors
+            X, Ag, Bg, Au, Bu, Wd, Ad, Bd, gate, up = cast_to_dtype(
+                ctx.compute_dtype, X, Ag, Bg, Au, Bu, Wd, Ad, Bd, gate, up
+            )
             dgate, dup, dAg, dBg, dAu, dBu, dAd, dBd = _LoRAMLPBackward.apply(
                 grad_out,
                 X,
@@ -1052,10 +1082,15 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
                 ctx.activation_type,
             )
             ctx.maybe_clear_saved_tensors()
-            del X
+            del X, Wd, Ad, Bd, gate, up
+            Wg, Ag, Bg, Wu, Au, Bu = cast_to_dtype(
+                ctx.compute_dtype, Wg, Ag, Bg, Wu, Au, Bu
+            )
             dX = _LoRAMLPInputBackward.apply(dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su)
         else:
-            Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = ctx.saved_tensors
+            Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = cast_to_dtype(
+                ctx.compute_dtype, *ctx.saved_tensors
+            )
             dX = _LoRAMLPBackwardLite.apply(
                 grad_out,
                 Wg,
@@ -1120,6 +1155,9 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         """
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_MLP", batched_indices={0})
         X_bdim = in_dims[0]
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
+            active_cuda_dtype(X), X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
+        )
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
@@ -1172,7 +1210,7 @@ def opaque_lora_w(X, W, A, B, scaling):
         Output tensor (batch, seq_len, out_features)
     """
     ensure_cuda_tensors(X, W, A, B, fn_name="opaque_lora_w")
-    X, W, A, B = follow_autocast(X, W, A, B)
+    (X,) = follow_autocast(X)
     return Opaque_LoRA_W.apply(X, W, A, B, scaling)
 
 
@@ -1195,9 +1233,7 @@ def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
         Bv,
         fn_name="opaque_lora_qkv",
     )
-    X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = follow_autocast(
-        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
-    )
+    (X,) = follow_autocast(X)
     return Opaque_LoRA_QKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
 
 
@@ -1238,9 +1274,7 @@ def opaque_lora_mlp(
         Bd,
         fn_name="opaque_lora_mlp",
     )
-    X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = follow_autocast(
-        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
-    )
+    (X,) = follow_autocast(X)
     if isinstance(activation, str):
         activation_type = _ACTIVATION_NAMES[activation]
     else:
