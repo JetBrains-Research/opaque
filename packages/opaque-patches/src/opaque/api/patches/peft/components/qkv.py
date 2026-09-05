@@ -11,6 +11,10 @@ from .qkv_gemma3 import (
     _FUSEABLE_GEMMA3_QKV_ATTENTION_CLASSES,
     _make_fused_qkv_gemma3_attention_forward,
 )
+from .qkv_qwen3 import (
+    _FUSEABLE_QWEN3_QKV_ATTENTION_CLASSES,
+    _make_fused_qkv_qwen3_attention_forward,
+)
 
 _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "LlamaAttention",
@@ -29,12 +33,14 @@ def _resolve_fused_qkv_forward_factory(attn):
 
     Resolves the attention class through its MRO so PEFT-wrapped subclasses are
     recognized. Architectures whose forward differs from the generic pipeline
-    (for example Gemma3, which normalizes Q/K after projection) map to their own
-    dedicated factory instead of the generic one.
+    (for example Gemma3 and Qwen3, which normalize Q/K after projection) map to
+    their own dedicated factory instead of the generic one.
     """
     for cls in type(attn).__mro__:
         if cls.__name__ in _FUSEABLE_GEMMA3_QKV_ATTENTION_CLASSES:
             return _make_fused_qkv_gemma3_attention_forward
+        if cls.__name__ in _FUSEABLE_QWEN3_QKV_ATTENTION_CLASSES:
+            return _make_fused_qkv_qwen3_attention_forward
         if cls.__name__ in _FUSEABLE_QKV_ATTENTION_CLASSES:
             return _make_fused_qkv_attention_forward
     return None

@@ -165,7 +165,7 @@ which fused Triton kernels are applied per model:
 | Mistral | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Ministral | 8B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | Qwen2 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
-| Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | SmolLM3 | 3B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo2 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo3 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
@@ -346,10 +346,11 @@ require bias-free projections. These kernels implement the low-rank adapter
 structure from [*LoRA: Low-Rank Adaptation of Large Language Models*](https://arxiv.org/abs/2106.09685).
 
 QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2, Qwen2 (generic wrapper), GLM4, and Gemma3 text attention (dedicated
-wrapper that keeps `q_norm`/`k_norm`, Gemma3 RoPE, sliding-window dispatch,
-and the Gemma3 cache contract intact). Excluded: Qwen3 (q_norm/k_norm),
-Phi-3 (combined qkv_proj), Cohere (no transpose).
+Cohere2, Qwen2 (generic wrapper), GLM4, and Gemma3 and Qwen3 text attention
+(dedicated wrappers that keep `q_norm`/`k_norm` normalization, RoPE, cache
+contract, and attention dispatch — including Gemma3's sliding-window
+argument — intact). Excluded: Phi-3 (combined qkv_proj), Cohere (no
+transpose).
 
 ### Using kernels directly
 
