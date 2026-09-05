@@ -92,6 +92,7 @@ def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
         model,
         input_ids=input_ids,
         labels=labels,
+        opaque_fused_loss_only=True,
         return_dict=False,
         label_smoothing=0.1,
         ignore_index=-100,
