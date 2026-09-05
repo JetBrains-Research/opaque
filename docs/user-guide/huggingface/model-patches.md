@@ -169,7 +169,7 @@ which fused Triton kernels are applied per model:
 | SmolLM3 | 3B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo2 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo3 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
-| GLM4 | 9B (tiny config) | SwiGLU (Phi-3 style) | Yes | — | Yes | Yes | MLP only |
+| GLM4 | 9B (tiny config) | SwiGLU (Phi-3 style) | Yes | — | Yes | Yes | QKV + MLP |
 | Phi-3 | 3.8B | SwiGLU | Yes | Yes | Yes | — | — |
 | Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | Yes | QKV + MLP |
 | Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes | Yes (softcap) | QKV + MLP |
@@ -346,7 +346,7 @@ require bias-free projections. These kernels implement the low-rank adapter
 structure from [*LoRA: Low-Rank Adaptation of Large Language Models*](https://arxiv.org/abs/2106.09685).
 
 QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2, Qwen2. Excluded: Qwen3 (q_norm/k_norm), Phi-3 (combined qkv_proj),
+Cohere2, Qwen2, GLM4. Excluded: Qwen3 (q_norm/k_norm), Phi-3 (combined qkv_proj),
 Cohere (no transpose).
 
 ### Using kernels directly
