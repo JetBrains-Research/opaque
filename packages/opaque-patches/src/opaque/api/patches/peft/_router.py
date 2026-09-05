@@ -13,9 +13,8 @@ from .components.mlp import (
     _make_fused_lora_mlp_forward,
 )
 from .components.qkv import (
-    _FUSEABLE_QKV_ATTENTION_CLASSES,
-    _make_fused_qkv_attention_forward,
     _opaque_fused_lora_qkv,
+    _resolve_fused_qkv_forward_factory,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,17 +71,11 @@ def _auto_fuse_lora(model):
             if getattr(attn, "_opaque_lora_qkv_patched", False):
                 continue
 
-            # Check attention class follows the supported QKV projection pattern.
-            attn_cls_name = type(attn).__name__
-            if attn_cls_name not in _FUSEABLE_QKV_ATTENTION_CLASSES:
-                # Try MRO for wrapped classes
-                for parent_cls in type(attn).__mro__:
-                    if parent_cls.__name__ in _FUSEABLE_QKV_ATTENTION_CLASSES:
-                        attn_cls_name = parent_cls.__name__
-                        break
+            # Check attention class follows a supported QKV projection pattern.
+            fused_forward_factory = _resolve_fused_qkv_forward_factory(attn)
 
             if (
-                attn_cls_name in _FUSEABLE_QKV_ATTENTION_CLASSES
+                fused_forward_factory is not None
                 and _has_lora(attn, "q_proj")
                 and _has_lora(attn, "k_proj")
                 and _has_lora(attn, "v_proj")
@@ -97,7 +90,7 @@ def _auto_fuse_lora(model):
                     _opaque_fused_lora_qkv,
                     attn,
                 )
-                fused_qkv_fwd = _make_fused_qkv_attention_forward(attn.forward)
+                fused_qkv_fwd = fused_forward_factory(attn.forward)
                 fused_qkv_fwd.__opaque_lora_qkv_patched__ = True
                 attn.forward = types.MethodType(fused_qkv_fwd, attn)
                 attn._opaque_lora_qkv_patched = True
