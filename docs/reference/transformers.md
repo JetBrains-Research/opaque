@@ -212,7 +212,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `per_device_train_batch_size` | `int` | `8` | Per-rank logical Poisson batch size. |
 | `per_device_eval_batch_size` | `int \| None` | `None` | Eval batch size (fixed, not Poisson).  When `None`, defaults to `per_device_train_batch_size` in `__post_init__`. |
-| `eval_accumulation_steps` | `int \| None` | `None` | Move accumulated eval tensors to CPU every N batches. |
+| `eval_accumulation_steps` | `int \| None` | `None` | Move eval tensors to CPU every N batches. `None` offloads every batch, minimizing device prediction memory; larger windows reduce transfer calls but retain up to N batches on device. Complete predictions remain in CPU memory for final metrics. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
 | `auto_find_microbatch_size` | `bool` | `False` | On train OOM, halve the microbatch and retry; on eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
 
