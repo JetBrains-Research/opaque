@@ -193,9 +193,15 @@ def _make_fused_qwen3_attention_forward(original_forward):
                 key_states, value_states, self.layer_idx, cache_kwargs
             )
 
-        attention_interface = model_module.ALL_ATTENTION_FUNCTIONS.get_interface(
-            self.config._attn_implementation, model_module.eager_attention_forward
-        )
+        attention_functions = model_module.ALL_ATTENTION_FUNCTIONS
+        if hasattr(attention_functions, "get_interface"):
+            attention_interface = attention_functions.get_interface(
+                self.config._attn_implementation, model_module.eager_attention_forward
+            )
+        elif self.config._attn_implementation == "eager":
+            attention_interface = model_module.eager_attention_forward
+        else:
+            attention_interface = attention_functions[self.config._attn_implementation]
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
