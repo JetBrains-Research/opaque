@@ -133,11 +133,8 @@ def vmap_eager_attention_forward_gemma2(
 
     # query shape: (..., num_heads, seq_len, head_dim)
     # key_states shape: (..., num_heads, seq_len, head_dim)
-    attn_weights = torch.matmul(query, key_states.transpose(-2, -1))
-
-    # Apply scaling if provided
-    if scaling is not None:
-        attn_weights = attn_weights * scaling
+    scaling = query.shape[-1] ** -0.5 if scaling is None else scaling
+    attn_weights = torch.matmul(query, key_states.transpose(-2, -1)) * scaling
 
     # Apply softcap (Gemma2-specific)
     if softcap is not None:
@@ -183,6 +180,7 @@ def _gemma2_softcap_probabilities(
     attention_mask: torch.Tensor | None,
     scaling: float,
     softcap: float,
+    is_causal: bool,
     query_start: int,
     query_end: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -191,18 +189,29 @@ def _gemma2_softcap_probabilities(
     capped_logits = torch.tanh(logits / softcap) * softcap
 
     softmax_input = capped_logits
+    probability_mask = None
     if attention_mask is not None:
         mask = _gemma2_mask_chunk(attention_mask, query_start, query_end, key.shape[-2])
         if mask.dtype == torch.bool:
+            probability_mask = mask
             softmax_input = capped_logits.masked_fill(
                 ~mask, torch.finfo(capped_logits.dtype).min
             )
         else:
             softmax_input = capped_logits + mask
+    elif is_causal:
+        query_positions = torch.arange(
+            query_start, query_end, device=query.device
+        ).unsqueeze(-1)
+        key_positions = torch.arange(key.shape[-2], device=query.device)
+        probability_mask = key_positions <= query_positions
+        softmax_input = capped_logits.masked_fill(~probability_mask, -torch.inf)
 
     probabilities = torch.nn.functional.softmax(
         softmax_input, dim=-1, dtype=torch.float32
     )
+    if probability_mask is not None:
+        probabilities = probabilities.masked_fill(~probability_mask, 0.0)
     return query_chunk, capped_logits, probabilities
 
 
@@ -212,7 +221,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
     generate_vmap_rule = True
 
     @staticmethod
-    def forward(query, key, value, attention_mask, scaling, softcap):
+    def forward(query, key, value, attention_mask, scaling, softcap, is_causal):
         output_chunks = []
         for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
             query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
@@ -222,6 +231,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
                 attention_mask,
                 scaling,
                 softcap,
+                is_causal,
                 query_start,
                 query_end,
             )
@@ -231,7 +241,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         del output
-        query, key, value, attention_mask, scaling, softcap = inputs
+        query, key, value, attention_mask, scaling, softcap, is_causal = inputs
         if attention_mask is None:
             ctx.save_for_backward(query, key, value)
         else:
@@ -239,6 +249,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
         ctx.has_attention_mask = attention_mask is not None
         ctx.scaling = float(scaling)
         ctx.softcap = float(softcap)
+        ctx.is_causal = is_causal
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -259,6 +270,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
                 attention_mask,
                 ctx.scaling,
                 ctx.softcap,
+                ctx.is_causal,
                 query_start,
                 query_end,
             )
@@ -298,6 +310,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -315,6 +328,16 @@ def vmap_sdpa_attention_forward_gemma2(
     """Use chunked attention for Gemma2 softcap, which SDPA cannot express."""
     if softcap is not None:
         if not module.training or dropout == 0.0:
+            scaling = query.shape[-1] ** -0.5 if scaling is None else scaling
+            is_causal = kwargs.get("is_causal")
+            if is_causal is None:
+                is_causal = getattr(module, "is_causal", True)
+            is_causal = query.shape[-2] > 1 and attention_mask is None and is_causal
+
+            if is_causal and key.shape[-2] > query.shape[-2]:
+                key = key[..., : query.shape[-2], :]
+                value = value[..., : query.shape[-2], :]
+
             key_states = vmap_repeat_kv(key, module.num_key_value_groups)
             value_states = vmap_repeat_kv(value, module.num_key_value_groups)
             attn_output = _ChunkedGemma2Attention.apply(
@@ -322,8 +345,9 @@ def vmap_sdpa_attention_forward_gemma2(
                 key_states,
                 value_states,
                 attention_mask,
-                1.0 if scaling is None else scaling,
+                scaling,
                 softcap,
+                is_causal,
             )
             return attn_output.transpose(-3, -2).contiguous(), None
 

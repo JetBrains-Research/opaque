@@ -25,6 +25,7 @@ from opaque.functional import make_functional
 
 class _Gemma2Attention(torch.nn.Module):
     num_key_value_groups = 1
+    is_causal = False
 
 
 def _gemma2_softcap_inputs():
@@ -34,10 +35,33 @@ def _gemma2_softcap_inputs():
     return query, key, value
 
 
-def _expected_gemma2_softcap_attention(query, key, value, softcap):
-    scores = query @ key.transpose(-2, -1)
+def _expected_gemma2_softcap_attention(
+    query,
+    key,
+    value,
+    softcap,
+    *,
+    scaling=1.0,
+    attention_mask=None,
+    is_causal=False,
+):
+    scores = scaling * (query @ key.transpose(-2, -1))
     scores = softcap * torch.tanh(scores / softcap)
+    probability_mask = None
+    if attention_mask is not None:
+        if attention_mask.dtype == torch.bool:
+            probability_mask = attention_mask
+            scores = scores.masked_fill(~attention_mask, torch.finfo(scores.dtype).min)
+        else:
+            scores = scores + attention_mask
+    elif is_causal:
+        probability_mask = torch.ones(
+            query.shape[-2], key.shape[-2], dtype=torch.bool, device=query.device
+        ).tril()
+        scores = scores.masked_fill(~probability_mask, -torch.inf)
     weights = torch.softmax(scores, dim=-1)
+    if probability_mask is not None:
+        weights = weights.masked_fill(~probability_mask, 0.0)
     return weights @ value, weights
 
 
@@ -86,11 +110,9 @@ def test_gemma2_softcap_attention_accepts_boolean_sdpa_mask():
         _Gemma2Attention(), query, key, value, mask, scaling=1.0, softcap=1.0
     )
 
-    scores = query @ key.transpose(-2, -1)
-    scores = torch.tanh(scores)
-    scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
-    expected_weights = torch.softmax(scores, dim=-1)
-    expected_output = expected_weights @ value
+    expected_output, _ = _expected_gemma2_softcap_attention(
+        query, key, value, 1.0, attention_mask=mask
+    )
     torch.testing.assert_close(output, expected_output.transpose(-3, -2))
     assert weights is None
     actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
@@ -133,21 +155,155 @@ def test_gemma2_softcap_attention_broadcasts_additive_mask_across_chunks(
         torch.testing.assert_close(actual_grad, expected_grad)
 
 
+def test_gemma2_softcap_sdpa_preserves_implicit_causality_and_default_scale(
+    monkeypatch,
+):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    module = _Gemma2Attention()
+    module.is_causal = True
+    query, key, value = (tensor.requires_grad_() for tensor in _gemma2_softcap_inputs())
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        module, query, key, value, None, scaling=None, softcap=1.0
+    )
+
+    ref_query, ref_key, ref_value = (
+        tensor.requires_grad_() for tensor in _gemma2_softcap_inputs()
+    )
+    expected_output, _ = _expected_gemma2_softcap_attention(
+        ref_query,
+        ref_key,
+        ref_value,
+        1.0,
+        scaling=query.shape[-1] ** -0.5,
+        is_causal=True,
+    )
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+    assert weights is None
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        expected_output.square().sum(), (ref_query, ref_key, ref_value)
+    )
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_sdpa_decode_attends_to_all_cached_keys():
+    module = _Gemma2Attention()
+    module.is_causal = True
+    full_query, key, value = _gemma2_softcap_inputs()
+    query = full_query[..., :1, :]
+
+    output, _ = vmap_sdpa_attention_forward_gemma2(
+        module, query, key, value, None, scaling=1.0, softcap=1.0
+    )
+    expected_output, _ = _expected_gemma2_softcap_attention(query, key, value, 1.0)
+
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+
+
+def test_gemma2_softcap_sdpa_crops_unused_causal_keys():
+    module = _Gemma2Attention()
+    module.is_causal = True
+    full_query, key, value = _gemma2_softcap_inputs()
+    query = full_query[..., :2, :]
+
+    output, _ = vmap_sdpa_attention_forward_gemma2(
+        module, query, key, value, None, scaling=1.0, softcap=1.0
+    )
+    expected_output, _ = _expected_gemma2_softcap_attention(
+        query, key[..., :2, :], value[..., :2, :], 1.0, is_causal=True
+    )
+
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+
+
+def test_gemma2_softcap_sdpa_preserves_grouped_query_attention(monkeypatch):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    torch.manual_seed(0)
+    query = torch.randn(1, 4, 4, 3, requires_grad=True)
+    key = torch.randn(1, 2, 4, 3, requires_grad=True)
+    value = torch.randn(1, 2, 4, 3, requires_grad=True)
+    attention_mask = torch.ones(1, 1, 4, 4, dtype=torch.bool).tril_()
+    module = _Gemma2Attention()
+    module.num_key_value_groups = 2
+
+    output, _ = vmap_sdpa_attention_forward_gemma2(
+        module,
+        query,
+        key,
+        value,
+        attention_mask,
+        scaling=0.5,
+        softcap=1.5,
+    )
+
+    ref_query = query.detach().requires_grad_()
+    ref_key = key.detach().requires_grad_()
+    ref_value = value.detach().requires_grad_()
+    expected_output, _ = _expected_gemma2_softcap_attention(
+        ref_query,
+        ref_key.repeat_interleave(2, dim=-3),
+        ref_value.repeat_interleave(2, dim=-3),
+        1.5,
+        scaling=0.5,
+        attention_mask=attention_mask,
+    )
+    torch.testing.assert_close(output, expected_output.transpose(-3, -2))
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        expected_output.square().sum(), (ref_query, ref_key, ref_value)
+    )
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_sdpa_keeps_nonzero_training_dropout_fallback(monkeypatch):
+    eager_calls = []
+    eager_attention = attention_components.vmap_eager_attention_forward_gemma2
+
+    def record_eager(*args, **kwargs):
+        eager_calls.append(kwargs["dropout"])
+        return eager_attention(*args, **kwargs)
+
+    monkeypatch.setattr(
+        attention_components, "vmap_eager_attention_forward_gemma2", record_eager
+    )
+    module = _Gemma2Attention()
+    query, key, value = _gemma2_softcap_inputs()
+
+    module.eval()
+    vmap_sdpa_attention_forward_gemma2(
+        module, query, key, value, None, dropout=0.25, softcap=1.0
+    )
+    assert eager_calls == []
+
+    module.train()
+    vmap_sdpa_attention_forward_gemma2(
+        module, query, key, value, None, dropout=0.25, softcap=1.0
+    )
+    assert eager_calls == [0.25]
+
+
 def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
     monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
     query, key, value = _gemma2_softcap_inputs()
     query = torch.cat((query, query * 0.5), dim=0)
     key = torch.cat((key, key * 1.5), dim=0)
     value = torch.cat((value, value * 0.75), dim=0)
+    module = _Gemma2Attention()
+    module.is_causal = True
 
     def loss(q, k, v):
         output, _ = vmap_sdpa_attention_forward_gemma2(
-            _Gemma2Attention(), q, k, v, None, scaling=1.0, softcap=1.0
+            module, q, k, v, None, scaling=1.0, softcap=1.0
         )
         return output.square().sum()
 
     def reference_loss(q, k, v):
-        output, _ = _expected_gemma2_softcap_attention(q, k, v, 1.0)
+        output, _ = _expected_gemma2_softcap_attention(q, k, v, 1.0, is_causal=True)
         return output.square().sum()
 
     actual = torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(query, key, value)
@@ -160,13 +316,16 @@ def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_gemma2_softcap_sdpa_does_not_materialize_full_attention(
+def test_gemma2_softcap_sdpa_bounds_forward_and_backward_attention_tiles(
     monkeypatch,
     dtype,
 ):
-    query = torch.randn(1, 2, 5, 3, dtype=dtype)
-    key = torch.randn(1, 2, 7, 3, dtype=dtype)
-    value = torch.randn(1, 2, 7, 3, dtype=dtype)
+    query_length = 1025
+    key_length = 1537
+    chunk_size = 64
+    query = torch.randn(1, 2, query_length, 8, dtype=dtype, requires_grad=True)
+    key = torch.randn(1, 2, key_length, 8, dtype=dtype, requires_grad=True)
+    value = torch.randn(1, 2, key_length, 8, dtype=dtype, requires_grad=True)
     matmul_shapes = []
     real_matmul = torch.matmul
 
@@ -175,16 +334,67 @@ def test_gemma2_softcap_sdpa_does_not_materialize_full_attention(
         matmul_shapes.append(result.shape)
         return result
 
-    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2, raising=False)
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", chunk_size)
     monkeypatch.setattr(torch, "matmul", record_matmul)
 
     output, weights = vmap_sdpa_attention_forward_gemma2(
         _Gemma2Attention(), query, key, value, None, scaling=1.0, softcap=1.0
     )
+    output.float().square().sum().backward()
 
-    assert output.shape == (1, 5, 2, 3)
+    assert output.shape == (1, query_length, 2, 8)
     assert weights is None
-    assert not any(shape[-2:] == (5, 7) for shape in matmul_shapes)
+    score_shapes = [shape for shape in matmul_shapes if shape[-1] == key_length]
+    assert score_shapes
+    assert max(shape[-2] for shape in score_shapes) <= chunk_size
+    assert not any(shape[-2:] == (query_length, key_length) for shape in matmul_shapes)
+
+
+def _cuda_peak_delta(fn):
+    import gc
+
+    result = fn()
+    torch.cuda.synchronize()
+    del result
+    gc.collect()
+    torch.cuda.empty_cache()
+    baseline = torch.cuda.memory_allocated()
+    torch.cuda.reset_peak_memory_stats()
+    result = fn()
+    torch.cuda.synchronize()
+    peak = torch.cuda.max_memory_allocated() - baseline
+    del result
+    return peak
+
+
+@pytest.mark.cuda
+@pytest.mark.parametrize("sequence_length", [1024, 4096])
+def test_gemma2_softcap_sdpa_reduces_cuda_peak_memory(sequence_length):
+    device = torch.device("cuda")
+    dtype = torch.float16
+    query = torch.randn(1, 2, sequence_length, 32, device=device, dtype=dtype)
+    key = torch.randn_like(query)
+    value = torch.randn_like(query)
+    module = _Gemma2Attention().eval()
+
+    def chunked():
+        return vmap_sdpa_attention_forward_gemma2(
+            module, query, key, value, None, scaling=None, softcap=50.0
+        )
+
+    def eager():
+        return vmap_eager_attention_forward_gemma2(
+            module, query, key, value, None, scaling=None, softcap=50.0
+        )
+
+    chunked_peak = _cuda_peak_delta(chunked)
+    eager_peak = _cuda_peak_delta(eager)
+
+    assert chunked_peak < eager_peak * 0.5, (
+        f"Expected chunked attention to use less than half the eager peak; "
+        f"chunked={chunked_peak / 2**20:.1f} MiB, "
+        f"eager={eager_peak / 2**20:.1f} MiB"
+    )
 
 
 class TestAttentionImplementations:
