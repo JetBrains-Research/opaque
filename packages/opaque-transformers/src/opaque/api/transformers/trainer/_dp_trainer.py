@@ -2548,20 +2548,16 @@ class DPTrainer:
             labs = None
 
         # ``'loss' in include_for_metrics`` opts into real per-example
-        # losses via the vmap'd eval closure — one forward pass returns
-        # ``(per_example_loss_1d, logits_batched)``.  Requires labels
-        # (loss-without-labels falls through to the standard path) and
-        # not ``prediction_loss_only`` (the vmap path produces logits
-        # anyway — there's no separate loss-only fast path).
+        # losses via the vmap'd eval closure. Requires labels
+        # (loss-without-labels falls through to the standard path). In
+        # loss-only mode the separate scalar closure avoids returning logits.
         use_per_example_loss = (
-            "loss" in (self.args.include_for_metrics or [])
-            and has_labels
-            and not prediction_loss_only
+            "loss" in (self.args.include_for_metrics or []) and has_labels
         )
 
         if use_per_example_loss:
-            vmapped_fn, _batch_argnums, batch_keys = (
-                self._get_eval_per_example_loss_fn()
+            vmapped_fn, _batch_argnums, batch_keys = self._get_eval_per_example_loss_fn(
+                return_logits=not prediction_loss_only
             )
             if self._ctx is not None:
                 trainable = self._ctx.trainable_params
@@ -2593,13 +2589,14 @@ class DPTrainer:
                 if was_training:
                     self._model.eval()
                 try:
-                    per_example_loss, logits_tensor = vmapped_fn(trainable, *batch_args)
+                    output = vmapped_fn(trainable, *batch_args)
                 finally:
                     if was_training:
                         self._model.train()
-            loss = per_example_loss.detach()
-            # (No ``prediction_loss_only`` early-return here: ``use_per_example_loss``
-            # already requires ``not prediction_loss_only``.)
+            if prediction_loss_only:
+                return output.detach(), None, None
+            loss, logits_tensor = output
+            loss = loss.detach()
             # The per-example path collects only the model's ``logits``
             # tensor (not the full ``ignore_keys``-filtered output tuple the
             # standard path builds).  Surface that once so multi-output

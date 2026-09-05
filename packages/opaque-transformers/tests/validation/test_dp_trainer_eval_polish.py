@@ -127,6 +127,33 @@ class _TupleEvalModel(torch.nn.Module):
         return loss, logits, aux
 
 
+def test_per_example_loss_only_eval_uses_scalar_closure(tmp_path):
+    dataset = [
+        {"features": torch.zeros(3), "labels": 0},
+        {"features": torch.ones(3), "labels": 1},
+    ]
+    trainer = DPTrainer(
+        model=_TinyEvalModel(),
+        args=_args(tmp_path, include_for_metrics=["loss"]),
+        train_dataset=dataset,
+        eval_dataset=dataset,
+    )
+    batch = {
+        "features": torch.stack([row["features"] for row in dataset]),
+        "labels": torch.tensor([row["labels"] for row in dataset]),
+    }
+
+    loss, predictions, labels = trainer.prediction_step(
+        trainer.model, batch, prediction_loss_only=True
+    )
+
+    assert loss.shape == (len(dataset),)
+    assert predictions is None
+    assert labels is None
+    assert trainer._eval_per_example_loss_only_fn is not None
+    assert trainer._eval_per_example_loss_fn is None
+
+
 class TestPredictionStepUnlabeledAndTupleOutputs:
     def test_auto_find_batch_size_retry_restores_model_state_and_rng(
         self,
