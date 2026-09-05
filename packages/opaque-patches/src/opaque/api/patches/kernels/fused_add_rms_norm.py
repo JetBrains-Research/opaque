@@ -348,17 +348,6 @@ def _fused_add_rms_norm_backward_triton(
     return dComb, dW
 
 
-def _torch_rstd(S2d: torch.Tensor, eps: float, cm: int) -> torch.Tensor:
-    if cm == -1:
-        ms0 = (S2d * S2d).mean(dim=-1)
-        return torch.rsqrt(
-            ms0 + torch.tensor(float(eps), device=S2d.device, dtype=S2d.dtype)
-        )
-    xf = S2d.float()
-    ms = (xf * xf).mean(dim=-1)
-    return torch.rsqrt(ms + float(eps))
-
-
 class _FusedAddRMSNormBackward(torch.autograd.Function):
     @staticmethod
     def forward(dY, dS_out, S, W, RSTD, meta_i, offset_tensor):
@@ -463,43 +452,42 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
 
 
 class Opaque_FusedAddRMSNorm(torch.autograd.Function):
-    """Residual add then RMSNorm (Llama / Gemma casting modes). Returns (Y, S)."""
+    """Residual add then RMSNorm (Llama / Gemma casting modes)."""
 
     @staticmethod
     def forward(X, R, W, eps, offset, casting_mode, in_place):
         cm = _casting_mode_int(casting_mode)
         orig_shape = X.shape
-        Y, S, _, _, _ = _fused_add_rms_norm_forward_triton(
+        Y, S, RSTD, _, _ = _fused_add_rms_norm_forward_triton(
             X, R, W, float(eps), float(offset), cm
         )
-        return Y.view(orig_shape), S.view(orig_shape)
+        return Y.view(orig_shape), S.view(orig_shape), RSTD
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        _X, _R, W, eps, offset, casting_mode, in_place = inputs
+        _X, _R, W, _eps, offset, casting_mode, in_place = inputs
         cm = _casting_mode_int(casting_mode)
-        _, S = output
-        S_saved = S.detach().clone().contiguous()
-        dim = S_saved.shape[-1]
-        S2d = S_saved.view(-1, dim)
+        _, S, RSTD = output
+        dim = S.shape[-1]
+        S2d = S.view(-1, dim)
 
-        RSTD = _torch_rstd(S2d, float(eps), cm)
+        ctx.mark_non_differentiable(RSTD)
         bs, nw = calculate_settings(dim)
-        ctx.original_shape = S_saved.shape
+        ctx.original_shape = S.shape
         # meta_i[4]: W trainability — under vmap(grad()) frozen weights arrive
         # detached, so this tells the vmap rule whether per-example dW is needed.
         ctx.meta_i = torch.tensor(
             [cm, bs, nw, int(in_place), int(W.requires_grad)],
-            device=S_saved.device,
+            device=S.device,
             dtype=torch.int64,
         )
         ctx.offset_tensor = torch.tensor(
-            float(offset), device=S_saved.device, dtype=torch.float32
+            float(offset), device=S.device, dtype=torch.float32
         )
         ctx.save_for_backward(S2d, W.contiguous(), RSTD)
 
     @staticmethod
-    def backward(ctx, grad_Y, grad_S):
+    def backward(ctx, grad_Y, grad_S, _grad_RSTD):
         S_s, W, RSTD = ctx.saved_tensors
         if grad_Y is None:
             grad_Y = torch.zeros(ctx.original_shape, device=W.device, dtype=S_s.dtype)
@@ -519,7 +507,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
             ctx.offset_tensor,
         )
         dComb = dComb.view(ctx.original_shape)
-        return dComb, dComb, dW, None, None, None, None, None
+        return dComb, dComb, dW, None, None, None, None
 
     @staticmethod
     def vmap(info, in_dims, X, R, W, eps, offset, casting_mode, in_place):
@@ -541,10 +529,10 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
         H = shape[-1]
         Xf = X.reshape(-1, H).contiguous()
         Rf = R.reshape(-1, H).contiguous()
-        Yf, Sf, _, _, _ = _fused_add_rms_norm_forward_triton(
+        Yf, Sf, RSTD, _, _ = _fused_add_rms_norm_forward_triton(
             Xf, Rf, W, float(eps), float(offset), cm
         )
-        return (Yf.view(shape), Sf.view(shape)), (0, 0)
+        return (Yf.view(shape), Sf.view(shape), RSTD.view(*shape[:-1])), (0, 0, 0)
 
 
 def opaque_fused_add_rms_norm(
@@ -561,7 +549,7 @@ def opaque_fused_add_rms_norm(
     if not x.is_cuda:
         raise OperationError(*("opaque_fused_add_rms_norm Triton path requires CUDA",))
     x, residual, weight = follow_autocast(x, residual, weight)
-    return Opaque_FusedAddRMSNorm.apply(
+    normalized, summed, _ = Opaque_FusedAddRMSNorm.apply(
         x,
         residual,
         weight,
@@ -570,3 +558,4 @@ def opaque_fused_add_rms_norm(
         casting_mode,
         in_place_backward,
     )
+    return normalized, summed

@@ -55,7 +55,7 @@ def _fused_add_rms_fac_llama(orig):
             **kwargs,
         )
         weight, eps = _post_attn_eps_and_weight(self)
-        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+        hidden_states, residual, _ = Opaque_FusedAddRMSNorm.apply(
             hidden_states,
             residual,
             weight,
@@ -107,7 +107,7 @@ def _fused_add_rms_fac_gemma(orig):
             **kwargs,
         )
         weight, eps = _post_attn_eps_and_weight(self)
-        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+        hidden_states, residual, _ = Opaque_FusedAddRMSNorm.apply(
             hidden_states,
             residual,
             weight,
@@ -160,7 +160,7 @@ def _fused_add_rms_fac_phi3(orig):
         )
         xa = self.resid_attn_dropout(hidden_states)
         weight, eps = _post_attn_eps_and_weight(self)
-        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+        hidden_states, residual, _ = Opaque_FusedAddRMSNorm.apply(
             xa,
             residual,
             weight,
@@ -213,7 +213,7 @@ def _fused_add_rms_fac_granite(orig):
         )
         xa = hidden_states * self.residual_multiplier
         weight, eps = _post_attn_eps_and_weight(self)
-        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+        hidden_states, residual, _ = Opaque_FusedAddRMSNorm.apply(
             xa,
             residual,
             weight,

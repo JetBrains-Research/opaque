@@ -35,8 +35,20 @@ def ref_llama_fused(
     return y, s_bf
 
 
+def ref_gemma_fused(
+    x: torch.Tensor, r: torch.Tensor, w: torch.Tensor, eps: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    xf = x.float()
+    rf = r.float()
+    s = xf + rf
+    inv = torch.rsqrt(s.pow(2).mean(-1, keepdim=True) + eps)
+    y = (s * inv * (1 + w.float())).to(x.dtype)
+    return y, s.to(x.dtype)
+
+
 def opaque_llama(x, r, w, eps=1e-5):
-    return Opaque_FusedAddRMSNorm.apply(x, r, w, eps, 0.0, "llama", False)
+    y, s, _ = Opaque_FusedAddRMSNorm.apply(x, r, w, eps, 0.0, "llama", False)
+    return y, s
 
 
 class TestFusedAddRMSNormForward:
@@ -80,6 +92,35 @@ class TestFusedAddRMSNormBackward:
         assert_precision(x1.grad, x0.grad, rtol=RTOL_B, atol=ATOL_B, label="dx")
         assert_precision(r1.grad, r0.grad, rtol=RTOL_B, atol=ATOL_B, label="dr")
         assert_precision(w1.grad, w0.grad, rtol=RTOL_B, atol=ATOL_B, label="dw")
+
+    @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
+    @pytest.mark.parametrize("in_place", [False, True])
+    def test_eager_backward_reuses_forward_rstd(self, casting_mode, in_place):
+        torch.manual_seed(11)
+        B, T, H = 2, 4, 64
+        eps = 1e-5
+        offset = 1.0 if casting_mode == "gemma" else 0.0
+        reference = ref_gemma_fused if casting_mode == "gemma" else ref_llama_fused
+
+        x0 = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16).requires_grad_()
+        r0 = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16).requires_grad_()
+        w0 = torch.randn(H, device="cuda", dtype=torch.bfloat16).requires_grad_()
+        y_ref, s_ref = reference(x0, r0, w0, eps)
+        (y_ref.mean() + s_ref.mean()).backward()
+
+        x1 = x0.detach().clone().requires_grad_(True)
+        r1 = r0.detach().clone().requires_grad_(True)
+        w1 = w0.detach().clone().requires_grad_(True)
+        y_op, s_op, rstd = Opaque_FusedAddRMSNorm.apply(
+            x1, r1, w1, eps, offset, casting_mode, in_place
+        )
+        assert rstd.shape == (B * T,)
+        assert not rstd.requires_grad
+        (y_op.mean() + s_op.mean()).backward()
+
+        torch.testing.assert_close(x1.grad, x0.grad, rtol=RTOL_B, atol=ATOL_B)
+        torch.testing.assert_close(r1.grad, r0.grad, rtol=RTOL_B, atol=ATOL_B)
+        torch.testing.assert_close(w1.grad, w0.grad, rtol=RTOL_B, atol=ATOL_B)
 
 
 class TestFusedAddRMSNormVmapForward:
@@ -144,7 +185,7 @@ class TestFusedAddRMSNormVmapGradPerExampleDW:
         w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
 
         def f(xi, ri, wt):
-            y, s_ = Opaque_FusedAddRMSNorm.apply(
+            y, s_, _ = Opaque_FusedAddRMSNorm.apply(
                 xi, ri, wt, eps, offset, casting_mode, in_place
             )
             return (y + s_).mean()
