@@ -48,6 +48,11 @@ MEMORY_TEST_VOCAB = 128256
 MEMORY_TEST_BATCH = 2
 MEMORY_TEST_SEQ_LEN = 129
 MEMORY_TEST_HIDDEN_DIM = 64
+VMAP_COPY_TEST_BATCH = 2
+VMAP_COPY_TEST_SEQ_LEN = 513
+VMAP_COPY_TEST_HIDDEN_DIM = 256
+VMAP_COPY_TEST_VOCAB = 256
+VMAP_COPY_TEST_VMAP_BATCH = 2
 
 
 # ============================================================================
@@ -664,6 +669,67 @@ class TestLinearCEMemory:
         assert stats["peak_bytes"] < materialized_logits_bytes, stats
         assert stats["allocated_bytes"] < materialized_logits_bytes, stats
         assert grad_hidden.shape == hidden.shape
+
+    def test_vmap_grad_avoids_shifted_hidden_copy(self):
+        """vmap(grad) does not materialize the activation-sized causal shift."""
+        torch.manual_seed(47)
+        hidden = torch.randn(
+            VMAP_COPY_TEST_VMAP_BATCH,
+            VMAP_COPY_TEST_BATCH,
+            VMAP_COPY_TEST_SEQ_LEN,
+            VMAP_COPY_TEST_HIDDEN_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        weight = torch.randn(
+            VMAP_COPY_TEST_VOCAB,
+            VMAP_COPY_TEST_HIDDEN_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
+        labels = torch.randint(
+            0,
+            VMAP_COPY_TEST_VOCAB,
+            (
+                VMAP_COPY_TEST_VMAP_BATCH,
+                VMAP_COPY_TEST_BATCH,
+                VMAP_COPY_TEST_SEQ_LEN,
+            ),
+            device="cuda",
+        )
+
+        def loss_fn(h, t):
+            return opaque_linear_ce(h, weight, t)
+
+        vmap_grad = vmap(grad(loss_fn, argnums=0), in_dims=(0, 0))
+        vmap_grad(hidden, labels)
+        torch.cuda.synchronize()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            profile_memory=True,
+        ) as profiler:
+            grad_hidden = vmap_grad(hidden, labels)
+            torch.cuda.synchronize()
+
+        shifted_hidden_bytes = (
+            VMAP_COPY_TEST_VMAP_BATCH
+            * VMAP_COPY_TEST_BATCH
+            * (VMAP_COPY_TEST_SEQ_LEN - 1)
+            * VMAP_COPY_TEST_HIDDEN_DIM
+            * hidden.element_size()
+        )
+        contiguous_bytes = sum(
+            event.cuda_memory_usage
+            for event in profiler.key_averages()
+            if event.key == "aten::contiguous"
+        )
+
+        assert grad_hidden.shape == hidden.shape
+        assert contiguous_bytes < shifted_hidden_bytes, contiguous_bytes
 
 
 # ============================================================================
