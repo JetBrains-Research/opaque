@@ -29,6 +29,7 @@ from transformers import (
 )
 
 from opaque.alignment.dpo.loss import sequence_logp
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trl import (
     DPOConfig,
     DPOTrainer,
@@ -92,6 +93,53 @@ def _args(cls, tmp_path, **kw):
 
 def _sft_dataset() -> Dataset:
     return Dataset.from_list([{"input_ids": [1, 2, 3, 4, 5, 6]} for _ in range(8)])
+
+
+def _chat_dataset() -> Dataset:
+    messages = [
+        {"role": "user", "content": "Question"},
+        {"role": "assistant", "content": "Answer"},
+    ]
+    return Dataset.from_list([{"messages": messages} for _ in range(4)])
+
+
+class _ChatTokenizer:
+    pad_token_id = 0
+    pad_token = "<pad>"
+    eos_token = "</s>"
+    special_tokens_map: ClassVar[dict[str, str]] = {}
+    chat_template = (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'user' %}"
+        "user {{ message['content'] }} "
+        "{% elif message['role'] == 'assistant' %}"
+        "assistant {{ message['content'] }} "
+        "{% endif %}"
+        "{% endfor %}"
+    )
+
+    def save_pretrained(self, *args, **kwargs):
+        return None
+
+    def get_chat_template(self, chat_template=None, tools=None):
+        return self.chat_template
+
+    def apply_chat_template(
+        self,
+        conversation,
+        *,
+        tokenize,
+        return_dict,
+        return_assistant_tokens_mask=False,
+        **kwargs,
+    ):
+        assert tokenize is True
+        assert return_dict is True
+        input_ids = [11, 12, 21, 22]
+        result = {"input_ids": input_ids, "attention_mask": [1] * len(input_ids)}
+        if return_assistant_tokens_mask:
+            result["assistant_masks"] = [0, 0, 1, 1]
+        return result
 
 
 def _pref_dataset() -> Dataset:
@@ -230,6 +278,108 @@ def test_unknown_loss_type_fails_at_dispatch(tmp_path):
 # ----------------------------------------------------------------------
 # SFT training
 # ----------------------------------------------------------------------
+def test_sft_chat_defaults_to_full_sequence_loss(tmp_path):
+    tokenizer = _ChatTokenizer()
+    original_chat_template = tokenizer.chat_template
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(SFTConfig, tmp_path, max_length=8, loss_type="nll"),
+        train_dataset=_chat_dataset(),
+        processing_class=tokenizer,
+    )
+
+    assert tokenizer.chat_template == original_chat_template
+    assert "completion_mask" not in trainer.train_dataset.column_names
+    batch = trainer.data_collator([trainer.train_dataset[0]])
+    assert torch.equal(batch["labels"], batch["input_ids"])
+
+
+def test_sft_assistant_only_loss_masks_chat_prompt(tmp_path):
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            assistant_only_loss=True,
+        ),
+        train_dataset=_chat_dataset(),
+        processing_class=_ChatTokenizer(),
+    )
+
+    batch = trainer.data_collator([trainer.train_dataset[0]])
+    assert batch["labels"].tolist() == [[-100, -100, 21, 22]]
+
+
+def test_sft_assistant_only_loss_requires_chat_dataset(tmp_path):
+    with pytest.raises(ConfigurationError, match="requires a conversational dataset"):
+        SFTTrainer(
+            model=_tiny_model(),
+            args=_args(
+                SFTConfig,
+                tmp_path,
+                max_length=8,
+                loss_type="nll",
+                assistant_only_loss=True,
+            ),
+            train_dataset=_sft_dataset(),
+            processing_class=_stub_tokenizer(),
+        )
+
+
+def test_sft_completion_only_loss_requires_prompt_completion_dataset(tmp_path):
+    with pytest.raises(
+        ConfigurationError, match="requires a prompt-completion dataset"
+    ):
+        SFTTrainer(
+            model=_tiny_model(),
+            args=_args(
+                SFTConfig,
+                tmp_path,
+                max_length=8,
+                loss_type="nll",
+                completion_only_loss=True,
+            ),
+            train_dataset=_chat_dataset(),
+            processing_class=_ChatTokenizer(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("completion_only_loss", "expected_labels"),
+    [(None, [1, 2, 3, 4]), (True, [-100, -100, 3, 4])],
+)
+def test_sft_pretokenized_completion_mask_requires_explicit_option(
+    tmp_path, completion_only_loss, expected_labels
+):
+    dataset = Dataset.from_list(
+        [
+            {
+                "input_ids": [1, 2, 3, 4],
+                "completion_mask": [0, 0, 1, 1],
+            }
+            for _ in range(4)
+        ]
+    )
+    trainer = SFTTrainer(
+        model=_tiny_model(),
+        args=_args(
+            SFTConfig,
+            tmp_path,
+            max_length=8,
+            loss_type="nll",
+            completion_only_loss=completion_only_loss,
+        ),
+        train_dataset=dataset,
+        processing_class=_stub_tokenizer(),
+    )
+
+    batch = trainer.data_collator([trainer.train_dataset[0]])
+    assert batch["labels"].tolist() == [expected_labels]
+
+
+@pytest.mark.slow
 def test_sft_chunked_nll_trains(tmp_path):
     # chunked_nll lets the model compute its own (fused, logits-free) loss.
     torch.manual_seed(0)

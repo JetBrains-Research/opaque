@@ -118,11 +118,13 @@ Set `completion_only_loss=True` to score only the completion tokens of
 prompt-completion data, or `assistant_only_loss=True` to score only assistant
 turns of chat data (the trainer installs the `{% generation %}`-marked training
 chat template and recovers the assistant-token mask). Left as the default
-`None`, `completion_only_loss` auto-detects: `True` for prompt-completion or
-chat data, `False` for plain text. Use `chat_template_path` to clone a chat
-template (and its special tokens) from another tokenizer/Jinja file onto the
-processing class before tokenizing — this resizes the model's embeddings, and
-under PEFT the new token rows are marked trainable.
+`None`, `completion_only_loss` auto-detects: `True` for prompt-completion data
+and `False` for language-modeling data, including chat. Ordinary chat therefore
+scores the full rendered conversation; enable `assistant_only_loss` to mask its
+non-assistant tokens. Use `chat_template_path` to clone a chat template (and its
+special tokens) from another tokenizer/Jinja file onto the processing class
+before tokenizing — this resizes the model's embeddings, and under PEFT the new
+token rows are marked trainable.
 
 ### Telemetry and memory
 

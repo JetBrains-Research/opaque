@@ -463,7 +463,7 @@ SFT-specific fields on top of `TrainingArguments`.
 | `model_init_kwargs` | `dict \| None` | `None` | Forwarded to `from_pretrained` when `model` is a string; ignored for a module. |
 | `dataset_text_field` | `str` | `"text"` | Column holding raw text on a language-modeling dataset. |
 | `max_length` | `int \| None` | `1024` | Tokenized sequence length cap; `None` disables truncation (keep-start). |
-| `completion_only_loss` | `bool \| None` | `None` | Score only completion tokens.  `None` auto-detects from the dataset format. |
+| `completion_only_loss` | `bool \| None` | `None` | Score only completion tokens. `None` enables this for prompt-completion data, but not language-modeling or chat data. |
 | `assistant_only_loss` | `bool` | `False` | Score only assistant turns of chat data (installs the `{% generation %}` template + mask). |
 | `eos_token` | `str \| None` | `None` | EOS appended to plain-text examples; overrides `tokenizer.eos_token` when set, else the tokenizer's own EOS is used. |
 | `pad_to_multiple_of` | `int \| None` | `None` | Round the padded batch length up to a multiple. |

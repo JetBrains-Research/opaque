@@ -246,7 +246,7 @@ class SFTTrainer(DPTrainer):
         # ---- dataset preprocessing (before super().__init__) --------------
         self._formatting_func = formatting_func
         completion_only = self._resolve_completion_only(train_dataset, args)
-        self._completion_only_loss = completion_only
+        mask_labels = completion_only or args.assistant_only_loss
 
         train_dataset = self._prepare_dataset(
             train_dataset, processing_class, args, "train"
@@ -261,7 +261,7 @@ class SFTTrainer(DPTrainer):
             data_collator = language_modeling_collator(
                 pad_token_id=processing_class.pad_token_id,
                 max_length=args.max_length,
-                completion_only_loss=completion_only,
+                completion_only_loss=mask_labels,
                 pad_to_multiple_of=args.pad_to_multiple_of,
             )
 
@@ -348,21 +348,34 @@ class SFTTrainer(DPTrainer):
     def _resolve_completion_only(self, dataset: Any, args: SFTConfig) -> bool:
         """Auto-detect completion-only loss when ``args`` leaves it ``None``.
 
-        ``True`` for prompt-completion or chat datasets (an assistant/completion
-        mask exists), else ``False``.
+        ``True`` for prompt-completion datasets and ``False`` for language-
+        modeling datasets, including conversational data, matching TRL.
         """
-        if args.assistant_only_loss:
-            return True
+        if dataset is None or len(dataset) == 0:
+            return bool(args.completion_only_loss)
+        row = dataset[0]
+        is_chat = _detect_chat_column(row) is not None
+        is_prompt_completion = "prompt" in row and "completion" in row
+        has_completion_mask = "completion_mask" in row
+        if args.assistant_only_loss and not is_chat:
+            ConfigurationError.raise_(
+                "assistant_only_loss=True requires a conversational dataset "
+                "with a messages, conversations, or chat column."
+            )
+        if (
+            args.completion_only_loss
+            and not args.assistant_only_loss
+            and not is_prompt_completion
+            and not has_completion_mask
+        ):
+            ConfigurationError.raise_(
+                "completion_only_loss=True requires a prompt-completion dataset "
+                "or examples with a completion_mask. Use assistant_only_loss=True "
+                "for conversational datasets."
+            )
         if args.completion_only_loss is not None:
             return bool(args.completion_only_loss)
-        if dataset is None or len(dataset) == 0:
-            return False
-        row = dataset[0]
-        if "completion_mask" in row:
-            return True
-        if "prompt" in row and "completion" in row:
-            return True
-        return _detect_chat_column(row) is not None
+        return is_prompt_completion
 
     # ------------------------------------------------------------------
     # Dataset preparation (TRL-shaped)
@@ -395,9 +408,9 @@ class SFTTrainer(DPTrainer):
         row = dataset[0]
         chat_col = _detect_chat_column(row)
 
-        # Chat data with a completion/assistant mask needs the generation-marker
-        # template installed so ``apply_chat_template_with_mask`` can recover it.
-        if chat_col is not None and self._completion_only_loss:
+        # Assistant-only chat data needs generation markers so
+        # ``apply_chat_template_with_mask`` can recover its token mask.
+        if chat_col is not None and args.assistant_only_loss:
             processing_class.chat_template = get_training_chat_template(
                 processing_class
             )
@@ -424,17 +437,31 @@ class SFTTrainer(DPTrainer):
         max_length = args.max_length
 
         if chat_col is not None:
-            encoded = apply_chat_template_with_mask(
-                processing_class,
-                example[chat_col],
-                max_length=max_length,
-                truncation=max_length is not None,
-            )
+            if args.assistant_only_loss:
+                encoded = apply_chat_template_with_mask(
+                    processing_class,
+                    example[chat_col],
+                    max_length=max_length,
+                    truncation=max_length is not None,
+                )
+            else:
+                encoded = processing_class.apply_chat_template(
+                    example[chat_col],
+                    tokenize=True,
+                    return_dict=True,
+                    max_length=max_length,
+                    truncation=max_length is not None,
+                )
             ids = encoded["input_ids"]
-            cmask = encoded["completion_mask"]
             if max_length is not None:
-                ids, cmask = ids[:max_length], cmask[:max_length]
-            return {"input_ids": ids, "completion_mask": cmask}
+                ids = ids[:max_length]
+            result = {"input_ids": ids}
+            if args.assistant_only_loss:
+                cmask = encoded["completion_mask"]
+                result["completion_mask"] = (
+                    cmask[:max_length] if max_length is not None else cmask
+                )
+            return result
 
         if "prompt" in example and "completion" in example:
             prompt_ids = processing_class(example["prompt"], add_special_tokens=True)[
