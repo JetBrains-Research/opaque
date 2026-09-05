@@ -161,6 +161,30 @@ class TestStrategyCoercion:
 
 
 class TestDataLoaderArguments:
+    def test_implicit_eval_batch_uses_explicit_microbatch(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            per_device_train_batch_size=8,
+            microbatch_size=2,
+        )
+        assert args.per_device_eval_batch_size == 2
+
+    def test_implicit_eval_batch_falls_back_to_logical_train_batch(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            per_device_train_batch_size=8,
+        )
+        assert args.per_device_eval_batch_size == 8
+
+    def test_explicit_eval_batch_overrides_microbatch_default(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            per_device_train_batch_size=8,
+            microbatch_size=2,
+            per_device_eval_batch_size=6,
+        )
+        assert args.per_device_eval_batch_size == 6
+
     def test_multiprocessing_context_accepts_platform_method(self):
         context = multiprocessing.get_all_start_methods()[0]
         args = TrainingArguments(

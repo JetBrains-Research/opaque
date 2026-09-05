@@ -255,10 +255,11 @@ class TrainingArguments:
     # Batch sizes
     # =================================================================
     per_device_train_batch_size: int = 8
-    # ``None`` defaults to ``per_device_train_batch_size`` in
-    # ``__post_init__`` so callers don't OOM when they bump the train batch
-    # for a big model and forget to also bump the eval batch (HF's stock
-    # default of 8 is silently retained otherwise).
+    # ``None`` defaults to ``microbatch_size`` when set, otherwise
+    # ``per_device_train_batch_size``, in ``__post_init__``.  Training splits
+    # the logical batch into physical vmap chunks, but eval performs a single
+    # batched forward, so using the configured chunk avoids bypassing its
+    # memory bound.
     per_device_eval_batch_size: int | None = None
     eval_accumulation_steps: int | None = None
     eval_delay: float = 0.0
@@ -816,11 +817,16 @@ class TrainingArguments:
                 )
             )
 
-        # Default eval batch to the per-device train batch when caller
-        # leaves it unset, so bumping the train batch for a big model
-        # doesn't silently leave eval at HF's stock 8.
+        # Eval runs one batched forward rather than training's vmap chunks.
+        # Therefore, when it is unset, inherit the configured physical
+        # microbatch bound; otherwise retain the logical train-batch fallback.
+        # An explicit eval batch always takes precedence.
         if self.per_device_eval_batch_size is None:
-            self.per_device_eval_batch_size = self.per_device_train_batch_size
+            self.per_device_eval_batch_size = (
+                self.microbatch_size
+                if self.microbatch_size is not None
+                else self.per_device_train_batch_size
+            )
 
         # microbatch_size must fit in [1, per_device_train_batch_size]
         # so the per-rank logical batch divides cleanly into
