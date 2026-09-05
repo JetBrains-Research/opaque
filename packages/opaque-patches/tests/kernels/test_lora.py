@@ -15,7 +15,9 @@ Covers three LoRA variants:
 Config: Mellum-4b scale (hidden=3072, intermediate=8256, rank=64)
 """
 
+import gc
 import math
+import weakref
 
 import pytest
 import torch
@@ -24,6 +26,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
+from opaque.api.patches.kernels import lora as lora_kernels
 from opaque.api.patches.kernels.lora import (
     ACTIVATION_SWIGLU,
     Opaque_LoRA_MLP,
@@ -31,6 +34,7 @@ from opaque.api.patches.kernels.lora import (
     Opaque_LoRA_W,
     _LoRAMLPBackward,
     _LoRAMLPBackwardLite,
+    _LoRAMLPInputBackward,
     _LoRAQKVBackward,
     _LoRAQKVBackwardLite,
     _LoRAWBackward,
@@ -138,7 +142,7 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
     ("vmap_rule", "in_dims"),
     [
         (Opaque_LoRA_W.vmap, (0, 0, None, None, None)),
-        (_LoRAWBackward.vmap, (0, 0, None, 0, None, None)),
+        (_LoRAWBackward.vmap, (0, 0, 0, None, None)),
         (_LoRAWBackwardLite.vmap, (0, None, None, 0, None)),
         (
             Opaque_LoRA_QKV.vmap,
@@ -146,25 +150,7 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
         ),
         (
             _LoRAQKVBackward.vmap,
-            (
-                0,
-                0,
-                0,
-                0,
-                None,
-                None,
-                None,
-                None,
-                0,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ),
+            (0, 0, 0, 0, 0, None, None, None, None, None, None, None, None),
         ),
         (
             _LoRAQKVBackwardLite.vmap,
@@ -208,25 +194,11 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
         ),
         (
             _LoRAMLPBackward.vmap,
-            (
-                0,
-                0,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                0,
-                0,
-                None,
-            ),
+            (0, 0, 0, None, None, None, None, None, None, None, None, None, 0, 0, None),
+        ),
+        (
+            _LoRAMLPInputBackward.vmap,
+            (0, 0, 0, None, None, None, None, None, None, None),
         ),
         (
             _LoRAMLPBackwardLite.vmap,
@@ -394,12 +366,14 @@ class TestLoRAWBackward:
         out_pt.mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
+        X_before = X_op.detach().clone()
         A_op = A_pt.detach().clone().requires_grad_(True)
         B_op = B_pt.detach().clone().requires_grad_(True)
 
         out_op = opaque_lora_linear(X_op, W, A_op, B_op, SCALING)
         out_op.mean().backward()
 
+        torch.testing.assert_close(X_op, X_before, rtol=0, atol=0)
         print("\nLoRA-W Backward:")
         assert_precision(
             X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad"
@@ -410,6 +384,37 @@ class TestLoRAWBackward:
         assert_precision(
             B_op.grad, B_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="B.grad"
         )
+
+    @pytest.mark.parametrize("missing", ["A", "B"])
+    def test_incomplete_adapter_matches_base_projection(self, missing):
+        """A one-sided adapter is inactive in eager and vmapped backward."""
+        torch.manual_seed(42)
+        kw = {"device": "cuda", "dtype": torch.float32}
+        X = torch.randn(2, 3, 8, **kw, requires_grad=True)
+        X_before = X.detach().clone()
+        W = _kaiming_weight(5, 8, **kw)
+        A = None if missing == "A" else _lora_weight(8, 2, **kw).requires_grad_(True)
+        B = None if missing == "B" else _lora_weight(2, 5, **kw).requires_grad_(True)
+        present = B if A is None else A
+
+        grad_out = torch.randn(2, 3, 5, **kw)
+        out = opaque_lora_linear(X, W, A, B, SCALING)
+        (dX, adapter_grad) = torch.autograd.grad(
+            out, (X, present), grad_out, allow_unused=True
+        )
+        X_ref = X.detach().clone().requires_grad_(True)
+        (dX_ref,) = torch.autograd.grad(F.linear(X_ref, W), X_ref, grad_out)
+
+        torch.testing.assert_close(dX, dX_ref)
+        torch.testing.assert_close(X, X_before, rtol=0, atol=0)
+        assert adapter_grad is None
+
+        X_vmap = torch.randn(3, 2, 8, **kw)
+        got = vmap(grad(lambda x: opaque_lora_linear(x, W, A, B, SCALING).sum()))(
+            X_vmap
+        )
+        expected = vmap(grad(lambda x: F.linear(x, W).sum()))(X_vmap)
+        torch.testing.assert_close(got, expected)
 
 
 class TestLoRAWVmapForward:
@@ -647,6 +652,7 @@ class TestLoRAQKVBackward:
         (Q_pt + K_pt + V_pt).mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
+        X_before = X_op.detach().clone()
         Aq_op = Aq_pt.detach().clone().requires_grad_(True)
         Bq_op = Bq_pt.detach().clone().requires_grad_(True)
         Ak_op = Ak_pt.detach().clone().requires_grad_(True)
@@ -671,6 +677,7 @@ class TestLoRAQKVBackward:
         )
         (Q_op + K_op + V_op).mean().backward()
 
+        torch.testing.assert_close(X_op, X_before, rtol=0, atol=0)
         print("\nLoRA-QKV Backward:")
         assert_precision(
             X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad"
@@ -999,6 +1006,7 @@ class TestLoRAMLPBackward:
         out_pt.mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
+        X_before = X_op.detach().clone()
         Ag_op = Ag_pt.detach().clone().requires_grad_(True)
         Bg_op = Bg_pt.detach().clone().requires_grad_(True)
         Au_op = Au_pt.detach().clone().requires_grad_(True)
@@ -1023,6 +1031,7 @@ class TestLoRAMLPBackward:
         )
         out_op.mean().backward()
 
+        torch.testing.assert_close(X_op, X_before, rtol=0, atol=0)
         print("\nLoRA-MLP Backward:")
         assert_precision(
             X_op.grad,
@@ -1430,6 +1439,158 @@ class TestLoRAMLPPerformance:
 
         assert_perf_benefit(
             pt_stats, op_stats, label="LoRA-MLP backward", max_perf_overhead=0.20
+        )
+
+
+class _EphemeralActivation(torch.autograd.Function):
+    @staticmethod
+    def forward(seed, value):
+        return value.clone()
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        return grad_out.sum(), None
+
+
+def _staged_backward_loss(kind, *, trainable=True, tokens=8, hidden=32, rank=4):
+    kw = {"device": "cuda", "dtype": torch.bfloat16}
+    seed = torch.zeros((), **kw, requires_grad=True)
+    X = _EphemeralActivation.apply(seed, torch.randn(tokens, hidden, **kw))
+    X_ref = weakref.ref(X)
+
+    def adapter(dim, out):
+        A = _lora_weight(dim, rank, **kw).requires_grad_(trainable)
+        B = _lora_weight(rank, out, **kw).requires_grad_(trainable)
+        return A, B
+
+    if kind == "w":
+        W = _kaiming_weight(hidden, hidden, **kw)
+        A, B = adapter(hidden, hidden)
+        loss = opaque_lora_linear(X, W, A, B, SCALING).sum()
+    elif kind == "qkv":
+        projections = []
+        for _ in range(3):
+            W = _kaiming_weight(hidden, hidden, **kw)
+            A, B = adapter(hidden, hidden)
+            projections.extend((W, A, B, SCALING))
+        loss = sum(Opaque_LoRA_QKV.apply(X, *projections)).sum()
+    else:
+        intermediate = hidden * 2
+        Wg = _kaiming_weight(intermediate, hidden, **kw)
+        Ag, Bg = adapter(hidden, intermediate)
+        Wu = _kaiming_weight(intermediate, hidden, **kw)
+        Au, Bu = adapter(hidden, intermediate)
+        Wd = _kaiming_weight(hidden, intermediate, **kw)
+        Ad, Bd = adapter(intermediate, hidden)
+        loss = Opaque_LoRA_MLP.apply(
+            X,
+            Wg,
+            Ag,
+            Bg,
+            SCALING,
+            Wu,
+            Au,
+            Bu,
+            SCALING,
+            Wd,
+            Ad,
+            Bd,
+            SCALING,
+            ACTIVATION_SWIGLU,
+        )[0].sum()
+
+    del X
+    return loss, X_ref
+
+
+@pytest.mark.cuda
+class TestLoRABackwardLiveness:
+    @pytest.mark.parametrize(
+        ("kind", "input_stage"),
+        [
+            ("w", "_lora_w_backward_lite"),
+            ("qkv", "_lora_qkv_backward_lite"),
+            ("mlp", "_lora_mlp_input_backward_impl"),
+        ],
+    )
+    def test_saved_input_released_before_input_gradient(
+        self, monkeypatch, kind, input_stage
+    ):
+        """Ordinary backward drops its saved activation before allocating dX."""
+        loss, X_ref = _staged_backward_loss(kind)
+        assert X_ref() is not None
+        original = getattr(lora_kernels, input_stage)
+        input_stage_called = False
+
+        def assert_released(*args):
+            nonlocal input_stage_called
+            input_stage_called = True
+            assert X_ref() is None
+            return original(*args)
+
+        monkeypatch.setattr(lora_kernels, input_stage, assert_released)
+        loss.backward()
+        assert input_stage_called
+
+    def test_retain_graph_keeps_saved_input(self, monkeypatch):
+        """Early release defers to autograd when a caller retains the graph."""
+        loss, X_ref = _staged_backward_loss("w")
+        original = lora_kernels._lora_w_backward_lite
+        observed_saved_input = False
+
+        def assert_retained(*args):
+            nonlocal observed_saved_input
+            observed_saved_input = X_ref() is not None
+            return original(*args)
+
+        monkeypatch.setattr(lora_kernels, "_lora_w_backward_lite", assert_retained)
+        loss.backward(retain_graph=True)
+        assert observed_saved_input
+        assert X_ref() is not None
+
+
+@pytest.mark.cuda
+class TestLoRABackwardMemory:
+    @pytest.mark.parametrize("kind", ["w", "qkv", "mlp"])
+    def test_trainable_adapter_peak_tracks_frozen_adapter_peak(self, kind):
+        """Staging avoids an activation-sized trainable-adapter memory penalty."""
+        tokens, hidden = 8192, 1024
+
+        def peak(trainable):
+            warmup, _ = _staged_backward_loss(
+                kind, trainable=trainable, tokens=tokens, hidden=hidden
+            )
+            warmup.backward()
+            torch.cuda.synchronize()
+            del warmup
+            gc.collect()
+            torch.cuda.empty_cache()
+
+            loss, _ = _staged_backward_loss(
+                kind, trainable=trainable, tokens=tokens, hidden=hidden
+            )
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            loss.backward()
+            torch.cuda.synchronize()
+            result = torch.cuda.max_memory_allocated()
+            del loss
+            gc.collect()
+            torch.cuda.empty_cache()
+            return result
+
+        trainable_peak = peak(True)
+        frozen_peak = peak(False)
+        input_bytes = tokens * hidden * torch.bfloat16.itemsize
+        tolerance = max(input_bytes // 2, 8 * 1024**2)
+        assert trainable_peak <= frozen_peak + tolerance, (
+            f"{kind} trainable adapters retained an activation-sized buffer: "
+            f"trainable={trainable_peak / 1024**2:.1f} MiB, "
+            f"frozen={frozen_peak / 1024**2:.1f} MiB"
         )
 
 
