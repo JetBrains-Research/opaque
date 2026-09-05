@@ -121,7 +121,11 @@ def _validate_record(
 
     record_path = record_paths[0]
     try:
-        rows = list(csv.reader(io.TextIOWrapper(wheel.open(record_path), newline="")))
+        rows = list(
+            csv.reader(
+                io.TextIOWrapper(wheel.open(record_path), encoding="utf-8", newline="")
+            )
+        )
     except (OSError, UnicodeDecodeError, csv.Error) as error:
         return [f"wheel {wheel_path.name} has an unreadable RECORD: {error}"]
 
