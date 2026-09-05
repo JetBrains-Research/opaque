@@ -68,10 +68,16 @@ def opaque_rope(Q, cos, sin):
     return Opaque_RoPE.apply(Q, cos, sin)
 
 
-def pytorch_rope_qk(Q, K, cos, sin):
+def pytorch_rope_qk(Q, K, cos, sin, rope_indices=None):
     """PyTorch reference for fused Q/K RoPE inputs in attention layout."""
-    cos_full = torch.cat((cos, cos), dim=-1)[None, None]
-    sin_full = torch.cat((sin, sin), dim=-1)[None, None]
+    cos_full = torch.cat((cos, cos), dim=-1)
+    sin_full = torch.cat((sin, sin), dim=-1)
+    if rope_indices is None:
+        cos_full = cos_full[None, None]
+        sin_full = sin_full[None, None]
+    else:
+        cos_full = cos_full[rope_indices].unsqueeze(-3)
+        sin_full = sin_full[rope_indices].unsqueeze(-3)
     return (
         Q * cos_full + rotate_half(Q) * sin_full,
         K * cos_full + rotate_half(K) * sin_full,
@@ -195,6 +201,42 @@ class TestRoPEQK:
 
         def loss_reference(q, k):
             q_rot, k_rot = pytorch_rope_qk(q, k, cos, sin)
+            return q_rot.square().mean() + k_rot.square().mean()
+
+        grads_vmap = vmap(grad(loss_opaque, argnums=(0, 1)))(Q, K)
+        grads_reference = vmap(grad(loss_reference, argnums=(0, 1)))(Q, K)
+        torch.testing.assert_close(
+            grads_vmap[0], grads_reference[0], rtol=1e-6, atol=1e-6
+        )
+        torch.testing.assert_close(
+            grads_vmap[1], grads_reference[1], rtol=1e-6, atol=1e-6
+        )
+
+    def test_vmap_shared_rope_indices_match_pytorch(self):
+        torch.manual_seed(8)
+        batch, seq_len, n_heads_q, n_heads_k, head_dim, vmap_batch = 2, 16, 8, 2, 32, 3
+        cos, sin = generate_cos_sin(seq_len * 2, head_dim, dtype=torch.float32)
+        rope_indices = torch.stack(
+            [torch.randperm(seq_len * 2, device="cuda")[:seq_len] for _ in range(batch)]
+        )
+        Q = torch.randn(vmap_batch, batch, n_heads_q, seq_len, head_dim, device="cuda")
+        K = torch.randn(vmap_batch, batch, n_heads_k, seq_len, head_dim, device="cuda")
+
+        out_vmap = vmap(
+            lambda q, k: Opaque_RoPE_QK.apply(q, k, cos, sin, rope_indices)
+        )(Q, K)
+        out_reference = vmap(
+            lambda q, k: pytorch_rope_qk(q, k, cos, sin, rope_indices)
+        )(Q, K)
+        torch.testing.assert_close(out_vmap[0], out_reference[0], rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(out_vmap[1], out_reference[1], rtol=1e-6, atol=1e-6)
+
+        def loss_opaque(q, k):
+            q_rot, k_rot = Opaque_RoPE_QK.apply(q, k, cos, sin, rope_indices)
+            return q_rot.square().mean() + k_rot.square().mean()
+
+        def loss_reference(q, k):
+            q_rot, k_rot = pytorch_rope_qk(q, k, cos, sin, rope_indices)
             return q_rot.square().mean() + k_rot.square().mean()
 
         grads_vmap = vmap(grad(loss_opaque, argnums=(0, 1)))(Q, K)

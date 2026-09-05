@@ -527,7 +527,9 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         if not has_indices:
             rope_ptr_local = cos.new_empty(1, dtype=torch.int32)
         else:
-            rope_ptr_local = rope_ptr
+            # A shared position table has one row per inner batch element, so
+            # repeat it for every outer vmap slice before the flattened launch.
+            rope_ptr_local = rope_ptr.repeat(total_batch * seq_len // rope_ptr.numel())
 
         BLOCK_SIZE, num_warps = calculate_settings(head_dim)
 
@@ -707,7 +709,13 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         K_out = torch.empty_like(K).reshape(total_batch, n_heads_K, seq_len, head_dim)
 
         if has_indices:
-            rope_ptr = rope_indices.reshape(-1).to(dtype=torch.int32, device=Q.device)
+            # A shared position table has one row per inner batch element, so
+            # repeat it for every outer vmap slice before the flattened launch.
+            rope_ptr = (
+                rope_indices.reshape(-1)
+                .repeat(total_batch * seq_len // rope_indices.numel())
+                .to(dtype=torch.int32, device=Q.device)
+            )
         else:
             rope_ptr = cos_sq.new_empty(1, dtype=torch.int32)
 
