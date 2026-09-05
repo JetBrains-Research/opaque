@@ -66,22 +66,6 @@ def _configure_reporting(no_wandb: bool) -> list[str]:
     return ["wandb"]
 
 
-def _model_dtype() -> tuple[bool, torch.dtype]:
-    """Return whether bf16 is usable and the matching checkpoint dtype."""
-    bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    return bf16, torch.bfloat16 if bf16 else torch.float32
-
-
-def _load_causal_lm(model_name: str, dtype: torch.dtype):
-    """Load a causal LM at ``dtype``, supporting newer model implementations."""
-    try:
-        return AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
-    except TypeError as exc:
-        if "unexpected keyword argument 'torch_dtype'" not in str(exc):
-            raise
-        return AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
-
-
 def _require_configured(parser, args, required=("model_name", "dataset")):
     missing = [name for name in required if getattr(args, name) is None]
     if missing:
@@ -297,8 +281,11 @@ def main() -> int:
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    bf16, model_dtype = _model_dtype()
-    model = _load_causal_lm(args.model_name, model_dtype)
+    bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    model_dtype = torch.bfloat16 if bf16 else torch.float32
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name, torch_dtype=model_dtype
+    )
 
     # When a chat template is cloned in, the trainer marks the added tokens'
     # embedding rows trainable on this config (trainable_token_indices + lm_head)
