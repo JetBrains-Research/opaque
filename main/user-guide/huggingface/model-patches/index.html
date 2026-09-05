@@ -3834,7 +3834,17 @@ which fused Triton kernels are applied per model:</p>
 <td>MLP only</td>
 </tr>
 <tr>
-<td>Qwen2 / Qwen3</td>
+<td>Qwen2</td>
+<td>0.5B, 7B</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>QKV + MLP</td>
+</tr>
+<tr>
+<td>Qwen3</td>
 <td>0.5B, 7B</td>
 <td>SwiGLU</td>
 <td>Yes</td>
@@ -4220,11 +4230,14 @@ are detected and <code>peft=True</code> is passed to <code>apply_model_patches</
 <p><code>opaque_lora_w</code> patches <code>peft.tuners.lora.Linear.forward</code> and applies
 to all LoRA layers.  <code>opaque_lora_qkv</code> and <code>opaque_lora_mlp</code> are
 auto-fused when all projections in an attention block or MLP block
-have LoRA adapters with no bias. These kernels implement the low-rank adapter
+have LoRA adapters and no active LoRA dropout. QKV fusion supports optional
+frozen base-layer biases; PEFT configurations that train projection biases use
+the unfused path so their gradients remain intact. MLP fusion continues to
+require bias-free projections. These kernels implement the low-rank adapter
 structure from <a href="https://arxiv.org/abs/2106.09685"><em>LoRA: Low-Rank Adaptation of Large Language Models</em></a>.</p>
 <p>QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2.  Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm),
-Phi-3 (combined qkv_proj), Cohere (no transpose).</p>
+Cohere2, Qwen2. Excluded: Qwen3 (q_norm/k_norm), Phi-3 (combined qkv_proj),
+Cohere (no transpose).</p>
 <h3 id="using-kernels-directly">Using kernels directly<a class="headerlink" href="#using-kernels-directly" title="Permanent link">&para;</a></h3>
 <p>All kernels are available as standalone functions without patching:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
