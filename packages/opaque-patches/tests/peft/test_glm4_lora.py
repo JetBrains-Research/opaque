@@ -10,7 +10,8 @@ and confirm trainable biases still fall back to the unfused path.
 import pytest
 import torch
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, Glm4Config
+from transformers import AutoModelForCausalLM
+from transformers.models.glm4.modeling_glm4 import Glm4Config
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.functional import make_functional
@@ -33,7 +34,7 @@ def _tiny_glm4_config(**overrides):
         "num_key_value_heads": 2,
         "attention_bias": True,
         # GLM4's default pad_token_id (151329) exceeds this tiny vocab_size.
-        "pad_token_id": None,
+        "pad_token_id": 0,
     }
     kwargs.update(overrides)
     return Glm4Config(**kwargs)
