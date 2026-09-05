@@ -3879,7 +3879,7 @@ these for you). For reference, the notable ones:</p>
 <tr>
 <td><code>batch_eval_metrics</code></td>
 <td>Streaming metric reduction not implemented</td>
-<td>Use <code>eval_accumulation_steps</code> to bound eval memory</td>
+<td>Eval predictions offload to CPU after every batch by default. Set <code>eval_accumulation_steps</code> to a larger window only to reduce transfer calls, accepting retention of up to that many batches on device.</td>
 </tr>
 </tbody>
 </table>
