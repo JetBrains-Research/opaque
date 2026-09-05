@@ -69,6 +69,10 @@ def test_opaque_lora_qkv_fallback_rejects_trainable_biases():
         )
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("triton") is not None,
+    reason="Fallback tests only apply when Triton is unavailable",
+)
 def test_opaque_lora_w_fallback_matches_reference():
     from opaque.patches.kernels import opaque_lora_w
 
