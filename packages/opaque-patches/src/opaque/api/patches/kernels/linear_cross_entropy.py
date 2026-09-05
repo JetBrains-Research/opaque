@@ -13,9 +13,9 @@ logit matrix. Ported from Apple's cut_cross_entropy Triton kernels (ICLR 2025),
 simplified to remove bias/Kahan/filtering/VocabOrdering/dLSE/shift and to
 support our standard Opaque_Foo + _FooBackward vmap dispatch pattern.
 
-Shift is handled in Python (pre-shift) so the kernel sees flat pre-shifted
-tokens. This makes vmap merge a trivial reshape instead of requiring per-sample
-loops.
+Causal shift is handled by translating flat logical token indices to the
+unshifted source storage. This lets vmap merge samples without materializing an
+activation-sized shifted hidden-state copy.
 
 Mathematical decomposition:
     CE(e, c, t) = -e·c[t] + log(Σ_v exp(e·c[v]))
@@ -116,6 +116,7 @@ def _linear_ce_forward_kernel(
     stride_cv,
     stride_cd,
     stride_vb,
+    tokens_per_sequence,
     num_locks,
     # Meta-parameters
     B_BIN,
@@ -143,10 +144,11 @@ def _linear_ce_forward_kernel(
         offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(
             tl.int64
         )
+    source_offs_b = offs_b + offs_b // tokens_per_sequence
 
     offs_v = (pid_v * BLOCK_V + tl.arange(0, BLOCK_V)).to(tl.int64)
     offs_d = tl.arange(0, BLOCK_D).to(tl.int64)
-    e_ptrs = E + (offs_b[:, None] * stride_eb + offs_d[None, :] * stride_ed)
+    e_ptrs = E + (source_offs_b[:, None] * stride_eb + offs_d[None, :] * stride_ed)
     c_ptrs = C + (offs_v[None, :] * stride_cv + offs_d[:, None] * stride_cd)
 
     # Tiled matmul: logits[b,v] = Σ_d E[b,d] * C[v,d]
@@ -175,8 +177,8 @@ def _linear_ce_forward_kernel(
 
     logits = logits.cast(tl.float32)
 
-    # Store neg_correct_logit = -logits[b, target[b]] (no shift — targets pre-shifted)
-    this_targets = tl.load(Targets + offs_b, mask=offs_b < BMax, other=V + 1)
+    # Store neg_correct_logit = -logits[b, target[b]] in logical token order.
+    this_targets = tl.load(Targets + source_offs_b + 1, mask=offs_b < BMax, other=V + 1)
     direct_offs_b = (pid_b * BLOCK_B + tl.arange(0, BLOCK_B)).to(tl.int64)
     neg_correct_logit_ptrs = NegCorrectLogit + direct_offs_b
     neg_correct_logit_ptrs = tl.broadcast_to(
@@ -309,6 +311,7 @@ def _linear_ce_backward_kernel(
     stride_cv,
     stride_cd,
     stride_vb,
+    tokens_per_sequence,
     # Per-sample dC parameters
     tokens_per_sample,
     num_dc_samples,
@@ -345,10 +348,11 @@ def _linear_ce_backward_kernel(
         offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(
             tl.int64
         )
+    source_offs_b = offs_b + offs_b // tokens_per_sequence
 
     offs_v = (pid_v * BLOCK_V + tl.arange(0, BLOCK_V)).to(tl.int64)
     offs_d = tl.arange(0, BLOCK_D).to(tl.int64)
-    e_ptrs = E + (offs_b[:, None] * stride_eb + offs_d[None, :] * stride_ed)
+    e_ptrs = E + (source_offs_b[:, None] * stride_eb + offs_d[None, :] * stride_ed)
     c_ptrs = C + (offs_v[None, :] * stride_cv + offs_d[:, None] * stride_cd)
 
     # Recompute logits via tiled matmul E @ C^T
@@ -385,7 +389,7 @@ def _linear_ce_backward_kernel(
     d_accum = tl.exp(accum - lse[:, None])
     d_accum = tl.where(offs_v[None, :] < V, d_accum, 0.0)
 
-    targets = tl.load(Targets + offs_b, mask=offs_b < BMax, other=V + 1)
+    targets = tl.load(Targets + source_offs_b + 1, mask=offs_b < BMax, other=V + 1)
     is_target = targets[:, None] == offs_v[None, :]
     if label_smoothing > 0:
         d_accum = tl.where(offs_v[None, :] < V, d_accum - label_smoothing / V, d_accum)
@@ -451,7 +455,7 @@ def _linear_ce_backward_kernel(
                         offs_v[:, None] < V,
                         dc_locks_s_base + lock_offset,
                         n_dc_locks_1,
-                        E + (offs_b[:, None] * stride_eb),
+                        E + (source_offs_b[:, None] * stride_eb),
                         offs_b[:, None] < BMax,
                         stride_cd,
                         stride_ed,
@@ -467,7 +471,7 @@ def _linear_ce_backward_kernel(
                 offs_v[:, None] < V,
                 dCLocks + lock_offset,
                 n_dc_locks_1,
-                E + (offs_b[:, None] * stride_eb),
+                E + (source_offs_b[:, None] * stride_eb),
                 offs_b[:, None] < BMax,
                 stride_cd,
                 stride_ed,
@@ -579,23 +583,39 @@ def _scatter_to_full(
     return full
 
 
+def _flatten_unshifted_sources(
+    hidden_states: torch.Tensor, labels: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Return flat source storage and the logical tokens in each shifted sequence."""
+    assert hidden_states.shape[:-1] == labels.shape
+    tokens_per_sequence = labels.shape[-1] - 1
+    assert tokens_per_sequence > 0
+    return hidden_states.flatten(0, -2), labels.flatten(), tokens_per_sequence
+
+
 def _forward_impl(
     e: torch.Tensor,
     c: torch.Tensor,
     targets: torch.Tensor,
     valids: torch.Tensor | None,
     softcap: float | None,
+    tokens_per_sequence: int,
     label_smoothing: float = 0.0,
 ) -> LSEReturn:
-    """Launch forward kernel. e=(B,D) or (N,D), c=(V,D), targets=(N,)."""
+    """Launch forward kernel over logically shifted tokens in source storage."""
     assert e.is_contiguous()
+    assert targets.is_contiguous()
     assert e.shape[1] == c.shape[1]
+    source_tokens_per_sequence = tokens_per_sequence + 1
+    assert e.shape[0] % source_tokens_per_sequence == 0
+    assert targets.numel() == e.shape[0]
+    n_tokens = e.shape[0] // source_tokens_per_sequence * tokens_per_sequence
 
     if valids is not None:
         assert valids.ndim == 1
         B = valids.numel()
     else:
-        B = e.shape[0]
+        B = n_tokens
 
     V, D = c.shape
     ls = float(label_smoothing)
@@ -621,12 +641,13 @@ def _forward_impl(
         B,
         V,
         D,
-        e.size(0),  # BMax
+        n_tokens,  # BMax: logical shifted-token count
         e.stride(0),
         e.stride(1),
         c.stride(0),
         c.stride(1),
         1 if valids is None else valids.stride(0),
+        tokens_per_sequence=tokens_per_sequence,
         num_locks=locks.size(0),
         B_BIN=b_bin_fn(B),
         label_smoothing=ls,
@@ -647,6 +668,7 @@ def _backward_impl(
     targets: torch.Tensor,
     valids: torch.Tensor | None,
     softcap: float | None,
+    tokens_per_sequence: int,
     compute_de: bool,
     compute_dc: bool,
     num_dc_samples: int = 1,
@@ -663,6 +685,7 @@ def _backward_impl(
         targets: Target token indices.
         valids: Optional mask selecting valid token positions.
         softcap: Optional logit softcap value.
+        tokens_per_sequence: Logical token count after shifting each sequence.
         compute_de: Whether to compute hidden-state gradients.
         compute_dc: Whether to compute output-projection gradients.
         num_dc_samples: When > 1, produces per-sample dC of shape (num_dc_samples, V, D).
@@ -673,14 +696,23 @@ def _backward_impl(
     Returns (de, dc) cast to input dtype.
     """
     assert e.is_contiguous()
+    assert targets.is_contiguous()
     assert c.shape[1] == e.shape[1]
+    source_tokens_per_sequence = tokens_per_sequence + 1
+    assert e.shape[0] % source_tokens_per_sequence == 0
+    assert targets.numel() == e.shape[0]
+    n_tokens = e.shape[0] // source_tokens_per_sequence * tokens_per_sequence
 
-    B = valids.size(0) if valids is not None else e.size(0)
+    B = valids.size(0) if valids is not None else n_tokens
 
     V, D = c.shape
     nd_locks = triton.cdiv(D, 64)
 
-    de = torch.zeros_like(e, dtype=torch.float32) if compute_de else None
+    de = (
+        torch.zeros(n_tokens, D, dtype=torch.float32, device=e.device)
+        if compute_de
+        else None
+    )
 
     if compute_dc:
         if num_dc_samples > 1:
@@ -739,7 +771,7 @@ def _backward_impl(
         B,
         D,
         V,
-        e.size(0),  # BMax
+        n_tokens,  # BMax: logical shifted-token count
         *de_lock_sizes,
         *dc_lock_sizes,
         e.stride(0),
@@ -747,6 +779,7 @@ def _backward_impl(
         c.stride(0),
         c.stride(1),
         1 if valids is None else valids.stride(0),
+        tokens_per_sequence=tokens_per_sequence,
         tokens_per_sample=tokens_per_sample,
         num_dc_samples=num_dc_samples,
         dc_sample_stride=dc_sample_stride,
@@ -783,14 +816,17 @@ class _LinearCEBackward(torch.autograd.Function):
         label_smoothing,
         use_token_scaling,
     ):
-        # Pre-shift and flatten
-        e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
-        targets = labels[..., 1:].contiguous().flatten()  # (N,)
-        valids = _build_flat_valids(targets, ignore_index)
+        e, targets, tokens_per_sequence = _flatten_unshifted_sources(
+            hidden_states, labels
+        )
+        n_tokens = e.shape[0] // (tokens_per_sequence + 1) * tokens_per_sequence
+        valids = _build_flat_valids(labels[..., 1:], ignore_index)
 
         # Recompute the forward (activation-checkpointing style); under token
         # scaling we also need the per-token confidence weight from it.
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        lse_ret = _forward_impl(
+            e, weight, targets, valids, softcap, tokens_per_sequence, label_smoothing
+        )
 
         do = grad_out
         if use_token_scaling:
@@ -798,7 +834,7 @@ class _LinearCEBackward(torch.autograd.Function):
             # backward kernel reads ``do`` position-indexed (full length), so
             # scatter the valids-compacted ``p`` back before scaling.
             p = _token_scaling_weight(lse_ret)
-            do = grad_out * _scatter_to_full(p, valids, targets.numel())
+            do = grad_out * _scatter_to_full(p, valids, n_tokens)
 
         de, dc = _backward_impl(
             do,
@@ -808,6 +844,7 @@ class _LinearCEBackward(torch.autograd.Function):
             targets,
             valids,
             softcap,
+            tokens_per_sequence,
             compute_de=True,
             compute_dc=compute_dc,
             label_smoothing=label_smoothing,
@@ -861,16 +898,14 @@ class _LinearCEBackward(torch.autograd.Function):
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
-
-        # Pre-shift and merge all samples into one flat batch
-        h_shifted = hidden_states[..., :-1, :].contiguous()  # (B_vmap, ..., seq-1, D)
-        t_shifted = labels[..., 1:].contiguous()  # (B_vmap, ..., seq-1)
-        tokens_per_sample = h_shifted[0].numel() // D
-
-        e = h_shifted.reshape(-1, D)  # (B_vmap * tokens_per_sample, D)
-        targets = t_shifted.reshape(-1)  # (B_vmap * tokens_per_sample,)
-
-        valids = _build_flat_valids(targets, ignore_index)
+        e, targets, tokens_per_sequence = _flatten_unshifted_sources(
+            hidden_states, labels
+        )
+        tokens_per_sample = (
+            e.shape[0] // B_vmap // (tokens_per_sequence + 1) * tokens_per_sequence
+        )
+        n_tokens = B_vmap * tokens_per_sample
+        valids = _build_flat_valids(labels[..., 1:], ignore_index)
 
         # Expand per-sample scalar grad to per-token grad
         if grad_bdim is not None:
@@ -878,16 +913,18 @@ class _LinearCEBackward(torch.autograd.Function):
                 torch.tensor(tokens_per_sample, device=grad_out.device)
             )
         else:
-            do = grad_out.expand(B_vmap * tokens_per_sample)
+            do = grad_out.expand(n_tokens)
 
         # Single merged forward (full return — token scaling reads its weight).
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        lse_ret = _forward_impl(
+            e, weight, targets, valids, softcap, tokens_per_sequence, label_smoothing
+        )
 
         if use_token_scaling:
             # Scale each token's upstream grad by its (detached) weight p_t,
             # scattered back to the full position-indexed length the kernel reads.
             p = _token_scaling_weight(lse_ret)
-            do = do * _scatter_to_full(p, valids, e.shape[0])
+            do = do * _scatter_to_full(p, valids, n_tokens)
 
         # Single merged backward with per-sample dC (if needed):
         # de is merged (all samples), dc is per-sample via kernel-level sample masking.
@@ -900,6 +937,7 @@ class _LinearCEBackward(torch.autograd.Function):
             targets,
             valids,
             softcap,
+            tokens_per_sequence,
             compute_de=True,
             compute_dc=compute_dc,
             num_dc_samples=B_vmap if compute_dc else 1,
@@ -952,12 +990,14 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
-        # Pre-shift and flatten
-        e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
-        targets = labels[..., 1:].contiguous().flatten()  # (N,)
-        valids = _build_flat_valids(targets, ignore_index)
+        e, targets, tokens_per_sequence = _flatten_unshifted_sources(
+            hidden_states, labels
+        )
+        valids = _build_flat_valids(labels[..., 1:], ignore_index)
 
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        lse_ret = _forward_impl(
+            e, weight, targets, valids, softcap, tokens_per_sequence, label_smoothing
+        )
         nll = _per_token_nll_from_lse_ret(lse_ret, weight.shape[0], label_smoothing)
         if use_token_scaling:
             # Weight each token's CE by its detached confidence p_t (DFT). ``p``
@@ -1044,21 +1084,20 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
         B_vmap = hidden_states.shape[0]
-        D = hidden_states.shape[-1]
         V = weight.shape[0]
 
-        # Pre-shift and merge all samples into one flat batch
-        h_shifted = hidden_states[..., :-1, :].contiguous()
-        t_shifted = labels[..., 1:].contiguous()
-        tokens_per_sample = h_shifted[0].numel() // D
-
-        e = h_shifted.reshape(-1, D)
-        targets = t_shifted.reshape(-1)
-
-        valids = _build_flat_valids(targets, ignore_index)
+        e, targets, tokens_per_sequence = _flatten_unshifted_sources(
+            hidden_states, labels
+        )
+        tokens_per_sample = (
+            e.shape[0] // B_vmap // (tokens_per_sequence + 1) * tokens_per_sequence
+        )
+        valids = _build_flat_valids(labels[..., 1:], ignore_index)
 
         # Single forward call for entire merged batch
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        lse_ret = _forward_impl(
+            e, weight, targets, valids, softcap, tokens_per_sequence, label_smoothing
+        )
         nll = _per_token_nll_from_lse_ret(lse_ret, V, label_smoothing)
         if use_token_scaling:
             nll = _token_scaling_weight(lse_ret) * nll
@@ -1124,6 +1163,5 @@ def opaque_linear_cross_entropy_loss(
         label_smoothing,
         use_token_scaling,
     )
-    shifted_labels = labels[..., 1:].contiguous().flatten()
-    n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
+    n_valid = (labels[..., 1:] != ignore_index).sum().float().clamp(min=1)
     return nll_sum / n_valid

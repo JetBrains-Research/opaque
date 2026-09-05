@@ -131,12 +131,12 @@ def _build_flat_valids(
 ) -> torch.Tensor | None:
     """Build flat index tensor of valid (non-ignored) token positions.
 
-    Assumes targets are already pre-shifted and flattened.
-    Returns None if all tokens are valid (optimization).
+    ``targets`` may be a shifted, non-contiguous view; indices are flattened
+    in that view's logical order. Returns None if all tokens are valid.
     """
-    valids = (targets != ignore_index).nonzero().to(torch.int32)
-    assert valids.size(1) == 1
-    return valids.squeeze(1) if valids.numel() != targets.numel() else None
+    valid_mask = targets != ignore_index
+    valids = valid_mask.reshape(-1).nonzero().to(torch.int32)
+    return valids.squeeze(1) if valids.numel() != valid_mask.numel() else None
 
 
 def b_bin_fn(b: int) -> int:
