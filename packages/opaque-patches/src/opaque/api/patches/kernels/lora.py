@@ -90,6 +90,17 @@ def _needs_lora_weight_grads(*adapter_pairs):
     )
 
 
+def _require_frozen_qkv_biases(*biases):
+    """Reject base biases whose gradients the fused kernel cannot compute."""
+    if any(bias is not None and bias.requires_grad for bias in biases):
+        raise ConfigurationError(
+            *(
+                "Opaque_LoRA_QKV requires frozen Q/K/V base biases; "
+                "use the unfused projection path for trainable biases.",
+            )
+        )
+
+
 def _lora_w_weight_backward_impl(grad_out, X, A, B, scaling):
     """Compute LoRA_W adapter gradients before releasing the saved input."""
     if A is None or B is None:
@@ -490,6 +501,7 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     @staticmethod
     def forward(X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv):
         """Forward pass for Q, K, V projections."""
+        _require_frozen_qkv_biases(bq, bk, bv)
         X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(
             active_cuda_dtype(X), X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv
         )
@@ -600,6 +612,7 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         info, in_dims, X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv
     ):
         """Efficient vmap rule: merge vmap batch into regular batch."""
+        _require_frozen_qkv_biases(bq, bk, bv)
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_QKV", batched_indices={0})
         X_bdim = in_dims[0]
         X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(

@@ -606,6 +606,45 @@ class TestLoRAWPerformance:
 # ============================================================================
 
 
+class TestLoRAQKVBiasValidation:
+    """Validate the frozen-bias contract for fused QKV projections."""
+
+    def test_rejects_trainable_biases_in_eager_and_vmap(self):
+        """Trainable biases must use the unfused projection path."""
+        from opaque.exceptions import ConfigurationError
+
+        hidden, rank = 8, 2
+        kw = {"device": "cuda", "dtype": torch.float32}
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(hidden, rank, **kw)
+        bq = torch.randn(hidden, **kw, requires_grad=True)
+        x = torch.randn(2, 3, hidden, **kw)
+
+        def qkv_projection(input_):
+            return Opaque_LoRA_QKV.apply(
+                input_,
+                Wq,
+                Aq,
+                Bq,
+                SCALING,
+                bq,
+                Wk,
+                Ak,
+                Bk,
+                SCALING,
+                None,
+                Wv,
+                Av,
+                Bv,
+                SCALING,
+                None,
+            )
+
+        with pytest.raises(ConfigurationError, match="frozen Q/K/V base biases"):
+            qkv_projection(x)
+        with pytest.raises(ConfigurationError, match="frozen Q/K/V base biases"):
+            vmap(qkv_projection)(torch.randn(2, 2, 3, hidden, **kw))
+
+
 class TestLoRAQKVForward:
     """Test LoRA-QKV forward pass precision."""
 

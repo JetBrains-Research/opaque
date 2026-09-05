@@ -247,6 +247,15 @@ except ModuleNotFoundError as import_error:
         """
         return X @ W.transpose(-1, -2) + (X @ A @ B) * scaling
 
+    def _require_frozen_qkv_biases(*biases):
+        if any(bias is not None and bias.requires_grad for bias in biases):
+            raise ConfigurationError(
+                *(
+                    "opaque_lora_qkv requires frozen Q/K/V base biases; "
+                    "use the unfused projection path for trainable biases.",
+                )
+            )
+
     def opaque_lora_qkv(  # noqa: PLR0913, PLR0917
         X,
         Wq,
@@ -288,6 +297,7 @@ except ModuleNotFoundError as import_error:
         Returns:
             A tuple containing projected query, key, and value tensors.
         """
+        _require_frozen_qkv_biases(bq, bk, bv)
         Q = F.linear(X, Wq, bq) + (X @ Aq @ Bq) * Sq
         K = F.linear(X, Wk, bk) + (X @ Ak @ Bk) * Sk
         V = F.linear(X, Wv, bv) + (X @ Av @ Bv) * Sv
