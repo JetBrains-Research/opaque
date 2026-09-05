@@ -186,8 +186,11 @@ def _make_fused_qwen3_attention_forward(original_forward):
         )
 
         if past_key_values is not None:
+            cache_kwargs = {"sin": sin, "cos": cos}
+            if (cache_position := kwargs.get("cache_position")) is not None:
+                cache_kwargs["cache_position"] = cache_position
             key_states, value_states = past_key_values.update(
-                key_states, value_states, self.layer_idx
+                key_states, value_states, self.layer_idx, cache_kwargs
             )
 
         attention_interface = model_module.ALL_ATTENTION_FUNCTIONS.get_interface(

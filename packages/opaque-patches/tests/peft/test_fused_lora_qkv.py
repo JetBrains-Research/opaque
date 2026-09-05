@@ -353,6 +353,16 @@ class TestFusedLoRAQKV:
         fused_logits = fused(input_ids).logits
         torch.testing.assert_close(fused_logits, unfused_logits, rtol=RTOL, atol=ATOL)
 
+        unfused_cache = unfused(input_ids, use_cache=True).past_key_values
+        fused_cache = fused(input_ids, use_cache=True).past_key_values
+        next_input_ids = torch.randint(0, config.vocab_size, (2, 1), device=device)
+        torch.testing.assert_close(
+            fused(next_input_ids, past_key_values=fused_cache).logits,
+            unfused(next_input_ids, past_key_values=unfused_cache).logits,
+            rtol=RTOL,
+            atol=ATOL,
+        )
+
         unfused_logits.square().mean().backward()
         fused_logits.square().mean().backward()
         unfused_grads = dict(unfused.named_parameters())
