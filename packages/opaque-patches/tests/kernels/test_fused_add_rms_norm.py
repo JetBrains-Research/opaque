@@ -114,7 +114,7 @@ class TestFusedAddRMSNormBackward:
         y_op, s_op, rstd = Opaque_FusedAddRMSNorm.apply(
             x1, r1, w1, eps, offset, casting_mode, in_place
         )
-        assert rstd.shape == (B * T,)
+        assert rstd.shape == (B, T)
         assert not rstd.requires_grad
         (y_op.mean() + s_op.mean()).backward()
 
@@ -138,10 +138,11 @@ class TestFusedAddRMSNormVmapForward:
             return ref_llama_fused(a, b_, w, eps)
 
         def op_c(a, b_):
-            return opaque_llama(a, b_, w, eps)
+            return Opaque_FusedAddRMSNorm.apply(a, b_, w, eps, 0.0, "llama", False)
 
         y_pt, s_pt = vmap(ref_c)(x, r)
-        y_op, s_op = vmap(op_c)(x, r)
+        y_op, s_op, rstd_op = vmap(op_c)(x, r)
+        assert rstd_op.shape == x.shape[:-1]
         print("\nvmap forward precision check:")
         assert_precision(s_op, s_pt, rtol=RTOL_F, atol=ATOL_F, label="vmap S")
         assert_precision(y_op, y_pt, rtol=RTOL_F, atol=ATOL_F, label="vmap y")

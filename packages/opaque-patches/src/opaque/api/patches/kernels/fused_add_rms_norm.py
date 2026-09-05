@@ -461,7 +461,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
         Y, S, RSTD, _, _ = _fused_add_rms_norm_forward_triton(
             X, R, W, float(eps), float(offset), cm
         )
-        return Y.view(orig_shape), S.view(orig_shape), RSTD
+        return Y.view(orig_shape), S.view(orig_shape), RSTD.view(orig_shape[:-1])
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -484,7 +484,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
         ctx.offset_tensor = torch.tensor(
             float(offset), device=S.device, dtype=torch.float32
         )
-        ctx.save_for_backward(S2d, W.contiguous(), RSTD)
+        ctx.save_for_backward(S2d, W.contiguous(), RSTD.reshape(-1))
 
     @staticmethod
     def backward(ctx, grad_Y, grad_S, _grad_RSTD):
@@ -532,7 +532,7 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
         Yf, Sf, RSTD, _, _ = _fused_add_rms_norm_forward_triton(
             Xf, Rf, W, float(eps), float(offset), cm
         )
-        return (Yf.view(shape), Sf.view(shape), RSTD.view(*shape[:-1])), (0, 0, 0)
+        return (Yf.view(shape), Sf.view(shape), RSTD.view(shape[:-1])), (0, 0, 0)
 
 
 def opaque_fused_add_rms_norm(
