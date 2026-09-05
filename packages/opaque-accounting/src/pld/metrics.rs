@@ -121,12 +121,17 @@ pub(crate) fn bayes_risk(pld: &PrivacyLossDistribution, prior: f64) -> f64 {
 ///
 /// After FFT-based composition, small negative probabilities can appear from
 /// floating-point rounding. This function clamps negatives to zero and
-/// renormalizes so that `sum(probs) = 1 - infinity_mass`, matching the
-/// cleanup performed by riskcal's `pld_to_plrvs` before beta computation.
-fn clean_probs(probs: &[f64], infinity_mass: f64) -> Vec<f64> {
+/// renormalizes so that `sum(probs) = 1 - infinity_mass - negative_infinity_mass`.
+/// This preserves explicit ±∞ atoms carried by [`Pmf`] and keeps beta/risk
+/// computations conservative when left-tail truncation accumulates at −∞.
+fn clean_probs(probs: &[f64], infinity_mass: f64, negative_infinity_mass: f64) -> Vec<f64> {
     let mut cleaned: Vec<f64> = probs.iter().map(|&p| p.max(0.0)).collect();
     let sum: f64 = cleaned.iter().sum();
-    let target = 1.0 - infinity_mass;
+    let target = (1.0 - infinity_mass - negative_infinity_mass).max(0.0);
+    if target == 0.0 {
+        cleaned.fill(0.0);
+        return cleaned;
+    }
     if sum > 0.0 && target > 0.0 {
         let scale = target / sum;
         for p in cleaned.iter_mut() {
@@ -271,8 +276,7 @@ fn pmf_beta(pmf: &Pmf, target_alpha: f64) -> f64 {
 /// Compute the Neyman-Pearson trade-off function for asymmetric PLDs
 ///
 /// Uses pmf_remove as Y and pmf_add (negated) as X.
-/// Applies riskcal-style cleanup: clamp negative probabilities to zero and
-/// renormalize to `1 - infinity_mass` before computing the tradeoff function.
+/// Applies FFT-artifact cleanup, while preserving explicit ±∞ atoms.
 fn pmf_beta_asymmetric(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f64 {
     if target_alpha <= 0.0 {
         return 1.0 - pmf_remove.infinity_mass;
@@ -292,28 +296,33 @@ fn pmf_beta_asymmetric(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f6
         };
     }
 
-    // Clean FFT artifacts: clamp negatives and renormalize to 1 - infinity_mass.
-    // This matches riskcal's pld_to_plrvs cleanup before beta computation.
-    let probs_y = clean_probs(&pmf_remove.probs, pmf_remove.infinity_mass);
-    let probs_x_add = clean_probs(&pmf_add.probs, pmf_add.infinity_mass);
+    // Clean FFT artifacts and preserve finite-vs-infinite mass split.
+    let probs_y = clean_probs(
+        &pmf_remove.probs,
+        pmf_remove.infinity_mass,
+        pmf_remove.negative_infinity_mass,
+    );
+    let probs_x_add = clean_probs(
+        &pmf_add.probs,
+        pmf_add.infinity_mass,
+        pmf_add.negative_infinity_mass,
+    );
 
     let y0 = pmf_remove.lower_loss_index;
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
-    // Build CDF of Y (pmf_remove) from cleaned probabilities.
-    // No negative_infinity_mass: it's absorbed by the renormalization to
-    // sum(probs) = 1 - infinity_mass (matching riskcal).
+    // Build CDF of Y from cleaned finite probabilities, plus atom at −∞.
     let mut cdf_y = vec![0.0; n_y];
-    cdf_y[0] = probs_y[0];
+    cdf_y[0] = pmf_remove.negative_infinity_mass + probs_y[0];
     for i in 1..n_y {
         cdf_y[i] = cdf_y[i - 1] + probs_y[i];
     }
 
-    // Build complement CDF of X (X = −L_add, so pmf_X is pmf_add reversed)
-    // from cleaned probabilities. No negative_infinity_mass added.
+    // Build CDF of L_add from cleaned finite probabilities, plus atom at −∞.
+    // Under X = −L_add, this contributes to X's +∞ atom and therefore to ccdf_x.
     let mut cdf_add = vec![0.0; n_x];
-    cdf_add[0] = probs_x_add[0];
+    cdf_add[0] = pmf_add.negative_infinity_mass + probs_x_add[0];
     for i in 1..n_x {
         cdf_add[i] = cdf_add[i - 1] + probs_x_add[i];
     }
@@ -397,24 +406,33 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
         };
     }
 
-    // Clean FFT artifacts for alpha_bar/f_alpha_bar computation
-    let probs_y = clean_probs(&pmf_remove.probs, pmf_remove.infinity_mass);
-    let probs_x_add = clean_probs(&pmf_add.probs, pmf_add.infinity_mass);
+    // Clean FFT artifacts while preserving explicit ±∞ atoms.
+    let probs_y = clean_probs(
+        &pmf_remove.probs,
+        pmf_remove.infinity_mass,
+        pmf_remove.negative_infinity_mass,
+    );
+    let probs_x_add = clean_probs(
+        &pmf_add.probs,
+        pmf_add.infinity_mass,
+        pmf_add.negative_infinity_mass,
+    );
 
-    // Compute alpha_bar = Pr[X > 0] using cleaned probs
+    // Compute alpha_bar = Pr[X > 0], including X's +∞ atom.
+    // Under X = -L_add, L_add = -∞ maps to X = +∞, which always contributes.
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
-    let start_idx = ((-x0 + 1) as usize).min(n_x);
-    let mut alpha_bar = 0.0;
+    let start_idx = ((-x0 + 1).max(0) as usize).min(n_x);
+    let mut alpha_bar = pmf_add.negative_infinity_mass;
     for i in start_idx..n_x {
         alpha_bar += probs_x_add[n_x - 1 - i];
     }
 
-    // f_alpha_bar = Pr[Y <= 0] using cleaned probs
+    // f_alpha_bar = Pr[Y <= 0], including Y's atom at −∞.
     let y0 = pmf_remove.lower_loss_index;
-    let end_idx = ((-y0 + 1) as usize).min(n_y);
-    let mut f_alpha_bar = 0.0;
+    let end_idx = ((-y0 + 1).max(0) as usize).min(n_y);
+    let mut f_alpha_bar = pmf_remove.negative_infinity_mass;
     for prob in probs_y.iter().take(end_idx) {
         f_alpha_bar += prob;
     }
@@ -848,5 +866,29 @@ mod tests {
                 direct
             );
         }
+    }
+
+    #[test]
+    fn test_beta_asymmetric_includes_negative_infinity_mass() {
+        let remove = Pmf {
+            discretization: 0.1,
+            lower_loss_index: 0,
+            probs: vec![0.7],
+            infinity_mass: 0.0,
+            negative_infinity_mass: 0.3,
+            max_grid_size: usize::MAX,
+            right_tail_budget: 0.0,
+            left_tail_budget: 0.0,
+        };
+        let add = Pmf::new(0.1, 0, vec![1.0], 0.0, usize::MAX);
+
+        let b = pmf_beta_asymmetric(&remove, &add, 0.5);
+        assert!((b - 0.65).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_clean_probs_zero_target_returns_zero_distribution() {
+        let cleaned = clean_probs(&[1e-16, -1e-16, 2e-16], 0.6, 0.4);
+        assert!(cleaned.iter().all(|&p| p == 0.0));
     }
 }
