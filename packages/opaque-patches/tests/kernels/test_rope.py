@@ -16,7 +16,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
-from opaque.api.patches.kernels.rope_embedding import Opaque_RoPE
+from opaque.api.patches.kernels.rope_embedding import Opaque_RoPE, Opaque_RoPE_QK
 
 pytestmark = [
     pytest.mark.cuda,
@@ -66,6 +66,16 @@ def pytorch_rope(Q, cos, sin):
 def opaque_rope(Q, cos, sin):
     """Opaque Triton kernel (Opaque_RoPE)."""
     return Opaque_RoPE.apply(Q, cos, sin)
+
+
+def pytorch_rope_qk(Q, K, cos, sin):
+    """PyTorch reference for fused Q/K RoPE inputs in attention layout."""
+    cos_full = torch.cat((cos, cos), dim=-1)[None, None]
+    sin_full = torch.cat((sin, sin), dim=-1)[None, None]
+    return (
+        Q * cos_full + rotate_half(Q) * sin_full,
+        K * cos_full + rotate_half(K) * sin_full,
+    )
 
 
 # ============================================================================
@@ -138,6 +148,62 @@ class TestRoPEBackward:
         print("\nRoPE Backward:")
         assert_precision(
             Q_op.grad, Q_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="Q.grad"
+        )
+
+
+class TestRoPEQK:
+    """Test fused Q/K RoPE with grouped-query attention layouts."""
+
+    def test_forward_backward_and_vmap_match_pytorch(self):
+        torch.manual_seed(7)
+        batch, seq_len, n_heads_q, n_heads_k, head_dim, vmap_batch = 2, 16, 8, 2, 32, 3
+        cos, sin = generate_cos_sin(seq_len, head_dim, dtype=torch.float32)
+
+        Q_ref = torch.randn(
+            batch, n_heads_q, seq_len, head_dim, device="cuda", requires_grad=True
+        )
+        K_ref = torch.randn(
+            batch, n_heads_k, seq_len, head_dim, device="cuda", requires_grad=True
+        )
+        Q_op = Q_ref.detach().clone().requires_grad_(True)
+        K_op = K_ref.detach().clone().requires_grad_(True)
+        Q_before = Q_op.detach().clone()
+        K_before = K_op.detach().clone()
+
+        out_ref = pytorch_rope_qk(Q_ref, K_ref, cos, sin)
+        out_op = Opaque_RoPE_QK.apply(Q_op, K_op, cos, sin, None)
+        torch.testing.assert_close(out_op[0], out_ref[0], rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(out_op[1], out_ref[1], rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(Q_op, Q_before)
+        torch.testing.assert_close(K_op, K_before)
+
+        (out_ref[0].square().mean() + out_ref[1].square().mean()).backward()
+        (out_op[0].square().mean() + out_op[1].square().mean()).backward()
+        torch.testing.assert_close(Q_op.grad, Q_ref.grad, rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(K_op.grad, K_ref.grad, rtol=1e-6, atol=1e-6)
+
+        Q = torch.randn(vmap_batch, batch, n_heads_q, seq_len, head_dim, device="cuda")
+        K = torch.randn(vmap_batch, batch, n_heads_k, seq_len, head_dim, device="cuda")
+        out_vmap = vmap(lambda q, k: Opaque_RoPE_QK.apply(q, k, cos, sin, None))(Q, K)
+        out_reference = vmap(lambda q, k: pytorch_rope_qk(q, k, cos, sin))(Q, K)
+        torch.testing.assert_close(out_vmap[0], out_reference[0], rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(out_vmap[1], out_reference[1], rtol=1e-6, atol=1e-6)
+
+        def loss_opaque(q, k):
+            q_rot, k_rot = Opaque_RoPE_QK.apply(q, k, cos, sin, None)
+            return q_rot.square().mean() + k_rot.square().mean()
+
+        def loss_reference(q, k):
+            q_rot, k_rot = pytorch_rope_qk(q, k, cos, sin)
+            return q_rot.square().mean() + k_rot.square().mean()
+
+        grads_vmap = vmap(grad(loss_opaque, argnums=(0, 1)))(Q, K)
+        grads_reference = vmap(grad(loss_reference, argnums=(0, 1)))(Q, K)
+        torch.testing.assert_close(
+            grads_vmap[0], grads_reference[0], rtol=1e-6, atol=1e-6
+        )
+        torch.testing.assert_close(
+            grads_vmap[1], grads_reference[1], rtol=1e-6, atol=1e-6
         )
 
 
