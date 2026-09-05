@@ -40,6 +40,9 @@ class TestFusedLoRAQKV:
         Wq = torch.randn(q_out, hidden, device=device)
         Wk = torch.randn(kv_out, hidden, device=device)
         Wv = torch.randn(kv_out, hidden, device=device)
+        bq = torch.randn(q_out, device=device)
+        bk = torch.randn(kv_out, device=device)
+        bv = torch.randn(kv_out, device=device)
         Aq = torch.randn(hidden, rank, device=device)
         Bq = torch.randn(rank, q_out, device=device)
         Ak = torch.randn(hidden, rank, device=device)
@@ -47,11 +50,26 @@ class TestFusedLoRAQKV:
         Av = torch.randn(hidden, rank, device=device)
         Bv = torch.randn(rank, kv_out, device=device)
         Q, K, V = Opaque_LoRA_QKV.apply(
-            x, Wq, Aq, Bq, scaling, Wk, Ak, Bk, scaling, Wv, Av, Bv, scaling
+            x,
+            Wq,
+            Aq,
+            Bq,
+            scaling,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            scaling,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            scaling,
+            bv,
         )
-        ref_q = F.linear(x, Wq) + x @ Aq @ Bq * scaling
-        ref_k = F.linear(x, Wk) + x @ Ak @ Bk * scaling
-        ref_v = F.linear(x, Wv) + x @ Av @ Bv * scaling
+        ref_q = F.linear(x, Wq, bq) + x @ Aq @ Bq * scaling
+        ref_k = F.linear(x, Wk, bk) + x @ Ak @ Bk * scaling
+        ref_v = F.linear(x, Wv, bv) + x @ Av @ Bv * scaling
         assert torch.allclose(Q, ref_q, rtol=0.001, atol=0.001), (
             f"Fused LoRA QKV Q mismatch: max diff {(Q - ref_q).abs().max():.2e}"
         )
@@ -73,6 +91,9 @@ class TestFusedLoRAQKV:
         Wq = torch.randn(q_out, hidden, device=device)
         Wk = torch.randn(kv_out, hidden, device=device)
         Wv = torch.randn(kv_out, hidden, device=device)
+        bq = torch.randn(q_out, device=device)
+        bk = None
+        bv = torch.randn(kv_out, device=device)
         Aq = torch.randn(hidden, rank, device=device, requires_grad=True)
         Bq = torch.randn(rank, q_out, device=device, requires_grad=True)
         Ak = torch.randn(hidden, rank, device=device, requires_grad=True)
@@ -80,7 +101,22 @@ class TestFusedLoRAQKV:
         Av = torch.randn(hidden, rank, device=device, requires_grad=True)
         Bv = torch.randn(rank, kv_out, device=device, requires_grad=True)
         Q, K, V = Opaque_LoRA_QKV.apply(
-            x, Wq, Aq, Bq, scaling, Wk, Ak, Bk, scaling, Wv, Av, Bv, scaling
+            x,
+            Wq,
+            Aq,
+            Bq,
+            scaling,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            scaling,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            scaling,
+            bv,
         )
         (Q.sum() + K.sum() + V.sum()).backward()
         assert x.grad is not None, "No gradient for input"
@@ -138,8 +174,8 @@ class TestFusedLoRAQKV:
                 assert not torch.isnan(p.grad).any(), f"NaN in gradient for {name}"
         assert has_grad, "No gradients computed"
 
-    def test_qwen2_skips_qkv_fusion(self, device):
-        """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
+    def test_qwen2_fuses_biased_qkv_projections(self, device):
+        """Qwen2 attention fuses its frozen biased Q/K/V projections."""
         config = Qwen2Config(
             vocab_size=128,
             hidden_size=64,
@@ -147,6 +183,7 @@ class TestFusedLoRAQKV:
             num_hidden_layers=2,
             num_attention_heads=4,
             num_key_value_heads=2,
+            attention_bias=True,
         )
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -160,9 +197,77 @@ class TestFusedLoRAQKV:
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert not hasattr(attn, "_opaque_fused_qkv"), (
-                "Qwen2 attention should NOT have fused QKV (bias=True)"
-            )
+            assert hasattr(attn, "_opaque_fused_qkv")
+            assert attn.q_proj.base_layer.bias is not None
+            assert not attn.q_proj.base_layer.bias.requires_grad
+
+    def test_qwen2_skips_qkv_fusion_with_trainable_bias(self, device):
+        """QKV fusion preserves gradients for PEFT configurations that train biases."""
+        config = Qwen2Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            attention_bias=True,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config),
+            LoraConfig(
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.0,
+                bias="all",
+                target_modules=["q_proj", "k_proj", "v_proj"],
+            ),
+        ).to(device)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
+        attn = model.model.model.layers[0].self_attn
+        assert attn.q_proj.base_layer.bias.requires_grad
+        assert not hasattr(attn, "_opaque_fused_qkv")
+
+    def test_qwen2_biased_qkv_clipped_grad(self, device):
+        """Fused biased Qwen2 QKV projections support per-example gradients."""
+        config = Qwen2Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            attention_bias=True,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config),
+            LoraConfig(
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.0,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+            ),
+        ).to(device)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8), device=device)
+        outputs = model(input_ids, labels=input_ids)
+        assert torch.isfinite(outputs.loss)
+        outputs.loss.backward()
+
+        fmodel, trainable, frozen = make_functional(
+            model, disable_autograd_tracking=True, partition_trainable=True
+        )
+
+        def per_example_loss(trainable_params, frozen_params, ids, labels):
+            return fmodel(
+                {**frozen_params, **trainable_params}, ids, labels=labels
+            ).loss
+
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss, argnums=0, batch_argnums=(2, 3), clipping_norm=1.0
+        )
+        grads, _ = grad_fn(trainable, frozen, input_ids, input_ids, state=clip_state)
+        assert all(torch.isfinite(grad).all() for grad in grads.pytree.values())
 
     def test_qwen3_skips_qkv_fusion(self, device):
         """Qwen3 attention should NOT be fused (has q_norm/k_norm)."""

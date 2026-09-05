@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import types
 
-from .components._utils import _has_lora, _no_bias, _no_lora_dropout
+from .components._utils import _bias_is_frozen, _has_lora, _no_bias, _no_lora_dropout
 from .components.linear import _make_lora_linear_forward
 from .components.mlp import (
     _MLP_ACTIVATION_MAP,
@@ -72,7 +72,7 @@ def _auto_fuse_lora(model):
             if getattr(attn, "_opaque_lora_qkv_patched", False):
                 continue
 
-            # Check attention class is fuseable (standard QKV pattern, no bias)
+            # Check attention class follows the supported QKV projection pattern.
             attn_cls_name = type(attn).__name__
             if attn_cls_name not in _FUSEABLE_QKV_ATTENTION_CLASSES:
                 # Try MRO for wrapped classes
@@ -86,9 +86,9 @@ def _auto_fuse_lora(model):
                 and _has_lora(attn, "q_proj")
                 and _has_lora(attn, "k_proj")
                 and _has_lora(attn, "v_proj")
-                and _no_bias(attn, "q_proj")
-                and _no_bias(attn, "k_proj")
-                and _no_bias(attn, "v_proj")
+                and _bias_is_frozen(attn, "q_proj")
+                and _bias_is_frozen(attn, "k_proj")
+                and _bias_is_frozen(attn, "v_proj")
                 and _no_lora_dropout(attn, "q_proj")
                 and _no_lora_dropout(attn, "k_proj")
                 and _no_lora_dropout(attn, "v_proj")

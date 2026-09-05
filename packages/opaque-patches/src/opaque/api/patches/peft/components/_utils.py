@@ -40,6 +40,12 @@ def _extract_lora_params(lora_linear):
     return W, A, B, scaling
 
 
+def _extract_lora_params_and_bias(lora_linear):
+    """Extract LoRA parameters and the base-layer bias for QKV fusion."""
+    W, A, B, scaling = _extract_lora_params(lora_linear)
+    return W, A, B, scaling, lora_linear.base_layer.bias
+
+
 def _has_lora(module, proj_name):
     """Check if a module's sub-module has active LoRA adapters."""
     proj = getattr(module, proj_name, None)
@@ -69,6 +75,15 @@ def _no_lora_dropout(module, proj_name):
     if isinstance(dropout, torch.nn.Identity):
         return True
     return bool(isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0)
+
+
+def _bias_is_frozen(module, proj_name):
+    """Check that a projection bias does not require a custom-function gradient."""
+    proj = getattr(module, proj_name, None)
+    if proj is None:
+        return False
+    base = getattr(proj, "base_layer", proj)
+    return base.bias is None or not base.bias.requires_grad
 
 
 def _no_bias(module, proj_name):

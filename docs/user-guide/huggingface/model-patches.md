@@ -164,7 +164,8 @@ which fused Triton kernels are applied per model:
 | LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Mistral | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Ministral | 8B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
-| Qwen2 / Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| Qwen2 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+| Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | SmolLM3 | 3B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo2 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | OLMo3 | 1B, 7B (tiny config) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
@@ -338,12 +339,15 @@ are detected and `peft=True` is passed to `apply_model_patches`:
 `opaque_lora_w` patches `peft.tuners.lora.Linear.forward` and applies
 to all LoRA layers.  `opaque_lora_qkv` and `opaque_lora_mlp` are
 auto-fused when all projections in an attention block or MLP block
-have LoRA adapters with no bias. These kernels implement the low-rank adapter
+have LoRA adapters and no active LoRA dropout. QKV fusion supports optional
+frozen base-layer biases; PEFT configurations that train projection biases use
+the unfused path so their gradients remain intact. MLP fusion continues to
+require bias-free projections. These kernels implement the low-rank adapter
 structure from [*LoRA: Low-Rank Adaptation of Large Language Models*](https://arxiv.org/abs/2106.09685).
 
 QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2.  Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm),
-Phi-3 (combined qkv_proj), Cohere (no transpose).
+Cohere2, Qwen2. Excluded: Qwen3 (q_norm/k_norm), Phi-3 (combined qkv_proj),
+Cohere (no transpose).
 
 ### Using kernels directly
 

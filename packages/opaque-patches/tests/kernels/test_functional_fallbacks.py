@@ -54,6 +54,25 @@ def test_opaque_cross_entropy_loss_fallback_shape_and_values():
     importlib.util.find_spec("triton") is not None,
     reason="Fallback tests only apply when Triton is unavailable",
 )
+def test_opaque_lora_qkv_fallback_rejects_trainable_biases():
+    from opaque.exceptions import ConfigurationError
+    from opaque.patches.kernels import opaque_lora_qkv
+
+    x = torch.randn(2, 5, 6)
+    projections = [torch.randn(4, 6), torch.randn(6, 3), torch.randn(3, 4), 0.5] * 3
+
+    with pytest.raises(ConfigurationError, match="frozen Q/K/V base biases"):
+        opaque_lora_qkv(
+            x,
+            *projections,
+            bq=torch.randn(4, requires_grad=True),
+        )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("triton") is not None,
+    reason="Fallback tests only apply when Triton is unavailable",
+)
 def test_opaque_lora_w_fallback_matches_reference():
     from opaque.patches.kernels import opaque_lora_w
 

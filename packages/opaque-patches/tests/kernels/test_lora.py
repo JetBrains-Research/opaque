@@ -95,9 +95,9 @@ def _make_qkv_weights(hidden, rank, **kw):
 # ============================================================================
 
 
-def pytorch_lora_linear(X, W, A, B, scaling):
-    """PyTorch reference LoRA linear: out = X @ W.T + (X @ A @ B) * scaling."""
-    out = F.linear(X, W)
+def pytorch_lora_linear(X, W, A, B, scaling, bias=None):
+    """PyTorch reference LoRA linear: out = X @ W.T + bias + X @ A @ B * scaling."""
+    out = F.linear(X, W, bias)
     if A is not None and B is not None:
         out = out + (X @ A) @ B * scaling
     return out
@@ -108,17 +108,23 @@ def opaque_lora_linear(X, W, A, B, scaling):
     return Opaque_LoRA_W.apply(X, W, A, B, scaling)
 
 
-def pytorch_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+def pytorch_lora_qkv(  # noqa: PLR0913, PLR0917
+    X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv, bq=None, bk=None, bv=None
+):
     """PyTorch reference for Q, K, V projections."""
-    Q = pytorch_lora_linear(X, Wq, Aq, Bq, Sq)
-    K = pytorch_lora_linear(X, Wk, Ak, Bk, Sk)
-    V = pytorch_lora_linear(X, Wv, Av, Bv, Sv)
+    Q = pytorch_lora_linear(X, Wq, Aq, Bq, Sq, bq)
+    K = pytorch_lora_linear(X, Wk, Ak, Bk, Sk, bk)
+    V = pytorch_lora_linear(X, Wv, Av, Bv, Sv, bv)
     return Q, K, V
 
 
-def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+def opaque_lora_qkv(  # noqa: PLR0913, PLR0917
+    X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv, bq=None, bk=None, bv=None
+):
     """Opaque kernel implementation."""
-    return Opaque_LoRA_QKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
+    return Opaque_LoRA_QKV.apply(
+        X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv
+    )
 
 
 def pytorch_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
@@ -146,7 +152,24 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
         (_LoRAWBackwardLite.vmap, (0, None, None, 0, None)),
         (
             Opaque_LoRA_QKV.vmap,
-            (0, None, None, None, None, None, None, None, None, None, None, None, 0),
+            (
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+            ),
         ),
         (
             _LoRAQKVBackward.vmap,
@@ -583,10 +606,52 @@ class TestLoRAWPerformance:
 # ============================================================================
 
 
+class TestLoRAQKVBiasValidation:
+    """Validate the frozen-bias contract for fused QKV projections."""
+
+    def test_rejects_trainable_biases_in_eager_and_vmap(self):
+        """Trainable biases must use the unfused projection path."""
+        from opaque.exceptions import ConfigurationError
+
+        hidden, rank = 8, 2
+        kw = {"device": "cuda", "dtype": torch.float32}
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(hidden, rank, **kw)
+        bq = torch.randn(hidden, **kw, requires_grad=True)
+        x = torch.randn(2, 3, hidden, **kw)
+
+        def qkv_projection(input_):
+            return Opaque_LoRA_QKV.apply(
+                input_,
+                Wq,
+                Aq,
+                Bq,
+                SCALING,
+                bq,
+                Wk,
+                Ak,
+                Bk,
+                SCALING,
+                None,
+                Wv,
+                Av,
+                Bv,
+                SCALING,
+                None,
+            )
+
+        with pytest.raises(ConfigurationError, match="frozen Q/K/V base biases"):
+            qkv_projection(x)
+        with pytest.raises(ConfigurationError, match="frozen Q/K/V base biases"):
+            vmap(qkv_projection)(torch.randn(2, 2, 3, hidden, **kw))
+
+
 class TestLoRAQKVForward:
     """Test LoRA-QKV forward pass precision."""
 
-    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
+    @pytest.mark.parametrize("bias_layout", ["none", "mixed", "all"])
+    def test_forward_matches_pytorch(
+        self, assert_precision, mellum_config, bias_layout
+    ):
         """Forward: opaque vs pytorch (non-vmap, check Q, K, V each)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -597,12 +662,52 @@ class TestLoRAQKVForward:
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        biases = {
+            "none": (None, None, None),
+            "mixed": (torch.randn(HIDDEN, **kw), None, torch.randn(HIDDEN, **kw)),
+            "all": (
+                torch.randn(HIDDEN, **kw),
+                torch.randn(HIDDEN, **kw),
+                torch.randn(HIDDEN, **kw),
+            ),
+        }
+        bq, bk, bv = biases[bias_layout]
 
         Q_pt, K_pt, V_pt = pytorch_lora_qkv(
-            X, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            X,
+            Wq,
+            Aq,
+            Bq,
+            SCALING,
+            Wk,
+            Ak,
+            Bk,
+            SCALING,
+            Wv,
+            Av,
+            Bv,
+            SCALING,
+            bq,
+            bk,
+            bv,
         )
         Q_op, K_op, V_op = opaque_lora_qkv(
-            X, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+            X,
+            Wq,
+            Aq,
+            Bq,
+            SCALING,
+            Wk,
+            Ak,
+            Bk,
+            SCALING,
+            Wv,
+            Av,
+            Bv,
+            SCALING,
+            bq,
+            bk,
+            bv,
         )
 
         print("\nLoRA-QKV Forward:")
@@ -633,6 +738,9 @@ class TestLoRAQKVBackward:
         Bk_pt = Bk_pt.requires_grad_(True)
         Av_pt = Av_pt.requires_grad_(True)
         Bv_pt = Bv_pt.requires_grad_(True)
+        bq = torch.randn(HIDDEN, **kw)
+        bk = None
+        bv = torch.randn(HIDDEN, **kw)
 
         Q_pt, K_pt, V_pt = pytorch_lora_qkv(
             X_pt,
@@ -648,6 +756,9 @@ class TestLoRAQKVBackward:
             Av_pt,
             Bv_pt,
             SCALING,
+            bq,
+            bk,
+            bv,
         )
         (Q_pt + K_pt + V_pt).mean().backward()
 
@@ -674,6 +785,9 @@ class TestLoRAQKVBackward:
             Av_op,
             Bv_op,
             SCALING,
+            bq,
+            bk,
+            bv,
         )
         (Q_op + K_op + V_op).mean().backward()
 
@@ -773,17 +887,50 @@ class TestLoRAQKVVmapGrad:
         kw = {"device": "cuda", "dtype": torch.bfloat16}
 
         Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        bq = torch.randn(HIDDEN, **kw)
+        bk = None
+        bv = torch.randn(HIDDEN, **kw)
         X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def f_pt(x):
             Q, K, V = pytorch_lora_qkv(
-                x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+                x,
+                Wq,
+                Aq,
+                Bq,
+                SCALING,
+                Wk,
+                Ak,
+                Bk,
+                SCALING,
+                Wv,
+                Av,
+                Bv,
+                SCALING,
+                bq,
+                bk,
+                bv,
             )
             return (Q + K + V).mean()
 
         def f_op(x):
             Q, K, V = opaque_lora_qkv(
-                x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
+                x,
+                Wq,
+                Aq,
+                Bq,
+                SCALING,
+                Wk,
+                Ak,
+                Bk,
+                SCALING,
+                Wv,
+                Av,
+                Bv,
+                SCALING,
+                bq,
+                bk,
+                bv,
             )
             return (Q + K + V).mean()
 
@@ -1476,7 +1623,7 @@ def _staged_backward_loss(kind, *, trainable=True, tokens=8, hidden=32, rank=4):
         for _ in range(3):
             W = _kaiming_weight(hidden, hidden, **kw)
             A, B = adapter(hidden, hidden)
-            projections.extend((W, A, B, SCALING))
+            projections.extend((W, A, B, SCALING, None))
         loss = sum(Opaque_LoRA_QKV.apply(X, *projections)).sum()
     else:
         intermediate = hidden * 2
