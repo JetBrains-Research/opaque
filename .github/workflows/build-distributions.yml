@@ -172,15 +172,13 @@ jobs:
           fi
           python3 -m venv wheel-import
           wheel-import/bin/python -m pip install --no-deps "${wheels[0]}"
-          wheel-import/bin/python -c '
+          wheel-import/bin/python - <<'PY'
           import ctypes
           from pathlib import Path
 
-          native = next(
-              Path("wheel-import").glob("**/opaque_accounting.abi3.so")
-          )
-          ctypes.CDLL(native)
-          '
+          native = next(Path("wheel-import").glob("**/opaque_accounting.abi3.so"))
+          ctypes.CDLL(str(native))
+          PY
 
       - name: Validate artifact policy
         run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir dist
@@ -196,8 +194,8 @@ jobs:
           uv build "${sdists[0]}" --wheel --out-dir rebuilt
 
       - name: Validate rebuilt wheel artifact policy
-       if: matrix.target.kind == 'sdist'
-       run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir rebuilt
+        if: matrix.target.kind == 'sdist'
+        run: python3 .github/scripts/check_accounting_artifact_policy.py --wheel-dir rebuilt
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
