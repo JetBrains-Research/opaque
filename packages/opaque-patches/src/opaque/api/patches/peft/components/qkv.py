@@ -18,6 +18,8 @@ _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "Qwen2Attention",
 }
 
+_QWEN3_QKV_ATTENTION_CLASS = "Qwen3Attention"
+
 
 def _opaque_fused_lora_qkv(self, hidden_states):
     """Compute Q, K, V using fused Opaque_LoRA_QKV kernel.
@@ -143,3 +145,76 @@ def _make_fused_qkv_attention_forward(original_forward):
         return attn_output, attn_weights
 
     return forward
+
+
+def _make_fused_qwen3_attention_forward(original_forward):
+    """Create Qwen3 attention forward with fused QKV LoRA projection.
+
+    Qwen3 applies per-head RMS normalization to Q and K after projection and
+    before RoPE. Its attention dispatch also differs from the Llama-like
+    families, so retain its native ordering instead of sharing their wrapper.
+    """
+
+    def forward(
+        self,
+        hidden_states,
+        position_embeddings,
+        attention_mask=None,
+        past_key_values=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return original_forward(
+                hidden_states,
+                position_embeddings,
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                **kwargs,
+            )
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        Q, K, V = self._opaque_fused_qkv(hidden_states)
+        query_states = self.q_norm(Q.view(hidden_shape)).transpose(-3, -2)
+        key_states = self.k_norm(K.view(hidden_shape)).transpose(-3, -2)
+        value_states = V.view(hidden_shape).transpose(-3, -2)
+
+        model_module = sys.modules[type(self).__module__]
+        cos, sin = position_embeddings
+        query_states, key_states = model_module.apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
+
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
+
+        attention_interface = model_module.ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, model_module.eager_attention_forward
+        )
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            sliding_window=self.sliding_window,
+            **kwargs,
+        )
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        return self.o_proj(attn_output), attn_weights
+
+    return forward
+
+
+_QKV_ATTENTION_FORWARD_FACTORIES = {
+    _QWEN3_QKV_ATTENTION_CLASS: _make_fused_qwen3_attention_forward,
+}
+
+_SUPPORTED_QKV_ATTENTION_CLASSES = (
+    _FUSEABLE_QKV_ATTENTION_CLASSES | _QKV_ATTENTION_FORWARD_FACTORIES.keys()
+)
