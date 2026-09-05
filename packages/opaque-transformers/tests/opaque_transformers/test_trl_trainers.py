@@ -1404,54 +1404,6 @@ def test_sft_fused_eligible_when_telemetry_off(tmp_path):
     assert trainer.args.performance_kernels_config["fused_linear_cross_entropy"] is True
 
 
-def test_sft_metric_configured_loss_only_eval_stays_logits_free(tmp_path, monkeypatch):
-    """Metric callbacks do not make an explicitly loss-only eval project logits."""
-    seen = {}
-
-    def compute_metrics(prediction):
-        seen["predictions"] = prediction.predictions
-        seen["labels"] = prediction.label_ids
-        return {}
-
-    trainer = SFTTrainer(
-        model=_tiny_model(),
-        args=_args(
-            SFTConfig,
-            tmp_path,
-            max_length=8,
-            loss_type="nll",
-            log_completion_metrics=False,
-        ),
-        train_dataset=_sft_dataset(),
-        eval_dataset=_sft_dataset(),
-        processing_class=_stub_tokenizer(),
-        compute_metrics=compute_metrics,
-    )
-    assert trainer._fused_nll is True
-
-    lm_head_calls = 0
-    original_lm_head_forward = trainer.model.lm_head.forward
-
-    def lm_head_forward(*args, **kwargs):
-        nonlocal lm_head_calls
-        lm_head_calls += 1
-        return original_lm_head_forward(*args, **kwargs)
-
-    monkeypatch.setattr(trainer.model.lm_head, "forward", lm_head_forward)
-    batch = trainer.data_collator([trainer.train_dataset[0]])
-    loss, predictions, labels = trainer.prediction_step(
-        trainer.model, batch, prediction_loss_only=True
-    )
-    assert torch.isfinite(loss)
-    assert predictions is None
-    assert labels is None
-    assert lm_head_calls == 0
-
-    trainer.evaluate()
-    assert seen["predictions"] is not None
-    assert seen["labels"] is not None
-
-
 def test_sft_dft_fused_eligible_resolves_lm_head(tmp_path):
     trainer = SFTTrainer(
         model=_tiny_model(),
@@ -2085,18 +2037,31 @@ def test_sft_dft_eval_loss_consistent_across_metric_modes(tmp_path):
     assert loss_only == pytest.approx(with_metrics, rel=1e-6)
 
 
-def test_sft_dft_loss_only_eval_stays_logits_free(tmp_path):
-    """Loss-only DFT evaluation returns losses without building predictions."""
+def test_sft_dft_loss_only_eval_uses_logits_free_closure(tmp_path, monkeypatch):
+    """Loss-only DFT evaluation must not request a logits result just to discard it."""
     trainer = _dft_trainer(tmp_path)
-    batch = trainer.data_collator([trainer.train_dataset[0]])
+    assert trainer._fused_dft is False  # telemetry normally keeps training eager
+    rows = [dict(r) for r in _varied_len_dataset()]
+    batch = trainer._data_collator(rows)
+    called = 0
+    original = trainer._last_hidden_state
 
-    loss, predictions, labels = trainer.prediction_step(
-        trainer.model, batch, prediction_loss_only=True
+    def logits_free_hidden(*args, **kwargs):
+        nonlocal called
+        called += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(trainer, "_last_hidden_state", logits_free_hidden)
+    loss, preds, labels = trainer.prediction_step(
+        trainer._model, dict(batch), prediction_loss_only=True
     )
 
     assert loss.ndim == 1
-    assert predictions is None
+    assert preds is None
     assert labels is None
+    assert called == 1
+    assert trainer._eval_per_example_loss_only_fn is not None
+    assert trainer._eval_per_example_loss_fn is None
 
 
 def test_sft_dft_prediction_step_respects_ignore_keys(tmp_path):

@@ -224,9 +224,14 @@ class SFTTrainer(DPTrainer):
         self._fused_nll = self._fused_loss_eligible and args.loss_type == "nll"
         self._fused_dft = self._fused_loss_eligible and args.loss_type == "dft"
         # Resolve the backbone-prefix + lm_head param-key once for the ``dft``
-        # fused primitive (robust to tied embeddings); ``None`` → stay eager.
+        # fused primitive (robust to tied embeddings). Loss-only evaluation does
+        # not consume telemetry or predictions, so it can use this path even
+        # when those features keep training or metric evaluation eager.
         self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
-            model, self._fused_dft
+            model, args.loss_type == "dft"
+        )
+        self._fused_dft_loss_only = (
+            args.loss_type == "dft" and self._lm_head_param_name is not None
         )
         self._fused_dft = self._fused_dft and self._lm_head_param_name is not None
 
@@ -278,9 +283,6 @@ class SFTTrainer(DPTrainer):
             optimizer_cls_and_kwargs=optimizer_cls_and_kwargs,
             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
-        # Non-HF custom models are supported by DPTrainer but do not necessarily
-        # accept Opaque's private fused-forward marker. They keep the eager
-        # labels-forward behavior.
         forward_parameters = inspect.signature(self._model.forward).parameters.values()
         self._fused_forward_uses_marker = any(
             parameter.name == "opaque_fused_loss_only"
@@ -587,7 +589,7 @@ class SFTTrainer(DPTrainer):
             )
             loss = out["loss"]
             logits = out.get("logits")  # None on the fused path
-        elif self._fused_dft and not return_logits:
+        elif self._fused_dft or (not return_logits and self._fused_dft_loss_only):
             # ``dft`` has no model-level fused forward, so project the backbone's
             # last hidden state ``(T, H)`` through ``fused_dft_loss`` (falls back
             # to the eager logits form on CPU / non-half).
@@ -655,38 +657,19 @@ class SFTTrainer(DPTrainer):
         )
         inputs = self._prepare_input(inputs)
 
-        # The loss-only path returns only the per-example DFT loss, preserving
-        # its logits-free fused computation. Metric evaluation uses the cached
-        # logits-producing closure.
-        if prediction_loss_only:
-            if self._ctx is not None:
-                fmodel = self._ctx.fmodel
-                frozen_params = self._ctx.frozen_params
-                batch_keys = self._ctx.batch_keys
-                trainable = self._ctx.trainable_params
-            else:
-                from opaque.functional import make_functional
-
-                fmodel, trainable, frozen_params = make_functional(
-                    self._model, partition_trainable=True
-                )
-                batch_keys = self._discover_batch_keys()
-            loss_fn, batch_argnums = self._build_per_example_loss(
-                fmodel, frozen_params, batch_keys, return_logits=False
-            )
-            vmapped_fn = torch.vmap(
-                loss_fn, in_dims=(None,) + (0,) * len(batch_argnums)
-            )
+        # Loss-only evaluation must retain the per-example DFT scalars for plain
+        # per-example aggregation, but has no consumer for logits. Ask the base
+        # helper for its separate no-logits closure so this call can also take
+        # DFT's fused logits-free path despite telemetry being enabled elsewhere.
+        vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn(
+            return_logits=not prediction_loss_only
+        )
+        if self._ctx is not None:
+            trainable = self._ctx.trainable_params
         else:
-            vmapped_fn, _argnums, batch_keys = self._get_eval_per_example_loss_fn()
-            if self._ctx is not None:
-                trainable = self._ctx.trainable_params
-            else:
-                trainable = {
-                    name: p
-                    for name, p in self._model.named_parameters()
-                    if p.requires_grad
-                }
+            trainable = {
+                name: p for name, p in self._model.named_parameters() if p.requires_grad
+            }
         # Fail loudly on a mismatched eval collator (base-path parity) —
         # a missing key would otherwise surface as an opaque vmap error.
         missing = [k for k in batch_keys if inputs.get(k) is None]
@@ -708,16 +691,16 @@ class SFTTrainer(DPTrainer):
             with torch.no_grad():
                 if amp_dtype is not None:
                     with torch.autocast(device_type=self._device.type, dtype=amp_dtype):
-                        result = vmapped_fn(trainable, *batch_args)
+                        output = vmapped_fn(trainable, *batch_args)
                 else:
-                    result = vmapped_fn(trainable, *batch_args)
+                    output = vmapped_fn(trainable, *batch_args)
         finally:
             if was_training:
                 self._model.train()
 
         if prediction_loss_only:
-            return result.detach(), None, None
-        loss, logits = result
+            return output.detach(), None, None
+        loss, logits = output
         loss = loss.detach()
         # Same logits filtering as the base per-example path
         # (``DPTrainer.prediction_step``).
