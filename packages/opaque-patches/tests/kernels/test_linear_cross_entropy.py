@@ -165,6 +165,30 @@ class TestLinearCEForward:
             label="loss",
         )
 
+    def test_forward_uses_next_token_labels(self, assert_precision):
+        """The causal shift must read label ``i + 1`` for each hidden state ``i``."""
+        torch.manual_seed(48)
+        batch, seq_len, hidden_dim, vocab_size = 2, 7, 16, 32
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.arange(batch * seq_len, device="cuda").reshape(batch, seq_len)
+        labels %= vocab_size
+
+        out_pt = pytorch_linear_ce(hidden, weight, labels)
+        out_op = opaque_linear_ce(hidden, weight, labels)
+
+        assert_precision(
+            out_op.float().unsqueeze(0),
+            out_pt.float().unsqueeze(0),
+            rtol=RTOL_FORWARD,
+            atol=ATOL_FORWARD,
+            label="causally shifted loss",
+        )
+
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
     def test_forward_with_ignore_index(
         self, assert_precision, mellum_config, vocab_size
