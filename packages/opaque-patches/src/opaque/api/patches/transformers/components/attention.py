@@ -7,6 +7,7 @@ import torch
 # Bound the largest temporary to (..., heads, 64, key_length), rather than
 # materializing the full (..., heads, query_length, key_length) matrix.
 _GEMMA2_QUERY_CHUNK = 64
+_SDPA_QUERY_CHUNK = 64
 
 
 def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -58,6 +59,103 @@ def _apply_attention_mask(
             ~causal_mask, torch.finfo(attn_weights.dtype).min
         )
     return attn_weights + causal_mask
+
+
+def _chunked_sliding_window_mask(
+    query_start: int,
+    query_end: int,
+    key_start: int,
+    key_end: int,
+    sliding_window: int | None,
+    device: torch.device,
+) -> torch.Tensor:
+    """Build one compact causal band for contiguous query and key chunks."""
+    query_length = query_end - query_start
+    key_length = key_end - key_start
+    mask = torch.ones(
+        (query_length, key_length), dtype=torch.bool, device=device
+    ).tril_(diagonal=query_start - key_start)
+    if sliding_window is not None:
+        mask.triu_(diagonal=query_start - key_start - sliding_window + 1)
+    return mask
+
+
+def _compact_sliding_window_sdpa(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    sliding_window: int,
+    dropout: float,
+    scaling: float | None,
+) -> torch.Tensor:
+    """Run a no-padding sliding-window prefill in bounded query chunks."""
+    key_states = vmap_repeat_kv(key, module.num_key_value_groups)
+    value_states = vmap_repeat_kv(value, module.num_key_value_groups)
+    output_chunks = []
+    for query_start in range(0, query.shape[-2], _SDPA_QUERY_CHUNK):
+        query_end = min(query_start + _SDPA_QUERY_CHUNK, query.shape[-2])
+        key_start = max(0, query_start - sliding_window + 1)
+        mask = _chunked_sliding_window_mask(
+            query_start,
+            query_end,
+            key_start,
+            query_end,
+            sliding_window,
+            query.device,
+        )
+        output_chunks.append(
+            torch.nn.functional.scaled_dot_product_attention(
+                query[..., query_start:query_end, :],
+                key_states[..., key_start:query_end, :],
+                value_states[..., key_start:query_end, :],
+                attn_mask=mask,
+                dropout_p=dropout,
+                scale=scaling,
+            )
+        )
+    return torch.cat(output_chunks, dim=-2)
+
+
+def vmap_sdpa_attention_forward_sliding_window(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    dropout: float = 0.0,
+    scaling: float | None = None,
+    sliding_window: int | None = None,
+    position_bias: torch.Tensor | None = None,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Apply no-padding SDPA sliding-window prefill without a full Q-by-K mask."""
+    if (
+        attention_mask is None
+        and position_bias is None
+        and sliding_window is not None
+        and query.shape[-2] == key.shape[-2]
+        and dropout == 0.0
+        and query.shape[-2] > sliding_window
+    ):
+        output = _compact_sliding_window_sdpa(
+            module, query, key, value, sliding_window, dropout, scaling
+        )
+        return output.transpose(-3, -2).contiguous(), None
+
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+    return sdpa_attention_forward(
+        module,
+        query,
+        key,
+        value,
+        attention_mask,
+        dropout=dropout,
+        scaling=scaling,
+        position_bias=position_bias,
+        **kwargs,
+    )
 
 
 def vmap_eager_attention_forward(
@@ -167,11 +265,12 @@ def _gemma2_mask_chunk(
     attention_mask: torch.Tensor,
     query_start: int,
     query_end: int,
-    key_length: int,
+    key_start: int,
+    key_end: int,
 ) -> torch.Tensor:
     if attention_mask.shape[-2] == 1:
-        return attention_mask[..., :, :key_length]
-    return attention_mask[..., query_start:query_end, :key_length]
+        return attention_mask[..., :, key_start:key_end]
+    return attention_mask[..., query_start:query_end, key_start:key_end]
 
 
 def _gemma2_softcap_probabilities(
@@ -183,15 +282,28 @@ def _gemma2_softcap_probabilities(
     is_causal: bool,
     query_start: int,
     query_end: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    sliding_window: int | None,
+) -> tuple[int, int, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    compact_prefill = (
+        attention_mask is None and is_causal and query.shape[-2] == key.shape[-2]
+    )
+    key_start = (
+        max(0, query_start - sliding_window + 1)
+        if compact_prefill and sliding_window is not None
+        else 0
+    )
+    key_end = query_end if compact_prefill else key.shape[-2]
     query_chunk = query[..., query_start:query_end, :]
-    logits = torch.matmul(query_chunk, key.transpose(-2, -1)) * scaling
+    key_chunk = key[..., key_start:key_end, :]
+    logits = torch.matmul(query_chunk, key_chunk.transpose(-2, -1)) * scaling
     capped_logits = torch.tanh(logits / softcap) * softcap
 
     softmax_input = capped_logits
     probability_mask = None
     if attention_mask is not None:
-        mask = _gemma2_mask_chunk(attention_mask, query_start, query_end, key.shape[-2])
+        mask = _gemma2_mask_chunk(
+            attention_mask, query_start, query_end, key_start, key_end
+        )
         if mask.dtype == torch.bool:
             probability_mask = mask
             softmax_input = capped_logits.masked_fill(
@@ -200,11 +312,14 @@ def _gemma2_softcap_probabilities(
         else:
             softmax_input = capped_logits + mask
     elif is_causal:
-        query_positions = torch.arange(
-            query_start, query_end, device=query.device
-        ).unsqueeze(-1)
-        key_positions = torch.arange(key.shape[-2], device=query.device)
-        probability_mask = key_positions <= query_positions
+        probability_mask = _chunked_sliding_window_mask(
+            query_start,
+            query_end,
+            key_start,
+            key_end,
+            sliding_window if compact_prefill else None,
+            query.device,
+        )
         softmax_input = capped_logits.masked_fill(
             ~probability_mask, torch.finfo(capped_logits.dtype).min
         )
@@ -214,7 +329,7 @@ def _gemma2_softcap_probabilities(
     )
     if probability_mask is not None:
         probabilities = probabilities.masked_fill(~probability_mask, 0.0)
-    return query_chunk, capped_logits, probabilities
+    return key_start, key_end, query_chunk, key_chunk, capped_logits, probabilities
 
 
 class _ChunkedGemma2Attention(torch.autograd.Function):
@@ -223,11 +338,13 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
     generate_vmap_rule = True
 
     @staticmethod
-    def forward(query, key, value, attention_mask, scaling, softcap, is_causal):
+    def forward(
+        query, key, value, attention_mask, scaling, softcap, is_causal, sliding_window
+    ):
         output_chunks = []
         for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
             query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
-            _, _, probabilities = _gemma2_softcap_probabilities(
+            key_start, key_end, _, _, _, probabilities = _gemma2_softcap_probabilities(
                 query,
                 key,
                 attention_mask,
@@ -236,14 +353,28 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
                 is_causal,
                 query_start,
                 query_end,
+                sliding_window,
             )
-            output_chunks.append(torch.matmul(probabilities.to(query.dtype), value))
+            output_chunks.append(
+                torch.matmul(
+                    probabilities.to(query.dtype), value[..., key_start:key_end, :]
+                )
+            )
         return torch.cat(output_chunks, dim=-2)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         del output
-        query, key, value, attention_mask, scaling, softcap, is_causal = inputs
+        (
+            query,
+            key,
+            value,
+            attention_mask,
+            scaling,
+            softcap,
+            is_causal,
+            sliding_window,
+        ) = inputs
         if attention_mask is None:
             ctx.save_for_backward(query, key, value)
         else:
@@ -252,6 +383,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
         ctx.scaling = float(scaling)
         ctx.softcap = float(softcap)
         ctx.is_causal = is_causal
+        ctx.sliding_window = sliding_window
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -266,26 +398,29 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
         grad_value = torch.zeros_like(value)
         for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
             query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
-            query_chunk, capped_logits, probabilities = _gemma2_softcap_probabilities(
-                query,
-                key,
-                attention_mask,
-                ctx.scaling,
-                ctx.softcap,
-                ctx.is_causal,
-                query_start,
-                query_end,
+            key_start, key_end, query_chunk, key_chunk, capped_logits, probabilities = (
+                _gemma2_softcap_probabilities(
+                    query,
+                    key,
+                    attention_mask,
+                    ctx.scaling,
+                    ctx.softcap,
+                    ctx.is_causal,
+                    query_start,
+                    query_end,
+                    ctx.sliding_window,
+                )
             )
             grad_output_chunk = grad_output[..., query_start:query_end, :]
             probabilities_input_dtype = probabilities.to(query.dtype)
 
-            grad_value.add_(
+            grad_value[..., key_start:key_end, :].add_(
                 torch.matmul(
                     probabilities_input_dtype.transpose(-2, -1), grad_output_chunk
                 )
             )
             grad_probabilities = torch.matmul(
-                grad_output_chunk, value.transpose(-2, -1)
+                grad_output_chunk, value[..., key_start:key_end, :].transpose(-2, -1)
             ).to(probabilities.dtype)
             grad_softmax_input = probabilities * (
                 grad_probabilities
@@ -294,7 +429,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
             grad_capped_logits = grad_softmax_input.to(capped_logits.dtype)
             if attention_mask is not None and attention_mask.dtype == torch.bool:
                 mask = _gemma2_mask_chunk(
-                    attention_mask, query_start, query_end, key.shape[-2]
+                    attention_mask, query_start, query_end, key_start, key_end
                 )
                 grad_capped_logits = grad_capped_logits.masked_fill(~mask, 0.0)
             grad_logits = grad_capped_logits * (
@@ -302,13 +437,16 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
             )
             grad_logits = grad_logits * ctx.scaling
 
-            grad_query_chunks.append(torch.matmul(grad_logits, key))
-            grad_key.add_(torch.matmul(grad_logits.transpose(-2, -1), query_chunk))
+            grad_query_chunks.append(torch.matmul(grad_logits, key_chunk))
+            grad_key[..., key_start:key_end, :].add_(
+                torch.matmul(grad_logits.transpose(-2, -1), query_chunk)
+            )
 
         return (
             torch.cat(grad_query_chunks, dim=-2),
             grad_key,
             grad_value,
+            None,
             None,
             None,
             None,
@@ -325,6 +463,7 @@ def vmap_sdpa_attention_forward_gemma2(
     dropout: float = 0.0,
     scaling: float | None = None,
     softcap: float | None = None,
+    sliding_window: int | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Use chunked attention for Gemma2 softcap, which SDPA cannot express."""
@@ -350,13 +489,19 @@ def vmap_sdpa_attention_forward_gemma2(
                 scaling,
                 softcap,
                 is_causal,
+                sliding_window,
             )
             return attn_output.transpose(-3, -2).contiguous(), None
 
         if is_causal:
-            attention_mask = torch.ones(
-                query.shape[-2], key.shape[-2], dtype=torch.bool, device=query.device
-            ).tril()
+            attention_mask = _chunked_sliding_window_mask(
+                0,
+                query.shape[-2],
+                0,
+                key.shape[-2],
+                sliding_window,
+                query.device,
+            )
         return vmap_eager_attention_forward_gemma2(
             module,
             query,

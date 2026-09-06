@@ -7,6 +7,7 @@ import torch
 
 from opaque.api.patches.transformers.runtime.masking import (
     vmap_create_causal_mask,
+    vmap_create_compact_sdpa_sliding_window_causal_mask,
     vmap_create_sliding_window_causal_mask,
 )
 from opaque.patches import apply_runtime_patches
@@ -318,6 +319,77 @@ class TestSlidingWindowWithoutPaddingMask:
         mask = self._make_mask("sdpa", sliding_window=2, seq_len=seq_len, batch_size=4)
         assert mask.shape == (4, 1, seq_len, seq_len)
         assert mask.untyped_storage().nbytes() == seq_len * seq_len
+
+    def test_compact_sdpa_path_skips_the_binding_window_mask(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.0,
+            },
+        )()
+        mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(4, 8, 8),
+            attention_mask=None,
+            past_key_values=None,
+        )
+        assert mask is None
+
+    def test_compact_sdpa_path_uses_the_evaluation_fast_path(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.1,
+            },
+        )()
+        inputs_embeds = torch.randn(1, 8, 8)
+        with torch.no_grad():
+            mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+                config,
+                inputs_embeds=inputs_embeds,
+                attention_mask=None,
+                past_key_values=None,
+            )
+        assert mask is None
+
+    def test_compact_sdpa_path_retains_dropout_training_fallback(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.1,
+            },
+        )()
+        mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(1, 8, 8),
+            attention_mask=None,
+            past_key_values=None,
+        )
+        assert mask is not None
+
+    def test_compact_sdpa_path_retains_padding_mask_fallback(self):
+        config = type(
+            "Cfg",
+            (),
+            {"_attn_implementation": "sdpa", "sliding_window": 2},
+        )()
+        mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(1, 8, 8),
+            attention_mask=torch.ones(1, 8),
+            past_key_values=None,
+        )
+        assert mask is not None
+        assert mask.dtype == torch.float32
 
     def test_non_binding_window_keeps_the_is_causal_fast_path(self):
         assert self._make_mask("sdpa", sliding_window=64, seq_len=8) is None

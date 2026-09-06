@@ -75,6 +75,87 @@ def _sdpa_sliding_window_mask(
     return mask.expand(batch_size, -1, -1, -1)
 
 
+def _can_use_compact_sdpa_sliding_window(
+    config,
+    input_embeds: torch.Tensor | None,
+    attention_mask: torch.Tensor | None,
+    past_key_values,
+    cache_position: torch.Tensor | None,
+    allow_is_causal_skip: bool,
+    or_mask_function,
+    and_mask_function,
+    block_sequence_ids: torch.Tensor | None,
+) -> bool:
+    """Whether a patched SDPA forward can apply the window in query chunks."""
+    sliding_window = getattr(config, "sliding_window", None)
+    return (
+        allow_is_causal_skip
+        and sliding_window is not None
+        and input_embeds is not None
+        and attention_mask is None
+        and getattr(config, "_attn_implementation", None) == "sdpa"
+        and _safe_seq_length(past_key_values) == 0
+        and cache_position is None
+        and or_mask_function is None
+        and and_mask_function is None
+        and block_sequence_ids is None
+        and (
+            not torch.is_grad_enabled()
+            or getattr(config, "attention_dropout", None) == 0.0
+        )
+        and _query_length(input_embeds) > sliding_window
+    )
+
+
+def vmap_create_compact_sdpa_sliding_window_causal_mask(
+    config,
+    inputs_embeds: torch.Tensor | None = None,
+    attention_mask: torch.Tensor | None = None,
+    past_key_values=None,
+    position_ids: torch.Tensor | None = None,
+    or_mask_function=None,
+    and_mask_function=None,
+    *,
+    cache_position: torch.Tensor | None = None,
+    input_embeds: torch.Tensor | None = None,
+    allow_is_causal_skip: bool = True,
+    block_sequence_ids: torch.Tensor | None = None,
+    **kwargs,
+) -> torch.Tensor | None:
+    """Leave no-padding SDPA prefill windowing to its compact attention path.
+
+    This helper is installed only in model modules whose patched SDPA
+    implementation consumes ``sliding_window``. Other callers retain
+    :func:`vmap_create_sliding_window_causal_mask` and its dense fallback.
+    """
+    input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
+    if _can_use_compact_sdpa_sliding_window(
+        config,
+        input_embeds,
+        attention_mask,
+        past_key_values,
+        cache_position,
+        allow_is_causal_skip,
+        or_mask_function,
+        and_mask_function,
+        block_sequence_ids,
+    ):
+        return None
+    return vmap_create_sliding_window_causal_mask(
+        config,
+        inputs_embeds=input_embeds,
+        attention_mask=attention_mask,
+        past_key_values=past_key_values,
+        position_ids=position_ids,
+        or_mask_function=or_mask_function,
+        and_mask_function=and_mask_function,
+        cache_position=cache_position,
+        allow_is_causal_skip=allow_is_causal_skip,
+        block_sequence_ids=block_sequence_ids,
+        **kwargs,
+    )
+
+
 def vmap_create_causal_mask(
     config,
     inputs_embeds: torch.Tensor | None = None,
@@ -258,9 +339,10 @@ def vmap_create_sliding_window_causal_mask(
     attn_impl = getattr(config, "_attn_implementation", None)
     past_seen_tokens = _safe_seq_length(past_key_values)
 
-    # This is the memory-critical training path. SDPA accepts a Boolean mask,
-    # so construct the band directly and share it across the batch instead of
-    # allocating Bx1xQxK additive storage plus two QxK Boolean intermediates.
+    # This generic fallback is used by model families without a compact
+    # sliding-window SDPA forward. Its Boolean band avoids additive and batch
+    # copies, but remains quadratic; patched families instead return ``None``
+    # through vmap_create_compact_sdpa_sliding_window_causal_mask above.
     if (
         sliding_window is not None
         and input_embeds is not None

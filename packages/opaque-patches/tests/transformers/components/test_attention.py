@@ -19,6 +19,7 @@ from opaque.api.patches.transformers.components import attention as attention_co
 from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward_gemma2,
     vmap_sdpa_attention_forward_gemma2,
+    vmap_sdpa_attention_forward_sliding_window,
 )
 from opaque.functional import make_functional
 
@@ -88,6 +89,80 @@ def _assert_gemma2_softcap_attention(attention, *, returns_weights):
     )
     for actual, expected in zip(actual_grads, expected_grads, strict=True):
         torch.testing.assert_close(actual, expected)
+
+
+def test_sliding_window_sdpa_matches_dense_reference_without_full_mask(monkeypatch):
+    query = torch.randn(1, 2, 5, 3, requires_grad=True)
+    key = torch.randn(1, 2, 5, 3, requires_grad=True)
+    value = torch.randn(1, 2, 5, 3, requires_grad=True)
+    sliding_window = 3
+    dense_mask = torch.ones((5, 5), dtype=torch.bool).tril_()
+    dense_mask.triu_(diagonal=1 - sliding_window)
+    expected = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, attn_mask=dense_mask, scale=0.7
+    )
+    mask_shapes = []
+    real_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+    def record_sdpa(*args, **kwargs):
+        mask_shapes.append(kwargs["attn_mask"].shape)
+        return real_sdpa(*args, **kwargs)
+
+    monkeypatch.setattr(attention_components, "_SDPA_QUERY_CHUNK", 2)
+    monkeypatch.setattr(
+        torch.nn.functional, "scaled_dot_product_attention", record_sdpa
+    )
+
+    output, weights = vmap_sdpa_attention_forward_sliding_window(
+        _Gemma2Attention(),
+        query,
+        key,
+        value,
+        None,
+        scaling=0.7,
+        sliding_window=sliding_window,
+    )
+
+    torch.testing.assert_close(output, expected.transpose(-3, -2))
+    assert weights is None
+    assert max(query_size * key_size for query_size, key_size in mask_shapes) < 25
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_sdpa_applies_sliding_window_without_dense_mask(monkeypatch):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    module = _Gemma2Attention()
+    module.is_causal = True
+    query = torch.randn(1, 1, 5, 2, requires_grad=True)
+    key = torch.randn(1, 1, 5, 2, requires_grad=True)
+    value = torch.randn(1, 1, 5, 2, requires_grad=True)
+    mask = torch.ones((5, 5), dtype=torch.bool).tril_()
+    mask.triu_(diagonal=-2)
+    expected, _ = _expected_gemma2_softcap_attention(
+        query, key, value, 1.0, attention_mask=mask
+    )
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        module,
+        query,
+        key,
+        value,
+        None,
+        scaling=1.0,
+        softcap=1.0,
+        sliding_window=3,
+    )
+
+    torch.testing.assert_close(output, expected.transpose(-3, -2))
+    assert weights is None
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
 
 
 def test_gemma2_softcap_attention_matches_reference(monkeypatch):
