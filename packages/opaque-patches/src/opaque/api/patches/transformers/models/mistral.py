@@ -16,6 +16,12 @@ from __future__ import annotations
 from opaque.api.patches.transformers._factory import make_apply_model_patches
 from opaque.api.patches.transformers._family import make_apply_family_patches
 from opaque.api.patches.transformers._registry import register_family
+from opaque.api.patches.transformers.components.attention import (
+    vmap_sdpa_attention_forward_sliding_window,
+)
+from opaque.api.patches.transformers.components.masking import (
+    apply_compact_sdpa_sliding_window_masking_patch,
+)
 
 _MODULE_PATH = "transformers.models.mistral.modeling_mistral"
 
@@ -23,6 +29,8 @@ _MODULE_PATH = "transformers.models.mistral.modeling_mistral"
 apply_mistral_family_patches = make_apply_family_patches(
     family="mistral",
     module_path=_MODULE_PATH,
+    sdpa_attention_replacement=vmap_sdpa_attention_forward_sliding_window,
+    masking_module_patcher=apply_compact_sdpa_sliding_window_masking_patch,
 )
 
 

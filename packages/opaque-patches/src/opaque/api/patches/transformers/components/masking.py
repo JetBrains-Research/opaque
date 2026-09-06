@@ -23,3 +23,18 @@ def apply_module_masking_patch(mod) -> bool:
         mod.create_sliding_window_causal_mask = vmap_create_sliding_window_causal_mask
         patched = True
     return patched
+
+
+def apply_compact_sdpa_sliding_window_masking_patch(mod) -> bool:
+    """Install compact no-padding SDPA masking for a compatible model module."""
+    from opaque.api.patches.transformers.runtime.masking import (
+        vmap_create_compact_sdpa_sliding_window_causal_mask,
+    )
+
+    patched = apply_module_masking_patch(mod)
+    if hasattr(mod, "create_sliding_window_causal_mask"):
+        mod.create_sliding_window_causal_mask = (
+            vmap_create_compact_sdpa_sliding_window_causal_mask
+        )
+        patched = True
+    return patched

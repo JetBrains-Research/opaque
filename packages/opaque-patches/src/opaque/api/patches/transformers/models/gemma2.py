@@ -20,6 +20,9 @@ from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward_gemma2,
     vmap_sdpa_attention_forward_gemma2,
 )
+from opaque.api.patches.transformers.components.masking import (
+    apply_compact_sdpa_sliding_window_masking_patch,
+)
 
 _MODULE_PATH = "transformers.models.gemma2.modeling_gemma2"
 
@@ -29,6 +32,7 @@ apply_gemma2_family_patches = make_apply_family_patches(
     module_path=_MODULE_PATH,
     eager_attention_replacement=vmap_eager_attention_forward_gemma2,
     sdpa_attention_replacement=vmap_sdpa_attention_forward_gemma2,
+    masking_module_patcher=apply_compact_sdpa_sliding_window_masking_patch,
 )
 
 

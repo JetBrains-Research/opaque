@@ -23,9 +23,14 @@ from transformers.modeling_utils import (
 )
 from transformers.models.gemma2 import modeling_gemma2
 from transformers.models.llama import modeling_llama
+from transformers.models.mistral import modeling_mistral
 
 from opaque.api.patches.transformers.components import attention as opaque_attention
 from opaque.api.patches.transformers.models.gemma2 import apply_gemma2_family_patches
+from opaque.api.patches.transformers.models.mistral import apply_mistral_family_patches
+from opaque.api.patches.transformers.runtime.masking import (
+    vmap_create_compact_sdpa_sliding_window_causal_mask,
+)
 from opaque.patches import apply_runtime_patches
 
 _TINY_CONFIG = {
@@ -86,6 +91,22 @@ def test_gemma2_module_gets_a_private_interface(patched_gemma2_family):
     assert (
         modeling_gemma2.ALL_ATTENTION_FUNCTIONS["flex_attention"]
         is SHARED_ATTENTION_FUNCTIONS["flex_attention"]
+    )
+
+
+def test_mistral_scopes_compact_sliding_window_sdpa():
+    """Mistral binds both halves of the compact no-padding SDPA path locally."""
+    apply_runtime_patches()
+    apply_mistral_family_patches(eager_attention=True)
+
+    assert modeling_mistral.ALL_ATTENTION_FUNCTIONS is not SHARED_ATTENTION_FUNCTIONS
+    assert (
+        modeling_mistral.ALL_ATTENTION_FUNCTIONS["sdpa"]
+        is opaque_attention.vmap_sdpa_attention_forward_sliding_window
+    )
+    assert (
+        modeling_mistral.create_sliding_window_causal_mask
+        is vmap_create_compact_sdpa_sliding_window_causal_mask
     )
 
 
