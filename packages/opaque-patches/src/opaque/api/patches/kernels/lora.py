@@ -39,12 +39,18 @@ from ._utils import (
     follow_autocast,
 )
 from .geglu import (
+    _triton_geglu_approx_backward,
     _triton_geglu_approx_backward_fused,
     _triton_geglu_approx_forward,
+    _triton_geglu_exact_backward,
     _triton_geglu_exact_backward_fused,
     _triton_geglu_exact_forward,
 )
-from .swiglu import _triton_swiglu_backward_fused, _triton_swiglu_forward
+from .swiglu import (
+    _triton_swiglu_backward,
+    _triton_swiglu_backward_fused,
+    _triton_swiglu_forward,
+)
 
 # Activation types for LoRA_MLP
 ACTIVATION_SWIGLU = 0
@@ -61,6 +67,12 @@ _ACTIVATION_BACKWARD_FUSED = {
     ACTIVATION_SWIGLU: _triton_swiglu_backward_fused,
     ACTIVATION_GEGLU_EXACT: _triton_geglu_exact_backward_fused,
     ACTIVATION_GEGLU_APPROX: _triton_geglu_approx_backward_fused,
+}
+
+_ACTIVATION_BACKWARD_LITE = {
+    ACTIVATION_SWIGLU: _triton_swiglu_backward,
+    ACTIVATION_GEGLU_EXACT: _triton_geglu_exact_backward,
+    ACTIVATION_GEGLU_APPROX: _triton_geglu_approx_backward,
 }
 
 _ACTIVATION_NAMES = {
@@ -883,7 +895,7 @@ def _lora_mlp_backward_lite(
 ):
     """Lightweight MLP backward: only computes dX (no weight grads, no X needed).
 
-    Still needs gate/up for activation backward (recompute h, compute dgate/dup).
+    Still needs gate/up for activation backward to compute dgate and dup.
     """
     batch_shape = grad_out.shape[:-1]
     grad_out_flat = grad_out.reshape(-1, grad_out.shape[-1])
@@ -895,9 +907,9 @@ def _lora_mlp_backward_lite(
     if Ad is not None and Bd is not None:
         dh.addmm_(grad_out_flat @ Bd.t(), Ad.t(), alpha=Sd, beta=1)
 
-    # Fused backward: recompute h, overwrite gate→dgate, up→dup
-    act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
-    _h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
+    # In-place backward: overwrite gate→dgate and up→dup without recomputing h.
+    act_backward = _ACTIVATION_BACKWARD_LITE[activation_type]
+    dgate, dup = act_backward(dh, gate_flat, up_flat)
 
     # dX: fresh allocation (no X buffer to reuse)
     dX = torch.mm(dgate, Wg)
