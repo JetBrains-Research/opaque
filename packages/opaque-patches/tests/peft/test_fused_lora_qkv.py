@@ -16,13 +16,37 @@ from opaque.functional import make_functional
 from opaque.patches import apply_model_patches, apply_runtime_patches
 
 apply_runtime_patches()
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="Kernel patch compatibility tests require CUDA/Triton",
-)
 
 RTOL = 0.0001
 ATOL = 0.0001
+
+
+def test_qwen3_qkv_fusion_routes_and_falls_back_on_cpu():
+    """Qwen3 receives the dedicated fusion wrapper and keeps its CPU fallback."""
+    config = Qwen3Config(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+    )
+    model = get_peft_model(
+        AutoModelForCausalLM.from_config(config),
+        LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            target_modules=["q_proj", "k_proj", "v_proj"],
+        ),
+    )
+    apply_model_patches(model, performance=False, compat=True, lora=True)
+
+    attn = model.model.model.layers[0].self_attn
+    assert hasattr(attn, "_opaque_fused_qkv")
+    input_ids = torch.randint(0, config.vocab_size, (2, 8))
+    assert torch.isfinite(model(input_ids).logits).all()
 
 
 @pytest.mark.cuda
@@ -269,8 +293,8 @@ class TestFusedLoRAQKV:
         grads, _ = grad_fn(trainable, frozen, input_ids, input_ids, state=clip_state)
         assert all(torch.isfinite(grad).all() for grad in grads.pytree.values())
 
-    def test_qwen3_skips_qkv_fusion(self, device):
-        """Qwen3 attention should NOT be fused (has q_norm/k_norm)."""
+    def test_qwen3_fuses_qkv_with_head_norms(self, device):
+        """Qwen3 QKV fusion preserves its post-projection head normalization."""
         config = Qwen3Config(
             vocab_size=128,
             hidden_size=64,
@@ -291,8 +315,115 @@ class TestFusedLoRAQKV:
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert not hasattr(attn, "_opaque_fused_qkv"), (
-                "Qwen3 attention should NOT have fused QKV (q_norm/k_norm)"
+            assert hasattr(attn, "_opaque_fused_qkv")
+
+    def test_qwen3_fused_qkv_matches_unfused_logits_and_gradients(self, device):
+        """Fused Qwen3 projections match the unfused Q/K-normalized attention."""
+        torch.manual_seed(0)
+        config = Qwen3Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+        )
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            target_modules=["q_proj", "k_proj", "v_proj"],
+        )
+        unfused = get_peft_model(
+            AutoModelForCausalLM.from_config(config), lora_config
+        ).to(device)
+        fused = get_peft_model(
+            AutoModelForCausalLM.from_config(config), lora_config
+        ).to(device)
+        fused.load_state_dict(unfused.state_dict())
+        for module in unfused.modules():
+            if hasattr(module, "lora_B"):
+                module.lora_B["default"].weight.data.normal_(std=0.02)
+        fused.load_state_dict(unfused.state_dict())
+        apply_model_patches(fused, performance=False, compat=True, lora=True)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8), device=device)
+        unfused_logits = unfused(input_ids).logits
+        fused_logits = fused(input_ids).logits
+        torch.testing.assert_close(fused_logits, unfused_logits, rtol=RTOL, atol=ATOL)
+
+        unfused_cache = unfused(input_ids, use_cache=True).past_key_values
+        fused_cache = fused(input_ids, use_cache=True).past_key_values
+        next_input_ids = torch.randint(0, config.vocab_size, (2, 1), device=device)
+        torch.testing.assert_close(
+            fused(next_input_ids, past_key_values=fused_cache).logits,
+            unfused(next_input_ids, past_key_values=unfused_cache).logits,
+            rtol=RTOL,
+            atol=ATOL,
+        )
+
+        unfused_logits.square().mean().backward()
+        fused_logits.square().mean().backward()
+        unfused_grads = dict(unfused.named_parameters())
+        for name, parameter in fused.named_parameters():
+            if parameter.requires_grad:
+                assert parameter.grad is not None
+                torch.testing.assert_close(
+                    parameter.grad, unfused_grads[name].grad, rtol=RTOL, atol=ATOL
+                )
+
+    def test_qwen3_fused_qkv_clipped_grad_matches_unfused(self, device):
+        """Fused Qwen3 QKV supports the same per-example gradients as unfused."""
+        torch.manual_seed(0)
+        config = Qwen3Config(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=16,
+        )
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            target_modules=["q_proj", "k_proj", "v_proj"],
+        )
+        unfused = get_peft_model(
+            AutoModelForCausalLM.from_config(config), lora_config
+        ).to(device)
+        fused = get_peft_model(
+            AutoModelForCausalLM.from_config(config), lora_config
+        ).to(device)
+        fused.load_state_dict(unfused.state_dict())
+        apply_model_patches(fused, performance=False, compat=True, lora=True)
+        input_ids = torch.randint(0, config.vocab_size, (2, 8), device=device)
+
+        def per_example_grads(model):
+            fmodel, trainable, frozen = make_functional(
+                model, disable_autograd_tracking=True, partition_trainable=True
+            )
+
+            def loss(trainable_params, frozen_params, ids, labels):
+                return fmodel(
+                    {**frozen_params, **trainable_params}, ids, labels=labels
+                ).loss
+
+            grad_fn, clip_state = clipped_grad(
+                loss, argnums=0, batch_argnums=(2, 3), clipping_norm=1.0
+            )
+            return grad_fn(trainable, frozen, input_ids, input_ids, state=clip_state)[
+                0
+            ].pytree
+
+        fused_grads = per_example_grads(fused)
+        unfused_grads = per_example_grads(unfused)
+        for name, gradient in fused_grads.items():
+            assert torch.isfinite(gradient).all()
+            torch.testing.assert_close(
+                gradient, unfused_grads[name], rtol=RTOL, atol=ATOL
             )
 
     @requires_hf_auth
