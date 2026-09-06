@@ -131,6 +131,17 @@ def test_vmap_grad_per_example(assert_precision):
     assert (g_op[0] - g_op[1]).abs().max().item() > 0
 
 
+def test_dense_cuda_autocast_normalizes_manual_backward_dtypes():
+    x, gate_up, down, ti, tw = _inputs(dtype=torch.float32, requires_grad=True)
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        out = opaque_moe(x, gate_up, down, ti, tw, grouped=False)
+    assert out.dtype == torch.bfloat16
+    out.float().sum().backward()
+    assert x.grad is not None
+    assert gate_up.grad is not None
+    assert down.grad is not None
+
+
 def test_cpu_fallback():
     """CPU inputs take the torch fallback (even on a CUDA+Triton host)."""
     x, gate_up, down, ti, tw = (
