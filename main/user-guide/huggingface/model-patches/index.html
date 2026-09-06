@@ -3891,7 +3891,7 @@ which fused Triton kernels are applied per model:</p>
 <td>—</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>MLP only</td>
+<td>QKV + MLP</td>
 </tr>
 <tr>
 <td>Phi-3</td>
@@ -4236,7 +4236,7 @@ the unfused path so their gradients remain intact. MLP fusion continues to
 require bias-free projections. These kernels implement the low-rank adapter
 structure from <a href="https://arxiv.org/abs/2106.09685"><em>LoRA: Low-Rank Adaptation of Large Language Models</em></a>.</p>
 <p>QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2, Qwen2 (generic wrapper), and Gemma3 text attention (dedicated
+Cohere2, Qwen2 (generic wrapper), GLM4, and Gemma3 text attention (dedicated
 wrapper that keeps <code>q_norm</code>/<code>k_norm</code>, Gemma3 RoPE, sliding-window dispatch,
 and the Gemma3 cache contract intact). Excluded: Qwen3 (q_norm/k_norm),
 Phi-3 (combined qkv_proj), Cohere (no transpose).</p>
