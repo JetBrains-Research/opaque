@@ -324,7 +324,11 @@ class TestSlidingWindowWithoutPaddingMask:
         config = type(
             "Cfg",
             (),
-            {"_attn_implementation": "sdpa", "sliding_window": 2},
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.0,
+            },
         )()
         mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
             config,
@@ -333,6 +337,44 @@ class TestSlidingWindowWithoutPaddingMask:
             past_key_values=None,
         )
         assert mask is None
+
+    def test_compact_sdpa_path_uses_the_evaluation_fast_path(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.1,
+            },
+        )()
+        inputs_embeds = torch.randn(1, 8, 8)
+        with torch.no_grad():
+            mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+                config,
+                inputs_embeds=inputs_embeds,
+                attention_mask=None,
+                past_key_values=None,
+            )
+        assert mask is None
+
+    def test_compact_sdpa_path_retains_dropout_training_fallback(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.1,
+            },
+        )()
+        mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(1, 8, 8),
+            attention_mask=None,
+            past_key_values=None,
+        )
+        assert mask is not None
 
     def test_compact_sdpa_path_retains_padding_mask_fallback(self):
         config = type(

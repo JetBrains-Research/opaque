@@ -99,6 +99,10 @@ def _can_use_compact_sdpa_sliding_window(
         and or_mask_function is None
         and and_mask_function is None
         and block_sequence_ids is None
+        and (
+            not torch.is_grad_enabled()
+            or getattr(config, "attention_dropout", None) == 0.0
+        )
         and _query_length(input_embeds) > sliding_window
     )
 

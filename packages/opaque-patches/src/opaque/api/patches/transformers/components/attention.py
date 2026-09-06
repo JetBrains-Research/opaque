@@ -135,6 +135,7 @@ def vmap_sdpa_attention_forward_sliding_window(
         and position_bias is None
         and sliding_window is not None
         and query.shape[-2] == key.shape[-2]
+        and dropout == 0.0
         and query.shape[-2] > sliding_window
     ):
         output = _compact_sliding_window_sdpa(
