@@ -1111,6 +1111,8 @@ class TestFusedLoRAQKV:
     @pytest.mark.slow
     def test_qwen2_fuses_biased_qkv_projections(self, device):
         """Qwen2 attention fuses its frozen biased Q/K/V projections."""
+        from opaque.patches import apply_model_patches
+
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
 
@@ -1122,6 +1124,7 @@ class TestFusedLoRAQKV:
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model)
 
         layers = model.model.model.layers
         for layer in layers:
