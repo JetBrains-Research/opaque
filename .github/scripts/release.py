@@ -328,20 +328,25 @@ def resolve_plan(
         for candidate_tag, candidate in reachable.items()
         if candidate_tag != tag
     }
+    released_candidates = {
+        candidate_tag: candidate
+        for candidate_tag, candidate in all_previous.items()
+        if not candidate.is_prerelease
+    }
     base_candidates = (
-        all_previous
+        released_candidates
         if source_branch == "main"
         else {
             candidate_tag: candidate
-            for candidate_tag, candidate in all_previous.items()
+            for candidate_tag, candidate in released_candidates.items()
             if candidate.series == version.series
         }
     )
     # If the first release-line preparation stopped after creating its branch
     # but before completing its tag/draft, a retry comes from release/X.Y and
-    # still compares against the prior line's closest tag.
+    # still compares against the prior line's closest published release.
     if source_branch != "main" and not base_candidates:
-        base_candidates = all_previous
+        base_candidates = released_candidates
     base_tag = _closest_tag(repo, target_sha, base_candidates)
     commit_range = f"{base_tag}..{target_sha}" if base_tag else target_sha
 
