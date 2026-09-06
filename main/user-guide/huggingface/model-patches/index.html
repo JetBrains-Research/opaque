@@ -3931,7 +3931,7 @@ which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
-<td>MLP only</td>
+<td>QKV + MLP</td>
 </tr>
 <tr>
 <td>Granite</td>
@@ -4161,7 +4161,7 @@ simultaneously. Supports grouped-query attention (GQA) where Q and
 K have different head counts. The underlying position encoding follows
 <a href="https://arxiv.org/abs/2104.09864"><em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em></a>.</p>
 <p>Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi-3, Gemma, Gemma2,
-Granite.</p>
+Gemma3, Granite.</p>
 <h3 id="cross-entropy">Cross-entropy<a class="headerlink" href="#cross-entropy" title="Permanent link">&para;</a></h3>
 <p>Chunked Triton cross-entropy processes the vocabulary dimension in
 blocks (up to 65536), avoiding materialisation of the full
@@ -4236,8 +4236,10 @@ the unfused path so their gradients remain intact. MLP fusion continues to
 require bias-free projections. These kernels implement the low-rank adapter
 structure from <a href="https://arxiv.org/abs/2106.09685"><em>LoRA: Low-Rank Adaptation of Large Language Models</em></a>.</p>
 <p>QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite,
-Cohere2, Qwen2. Excluded: Qwen3 (q_norm/k_norm), Phi-3 (combined qkv_proj),
-Cohere (no transpose).</p>
+Cohere2, Qwen2 (generic wrapper), and Gemma3 text attention (dedicated
+wrapper that keeps <code>q_norm</code>/<code>k_norm</code>, Gemma3 RoPE, sliding-window dispatch,
+and the Gemma3 cache contract intact). Excluded: Qwen3 (q_norm/k_norm),
+Phi-3 (combined qkv_proj), Cohere (no transpose).</p>
 <h3 id="using-kernels-directly">Using kernels directly<a class="headerlink" href="#using-kernels-directly" title="Permanent link">&para;</a></h3>
 <p>All kernels are available as standalone functions without patching:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
