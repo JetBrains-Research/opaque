@@ -10,7 +10,9 @@ from math import prod
 import torch
 
 _MIB = 1024**2
-_MAX_WORKSPACE_BYTES = 256 * _MIB
+_GIB = 1024**3
+_FALLBACK_WORKSPACE_BYTES = 256 * _MIB
+_MAX_WORKSPACE_BYTES = 8 * _GIB
 _FREE_MEMORY_FRACTION = 0.25
 _ROUTING_INDEX_BYTES = 8
 
@@ -29,7 +31,13 @@ def _workspace_budget_bytes(device: torch.device) -> int:
     free_bytes: int | None = None
     try:
         if device.type == "cuda":
-            free_bytes = int(torch.cuda.mem_get_info(device)[0])
+            driver_free = int(torch.cuda.mem_get_info(device)[0])
+            cached_free = max(
+                0,
+                int(torch.cuda.memory_reserved(device))
+                - int(torch.cuda.memory_allocated(device)),
+            )
+            free_bytes = driver_free + cached_free
         elif device.type == "mps":
             total = int(torch.mps.recommended_max_memory())
             used = int(torch.mps.driver_allocated_memory())
@@ -38,7 +46,7 @@ def _workspace_budget_bytes(device: torch.device) -> int:
         free_bytes = None
 
     if free_bytes is None:
-        return _MAX_WORKSPACE_BYTES
+        return min(_FALLBACK_WORKSPACE_BYTES, _MAX_WORKSPACE_BYTES)
     return max(1, min(_MAX_WORKSPACE_BYTES, int(free_bytes * _FREE_MEMORY_FRACTION)))
 
 
@@ -138,7 +146,11 @@ def grouped_forward_bytes_per_route(
 
 
 def grouped_backward_bytes_per_route(
-    hidden: int, intermediate: int, itemsize: int
+    hidden: int,
+    intermediate: int,
+    itemsize: int,
+    *,
+    backend_multiplier: int = 3,
 ) -> int:
     """Conservative live bytes for one routed row in grouped backward."""
     tensor_bytes = (
@@ -146,10 +158,11 @@ def grouped_backward_bytes_per_route(
         + itemsize * (5 * hidden + 7 * intermediate)
         + 4 * (4 * hidden + 5 * intermediate)
     )
-    # Grouped GEMM backends retain implementation workspaces beyond visible
-    # tensors. Measurements on MPS require roughly 2x; 3x keeps headroom across
-    # MPS and CUDA allocator implementations.
-    return 3 * tensor_bytes
+    # ``torch._grouped_mm`` on MPS retains implementation workspaces beyond
+    # visible tensors and needs the default slack. The CUDA fused path passes
+    # one: its Triton weight-gradient kernel has no proportional hidden
+    # workspace, while the free-memory budget still supplies global headroom.
+    return backend_multiplier * tensor_bytes
 
 
 def dense_routing_bytes_per_row(

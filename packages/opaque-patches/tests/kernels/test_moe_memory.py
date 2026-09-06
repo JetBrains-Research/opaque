@@ -13,7 +13,11 @@ from torch.func import grad, vmap
 from opaque.api.patches.kernels import _grouped_moe, _moe_memory
 from opaque.api.patches.kernels import moe as moe_kernel
 from opaque.api.patches.kernels._grouped_moe import Opaque_GroupedMoE
-from opaque.api.patches.kernels.moe import Opaque_MoE, _expert_route
+from opaque.api.patches.kernels.moe import (
+    Opaque_MoE,
+    _expert_route,
+    torch_reference_moe,
+)
 
 
 def _inputs(E=16, I=32, H=16, K=2, B=3, T=6):
@@ -79,6 +83,29 @@ def test_workspace_estimates_scale_with_shape_and_top_k():
     assert long.grouped_bytes > small.grouped_bytes
     assert wide_routing.dense_bytes > small.dense_bytes
     assert wide_routing.grouped_bytes > small.grouped_bytes
+
+
+def test_workspace_budget_caps_accelerator_memory(monkeypatch):
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 8_000)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (100_000, 100_000))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 40_000)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 10_000)
+    assert _moe_memory._workspace_budget_bytes(torch.device("cuda")) == 8_000
+
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 100_000)
+    assert _moe_memory._workspace_budget_bytes(torch.device("cuda")) == 32_500
+
+
+def test_workspace_budget_uses_bounded_fallback(monkeypatch):
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 1_000_000_000)
+    assert _moe_memory._workspace_budget_bytes(torch.device("cpu")) == 256 * 1024**2
+
+
+def test_grouped_backward_backend_multiplier():
+    base = _moe_memory.grouped_backward_bytes_per_route(
+        hidden=16, intermediate=32, itemsize=2, backend_multiplier=1
+    )
+    assert _moe_memory.grouped_backward_bytes_per_route(16, 32, 2) == 3 * base
 
 
 def test_memory_aware_route_selection():
@@ -269,6 +296,32 @@ def test_forced_forward_chunks_bound_dense_linear_rows(monkeypatch):
     torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-4)
     assert len(rows) > 2 * gate_up.shape[0]
     assert max(rows) < x2.shape[0]
+
+
+def test_forced_dense_backward_matches_autograd_reference(monkeypatch):
+    x, gate_up, down, index, weights = _inputs(B=2, T=8)
+    monkeypatch.setattr(_moe_memory, "_MAX_WORKSPACE_BYTES", 4_096)
+
+    def loss(kernel, xx, g, d, ii, ww):
+        return kernel(xx, g, d, ii, ww).square().mean()
+
+    in_dims = (0, None, None, 0, 0)
+    actual = vmap(
+        grad(
+            lambda xx, g, d, ii, ww: loss(Opaque_MoE.apply, xx, g, d, ii, ww),
+            argnums=(0, 1, 2, 4),
+        ),
+        in_dims=in_dims,
+    )(x, gate_up, down, index, weights)
+    expected = vmap(
+        grad(
+            lambda xx, g, d, ii, ww: loss(torch_reference_moe, xx, g, d, ii, ww),
+            argnums=(0, 1, 2, 4),
+        ),
+        in_dims=in_dims,
+    )(x, gate_up, down, index, weights)
+    for result, reference in zip(actual, expected, strict=True):
+        torch.testing.assert_close(result, reference, rtol=2e-4, atol=2e-4)
 
 
 def test_forced_forward_chunks_bound_grouped_mm_rows(monkeypatch):

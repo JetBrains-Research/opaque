@@ -178,12 +178,15 @@ def test_trainable_vmap_grad_forced_route_chunks(assert_precision, monkeypatch):
     def reference(xs, t, w, g1, g2):
         return torch_reference_moe(xs, g1, g2, t, w).square().mean()
 
-    actual = vmap(grad(loss, argnums=(0, 3, 4)), in_dims=(0, 0, 0, None, None))(
+    actual = vmap(grad(loss, argnums=(0, 2, 3, 4)), in_dims=(0, 0, 0, None, None))(
         xb, tib, twb, gate_up, down
     )
-    expected = grad(reference, argnums=(0, 3, 4))(x, ti, tw, gate_up, down)
+    expected = grad(reference, argnums=(0, 2, 3, 4))(x, ti, tw, gate_up, down)
     for name, result, target in zip(
-        ("dx", "dgate_up", "ddown"), actual, expected, strict=True
+        ("dx", "dtop_k_weights", "dgate_up", "ddown"),
+        actual,
+        expected,
+        strict=True,
     ):
         assert_precision(result[0], target, rtol=2e-2, atol=2e-2, label=name)
 

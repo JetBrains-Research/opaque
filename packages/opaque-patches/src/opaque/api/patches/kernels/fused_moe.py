@@ -246,7 +246,9 @@ def _fused_moe_backward(
         dW1, dW2 = wgrad_out
     compute_wgrad = compute_gate_wgrad or compute_down_wgrad
 
-    per_route = grouped_backward_bytes_per_route(H, I, x_flat.element_size())
+    per_route = grouped_backward_bytes_per_route(
+        H, I, x_flat.element_size(), backend_multiplier=1
+    )
     fixed_bytes = sum(
         buffer.numel() * buffer.element_size()
         for buffer in (dx, dtw)
@@ -408,7 +410,13 @@ class _FusedMoEBackward(torch.autograd.Function):
         dW1 = gate_up_proj.new_empty(B, E, 2 * I, H) if compute_gate_wgrad else None
         dW2 = down_proj.new_empty(B, E, H, I) if compute_down_wgrad else None
         compute_wgrad = compute_gate_wgrad or compute_down_wgrad
-        per_example = T * K * grouped_backward_bytes_per_route(H, I, x.element_size())
+        per_example = (
+            T
+            * K
+            * grouped_backward_bytes_per_route(
+                H, I, x.element_size(), backend_multiplier=1
+            )
+        )
         example_chunk = chunk_size(B, per_example, x.device)
 
         for blo in range(0, B, example_chunk):
