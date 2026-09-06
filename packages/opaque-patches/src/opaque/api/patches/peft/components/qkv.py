@@ -7,6 +7,10 @@ from __future__ import annotations
 import sys
 
 from ._utils import _active_lora_dtype, _extract_lora_params_and_bias
+from .qkv_gemma3 import (
+    _FUSEABLE_GEMMA3_QKV_ATTENTION_CLASSES,
+    _make_fused_qkv_gemma3_attention_forward,
+)
 
 _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "LlamaAttention",
@@ -17,6 +21,22 @@ _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "Cohere2Attention",
     "Qwen2Attention",
 }
+
+
+def _resolve_fused_qkv_forward_factory(attn):
+    """Return the fused-forward factory for an attention module, if supported.
+
+    Resolves the attention class through its MRO so PEFT-wrapped subclasses are
+    recognized. Architectures whose forward differs from the generic pipeline
+    (for example Gemma3, which normalizes Q/K after projection) map to their own
+    dedicated factory instead of the generic one.
+    """
+    for cls in type(attn).__mro__:
+        if cls.__name__ in _FUSEABLE_GEMMA3_QKV_ATTENTION_CLASSES:
+            return _make_fused_qkv_gemma3_attention_forward
+        if cls.__name__ in _FUSEABLE_QKV_ATTENTION_CLASSES:
+            return _make_fused_qkv_attention_forward
+    return None
 
 
 def _opaque_fused_lora_qkv(self, hidden_states):
