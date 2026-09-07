@@ -8,7 +8,7 @@ import logging
 
 import torch
 
-from ._utils import _active_lora_dtype
+from ._utils import _active_adapters_use_dtype, _active_lora_dtype
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,10 @@ def _make_lora_linear_forward(original):
         # Keep full weights in their parameter dtype across the autograd boundary.
         # The custom Function casts them transiently in forward and backward.
         target_dtype = _active_lora_dtype(x)
+        if not torch.is_autocast_enabled("cuda") and not _active_adapters_use_dtype(
+            self, target_dtype
+        ):
+            return original(self, x, *args, **kwargs)
         x = x.to(target_dtype)
         W = self.base_layer.weight
         # Conv1D stores weight as (in_features, out_features); F.linear expects

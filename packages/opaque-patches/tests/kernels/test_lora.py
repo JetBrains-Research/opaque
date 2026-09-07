@@ -28,8 +28,6 @@ pytest.importorskip("triton")
 
 from opaque.api.patches.kernels import lora as lora_kernels
 from opaque.api.patches.kernels.lora import (
-    ACTIVATION_GEGLU_APPROX,
-    ACTIVATION_GEGLU_EXACT,
     ACTIVATION_SWIGLU,
     Opaque_LoRA_MLP,
     Opaque_LoRA_QKV,
@@ -129,28 +127,19 @@ def opaque_lora_qkv(  # noqa: PLR0913, PLR0917
     )
 
 
-def pytorch_lora_mlp(
-    X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type=ACTIVATION_SWIGLU
-):
-    """PyTorch reference for MLP with the requested GLU activation."""
+def pytorch_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
+    """PyTorch reference for MLP with SwiGLU."""
     gate = pytorch_lora_linear(X, Wg, Ag, Bg, Sg)
     up = pytorch_lora_linear(X, Wu, Au, Bu, Su)
-    if activation_type == ACTIVATION_SWIGLU:
-        h = F.silu(gate) * up
-    elif activation_type == ACTIVATION_GEGLU_EXACT:
-        h = F.gelu(gate) * up
-    else:
-        assert activation_type == ACTIVATION_GEGLU_APPROX
-        h = F.gelu(gate, approximate="tanh") * up
-    return pytorch_lora_linear(h, Wd, Ad, Bd, Sd)
+    h = F.silu(gate) * up
+    out = pytorch_lora_linear(h, Wd, Ad, Bd, Sd)
+    return out
 
 
-def opaque_lora_mlp(
-    X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type=ACTIVATION_SWIGLU
-):
+def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
     """Opaque kernel implementation."""
     result = Opaque_LoRA_MLP.apply(
-        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type
+        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, ACTIVATION_SWIGLU
     )
     return result[0]
 
@@ -192,7 +181,6 @@ def opaque_lora_mlp(
                 0,
                 0,
                 0,
-                None,
                 None,
                 None,
                 None,
@@ -1291,100 +1279,6 @@ class TestLoRAMLPVmapForward:
         )
 
 
-@pytest.mark.parametrize(
-    "activation_type",
-    [ACTIVATION_SWIGLU, ACTIVATION_GEGLU_EXACT, ACTIVATION_GEGLU_APPROX],
-    ids=["swiglu", "geglu_exact", "geglu_approx"],
-)
-def test_lite_mlp_backward_uses_derivatives_only_activation(
-    monkeypatch, assert_precision, activation_type
-):
-    """Frozen adapters use the two-result activation backward helper."""
-    torch.manual_seed(42)
-    batch, seq, hidden, intermediate, rank = 2, 3, 8, 12, 2
-    kw = {"device": "cuda", "dtype": torch.float32}
-
-    Wg = _kaiming_weight(intermediate, hidden, **kw)
-    Ag = _lora_weight(hidden, rank, **kw)
-    Bg = _lora_weight(rank, intermediate, **kw)
-    Wu = _kaiming_weight(intermediate, hidden, **kw)
-    Au = _lora_weight(hidden, rank, **kw)
-    Bu = _lora_weight(rank, intermediate, **kw)
-    Wd = _kaiming_weight(hidden, intermediate, **kw)
-    Ad = _lora_weight(intermediate, rank, **kw)
-    Bd = _lora_weight(rank, hidden, **kw)
-
-    X_pt = torch.randn(batch, seq, hidden, **kw, requires_grad=True)
-    loss_pt = (
-        pytorch_lora_mlp(
-            X_pt,
-            Wg,
-            Ag,
-            Bg,
-            SCALING,
-            Wu,
-            Au,
-            Bu,
-            SCALING,
-            Wd,
-            Ad,
-            Bd,
-            SCALING,
-            activation_type,
-        )
-        .square()
-        .mean()
-    )
-    loss_pt.backward()
-
-    original = lora_kernels._ACTIVATION_BACKWARD_LITE[activation_type]
-    activation_backward_called = False
-
-    def derivatives_only_backward(dh, gate, up):
-        nonlocal activation_backward_called
-        activation_backward_called = True
-        result = original(dh, gate, up)
-        assert len(result) == 2
-        return result
-
-    monkeypatch.setitem(
-        lora_kernels._ACTIVATION_BACKWARD_LITE,
-        activation_type,
-        derivatives_only_backward,
-    )
-    X_op = X_pt.detach().clone().requires_grad_(True)
-    loss_op = (
-        opaque_lora_mlp(
-            X_op,
-            Wg,
-            Ag,
-            Bg,
-            SCALING,
-            Wu,
-            Au,
-            Bu,
-            SCALING,
-            Wd,
-            Ad,
-            Bd,
-            SCALING,
-            activation_type,
-        )
-        .square()
-        .mean()
-    )
-    loss_op.backward()
-
-    assert activation_backward_called
-    assert_precision(
-        X_op.grad,
-        X_pt.grad,
-        rtol=RTOL_LORA_MLP_BWD,
-        atol=ATOL_LORA_MLP_BWD,
-        label="frozen-adapter X.grad",
-    )
-
-
 class TestLoRAMLPVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
@@ -1807,6 +1701,23 @@ class TestLoRABackwardLiveness:
 
 @pytest.mark.cuda
 class TestLoRABackwardMemory:
+    def test_mlp_recomputes_intermediate_activations(self):
+        """MLP backward saves the narrow input instead of gate/up activations."""
+        tokens, hidden = 64, 128
+        saved_shapes = []
+
+        def pack(tensor):
+            saved_shapes.append(tuple(tensor.shape))
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            loss, _ = _staged_backward_loss(
+                "mlp", trainable=True, tokens=tokens, hidden=hidden
+            )
+
+        assert (tokens, hidden * 2) not in saved_shapes
+        loss.backward()
+
     @pytest.mark.parametrize("kind", ["w", "qkv", "mlp"])
     def test_trainable_adapter_peak_tracks_frozen_adapter_peak(self, kind):
         """Staging avoids an activation-sized trainable-adapter memory penalty."""
@@ -1857,7 +1768,7 @@ class TestLoRAMLPRepeatedBackward:
             return torch.randn(o, i, device="cuda", requires_grad=True)
 
         def lora(o, i, r=8):
-            return w(r, i), w(o, r)
+            return w(i, r), w(r, o)
 
         Wg, Wu, Wd = w(128, 64), w(128, 64), w(64, 128)
         Ag, Bg = lora(128, 64)

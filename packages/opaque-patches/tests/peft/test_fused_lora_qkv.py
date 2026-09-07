@@ -12,6 +12,8 @@ from transformers import (
 )
 
 from opaque.api.engine.clipping import clipped_grad
+from opaque.api.patches.peft.components.linear import _make_lora_linear_forward
+from opaque.api.patches.peft.components.mlp import _make_fused_lora_mlp_forward
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches, apply_runtime_patches
 
@@ -52,6 +54,207 @@ def test_qwen3_qkv_fusion_routes_and_falls_back_on_cpu():
 @pytest.mark.cuda
 class TestFusedLoRAQKV:
     """Test fused LoRA QKV patching via Opaque_LoRA_QKV kernel."""
+
+    def test_fp32_adapter_uses_peft_precision_under_bf16_autocast(
+        self, device, monkeypatch
+    ):
+        torch.manual_seed(0)
+        config = Qwen2Config(
+            vocab_size=64,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config).to(
+                device=device, dtype=torch.bfloat16
+            ),
+            LoraConfig(
+                r=4,
+                lora_alpha=8,
+                lora_dropout=0.0,
+                target_modules=["q_proj"],
+            ),
+        )
+        projection = model.base_model.model.model.layers[0].self_attn.q_proj
+        assert projection.lora_A["default"].weight.dtype == torch.float32
+        original = type(projection).forward
+        patched = _make_lora_linear_forward(original)
+
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_W
+
+        original_apply = Opaque_LoRA_W.apply
+        fused_calls = []
+
+        def record_fused_call(*args):
+            fused_calls.append(True)
+            return original_apply(*args)
+
+        monkeypatch.setattr(Opaque_LoRA_W, "apply", record_fused_call)
+        hidden_states = torch.randn(
+            2, 8, 32, device=device, dtype=torch.bfloat16, requires_grad=True
+        )
+        gradient_inputs = (
+            hidden_states,
+            projection.lora_A["default"].weight,
+            projection.lora_B["default"].weight,
+        )
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            expected = original(projection, hidden_states)
+        expected_grads = torch.autograd.grad(
+            expected.float().square().mean(), gradient_inputs
+        )
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            actual = patched(projection, hidden_states)
+        actual_grads = torch.autograd.grad(
+            actual.float().square().mean(), gradient_inputs
+        )
+        assert fused_calls
+        torch.testing.assert_close(actual, expected, rtol=1e-3, atol=1e-3)
+        for actual_grad, expected_grad in zip(
+            actual_grads, expected_grads, strict=True
+        ):
+            torch.testing.assert_close(actual_grad, expected_grad, rtol=2e-2, atol=2e-3)
+        assert projection.lora_A["default"].weight.dtype == torch.float32
+        assert projection.lora_B["default"].weight.dtype == torch.float32
+
+    def test_fp32_adapters_keep_all_lora_fusions_under_bf16_autocast(
+        self, device, monkeypatch
+    ):
+        torch.manual_seed(0)
+        config = Qwen2Config(
+            vocab_size=64,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config).to(
+                device=device, dtype=torch.bfloat16
+            ),
+            LoraConfig(
+                r=4,
+                lora_alpha=8,
+                lora_dropout=0.0,
+                target_modules=[
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    "gate_proj",
+                    "up_proj",
+                    "down_proj",
+                ],
+            ),
+        )
+        apply_model_patches(model, performance=False, compat=True, lora=True)
+        attention = model.base_model.model.model.layers[0].self_attn
+        assert attention._opaque_lora_qkv_patched
+
+        from opaque.api.patches.kernels import lora as lora_kernels
+
+        fused_calls = []
+
+        def record(name, original):
+            def wrapped(*args, **kwargs):
+                fused_calls.append(name)
+                return original(*args, **kwargs)
+
+            return wrapped
+
+        monkeypatch.setattr(
+            lora_kernels.Opaque_LoRA_W,
+            "apply",
+            record("linear", lora_kernels.Opaque_LoRA_W.apply),
+        )
+        monkeypatch.setattr(
+            lora_kernels.Opaque_LoRA_MLP,
+            "apply",
+            record("mlp", lora_kernels.Opaque_LoRA_MLP.apply),
+        )
+        input_ids = torch.randint(0, config.vocab_size, (2, 8), device=device)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            output = model(input_ids, labels=input_ids)
+        output.loss.backward()
+        assert torch.isfinite(output.loss)
+        assert "linear" in fused_calls
+        assert "mlp" in fused_calls
+
+    def test_fp32_adapter_mlp_matches_peft_under_bf16_autocast(
+        self, device, monkeypatch
+    ):
+        torch.manual_seed(0)
+        config = Qwen2Config(
+            vocab_size=64,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config).to(
+                device=device, dtype=torch.bfloat16
+            ),
+            LoraConfig(
+                r=4,
+                lora_alpha=8,
+                lora_dropout=0.0,
+                target_modules=["gate_proj", "up_proj", "down_proj"],
+            ),
+        )
+        mlp = model.base_model.model.model.layers[0].mlp
+        for projection_name in ("gate_proj", "up_proj", "down_proj"):
+            projection = getattr(mlp, projection_name)
+            assert projection.lora_A["default"].weight.dtype == torch.float32
+            assert projection.lora_B["default"].weight.dtype == torch.float32
+            torch.nn.init.normal_(projection.lora_B["default"].weight, std=0.01)
+
+        original = mlp.forward
+        patched = _make_fused_lora_mlp_forward(original, 0)
+        from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
+
+        original_apply = Opaque_LoRA_MLP.apply
+        fused_calls = []
+
+        def record_fused_call(*args):
+            fused_calls.append(True)
+            return original_apply(*args)
+
+        monkeypatch.setattr(Opaque_LoRA_MLP, "apply", record_fused_call)
+        hidden_states = torch.randn(
+            2, 8, 32, device=device, dtype=torch.bfloat16, requires_grad=True
+        )
+        gradient_inputs = [hidden_states]
+        for projection_name in ("gate_proj", "up_proj", "down_proj"):
+            projection = getattr(mlp, projection_name)
+            gradient_inputs.extend(
+                (
+                    projection.lora_A["default"].weight,
+                    projection.lora_B["default"].weight,
+                )
+            )
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            expected = original(hidden_states)
+        expected_grads = torch.autograd.grad(
+            expected.float().square().mean(), gradient_inputs
+        )
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            actual = patched(mlp, hidden_states)
+        actual_grads = torch.autograd.grad(
+            actual.float().square().mean(), gradient_inputs
+        )
+
+        assert fused_calls
+        torch.testing.assert_close(actual, expected, rtol=5e-3, atol=1e-3)
+        for actual_grad, expected_grad in zip(
+            actual_grads, expected_grads, strict=True
+        ):
+            torch.testing.assert_close(actual_grad, expected_grad, rtol=2e-2, atol=2e-3)
 
     def test_fused_lora_qkv_forward(self, device):
         """Fused LoRA QKV forward should match PyTorch matmul reference."""

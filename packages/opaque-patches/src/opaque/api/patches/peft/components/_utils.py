@@ -17,6 +17,26 @@ def _active_lora_dtype(x: torch.Tensor) -> torch.dtype:
     return x.dtype
 
 
+def _active_adapters_use_dtype(lora_linear, dtype: torch.dtype) -> bool:
+    """Return whether every active adapter already uses the fused compute dtype."""
+    for active in lora_linear.active_adapters:
+        if active not in lora_linear.lora_A:
+            continue
+        if (
+            lora_linear.lora_A[active].weight.dtype != dtype
+            or lora_linear.lora_B[active].weight.dtype != dtype
+        ):
+            return False
+    return True
+
+
+def _lora_projections_use_dtype(module, projection_names, dtype: torch.dtype) -> bool:
+    return all(
+        _active_adapters_use_dtype(getattr(module, name), dtype)
+        for name in projection_names
+    )
+
+
 def _extract_lora_params(lora_linear):
     """Extract (W, A, B, scaling) from a peft LoRA Linear module.
 
