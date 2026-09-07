@@ -10,8 +10,6 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from transformers.models.mellum import modeling_mellum
-
 from opaque.api.patches.transformers.models.mellum import (
     apply_mellum_family_patches,
     apply_mellum_patches,
@@ -27,6 +25,11 @@ from _test_utils import (
     experts_forward_patched,
     get_tiny_config_kwargs,
 )
+
+
+@pytest.fixture
+def mellum_modeling():
+    return pytest.importorskip("transformers.models.mellum.modeling_mellum")
 
 
 @pytest.fixture
@@ -72,15 +75,15 @@ def test_original_mellum_routes_via_llama(device):
     assert_forward_backward(model, device)
 
 
-def test_mellum_keeps_transformers_rotary_embedding():
-    original = modeling_mellum.apply_rotary_pos_emb
+def test_mellum_keeps_transformers_rotary_embedding(mellum_modeling):
+    original = mellum_modeling.apply_rotary_pos_emb
 
     apply_mellum_family_patches(performance=True, rope=True)
 
-    assert modeling_mellum.apply_rotary_pos_emb is original
+    assert mellum_modeling.apply_rotary_pos_emb is original
 
 
-def test_mellum_installs_chunked_linear_cross_entropy(monkeypatch):
+def test_mellum_installs_chunked_linear_cross_entropy(monkeypatch, mellum_modeling):
     patched = []
     monkeypatch.setattr(
         "opaque.api.patches.transformers._factory._patch_forward",
