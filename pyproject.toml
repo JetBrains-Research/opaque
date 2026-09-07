@@ -81,6 +81,8 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 
 [tool.uv]
 package = true
+# ifed-sdk needs torch==2.11.0 (its prebuilt agent bridge is built against it)
+constraint-dependencies = ["torch==2.11.0"]
 workspace.members = [
     "packages/opaque-base",
     "packages/opaque-engine",
@@ -108,9 +110,7 @@ opaque-patches = { workspace = true }
 opaque-alignment = { workspace = true }
 opaque-federated = { workspace = true }
 # IFED ships from JetBrains' own index, not PyPI (where the names are
-# dependency-confusion stubs). ifed-sdk pins torch==2.11.0 — the version its
-# prebuilt agent bridge is compiled against — so the whole workspace resolves
-# to it.
+# dependency-confusion stubs).
 ifed-sdk = { index = "jetbrains-fed" }
 ifed-agent-abi = { index = "jetbrains-fed" }
 ifed-server-abi = { index = "jetbrains-fed" }
