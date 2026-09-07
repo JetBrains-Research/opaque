@@ -7040,7 +7040,7 @@ clip-noise-step.</p>
 <td><code>performance_kernels_config</code></td>
 <td><code>dict \| str \| None</code></td>
 <td><code>None</code></td>
-<td>Flat dict forwarded as-is to <code>apply_model_patches</code> / <code>apply_runtime_patches</code>.  Keys: <code>rope</code>, <code>rms_norm</code>, <code>activation</code>, <code>cross_entropy</code>, <code>fused_linear_cross_entropy</code>, <code>kv_cache</code>, <code>eager_attention</code>, <code>batchify</code>, <code>vmap_masking</code>, <code>empty_batches</code>, <code>vmap_checkpointing</code>.</td>
+<td>Flat dict forwarded as-is to <code>apply_model_patches</code> / <code>apply_runtime_patches</code>. Keys include <code>rope</code>, <code>rms_norm</code>, <code>activation</code>, <code>cross_entropy</code>, <code>fused_linear_cross_entropy</code>, <code>chunked_linear_cross_entropy</code>, <code>kv_cache</code>, <code>eager_attention</code>, <code>batchify</code>, <code>vmap_masking</code>, <code>empty_batches</code>, <code>vmap_checkpointing</code>. <code>chunked_linear_cross_entropy</code> accepts <code>True</code>, a positive vocabulary tile width, or <code>False</code>/<code>0</code> to disable it.</td>
 </tr>
 </tbody>
 </table>
