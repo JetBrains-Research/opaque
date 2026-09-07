@@ -83,6 +83,19 @@ def test_mellum_keeps_transformers_rotary_embedding(mellum_modeling):
     assert mellum_modeling.apply_rotary_pos_emb is original
 
 
+def test_mellum_keeps_transformers_rms_norm(mellum_modeling):
+    original = mellum_modeling.MellumRMSNorm.forward
+
+    apply_mellum_patches(
+        mellum_modeling.nn.Module(),
+        performance=False,
+        compat=False,
+        rms_norm=True,
+    )
+
+    assert mellum_modeling.MellumRMSNorm.forward is original
+
+
 def test_mellum_installs_chunked_linear_cross_entropy(monkeypatch, mellum_modeling):
     patched = []
     monkeypatch.setattr(

@@ -209,6 +209,30 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
                 **kwargs,
             )
 
+        output_router_logits = kwargs.get("output_router_logits")
+        if output_router_logits is None:
+            output_router_logits = getattr(self.config, "output_router_logits", False)
+        if output_router_logits:
+            # MoE router auxiliary loss is batch-coupled, not a separable
+            # per-example objective. Preserve the upstream model's loss/output
+            # contract instead of silently dropping it in the fused CE path.
+            return original(
+                self,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                logits_to_keep=logits_to_keep,
+                **kwargs,
+            )
+
         # Resolve config defaults
         output_attentions = (
             output_attentions
@@ -331,6 +355,19 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
         if not return_dict:
             output = (logits, *outputs[1:])
             return (loss, *output) if loss is not None else output
+
+        if hasattr(outputs, "router_logits"):
+            from transformers.modeling_outputs import MoeCausalLMOutputWithPast
+
+            return MoeCausalLMOutputWithPast(
+                loss=loss,
+                aux_loss=None,
+                logits=logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                router_logits=outputs.router_logits,
+            )
 
         from transformers.modeling_outputs import CausalLMOutputWithPast
 

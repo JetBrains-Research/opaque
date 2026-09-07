@@ -109,6 +109,39 @@ def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
     assert original_fn_2 is original_fn
 
 
+def test_vmap_causal_mask_preserves_all_valid_sdpa_fast_path():
+    class DummyConfig:
+        _attn_implementation = "sdpa"
+
+    input_embeds = torch.randn(1, 8, 16)
+    created_masks = []
+    parameter = torch.ones(1, requires_grad=True)
+
+    def create_mask(param, attention_mask):
+        created_masks.append(
+            vmap_create_causal_mask(
+                config=DummyConfig(),
+                input_embeds=input_embeds,
+                attention_mask=attention_mask,
+                cache_position=torch.arange(8),
+                past_key_values=None,
+            )
+        )
+        return param.square().sum() + attention_mask.sum() * 0
+
+    torch.vmap(torch.func.grad(create_mask), in_dims=(None, 0))(
+        parameter, torch.ones(3, 8, dtype=torch.bool)
+    )
+    assert created_masks == [None]
+
+    created_masks.clear()
+    padded = torch.ones(3, 8, dtype=torch.bool)
+    padded[1, -1] = False
+    torch.vmap(torch.func.grad(create_mask), in_dims=(None, 0))(parameter, padded)
+    assert len(created_masks) == 1
+    assert created_masks[0] is not None
+
+
 class TestSlidingWindowCausalMask:
     """vmap_create_sliding_window_causal_mask enforces the look-back limit."""
 

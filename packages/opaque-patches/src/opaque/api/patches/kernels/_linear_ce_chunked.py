@@ -7,8 +7,8 @@ A pure-PyTorch, chunked, custom-autograd replacement for the Triton
 ``(tokens, vocab)`` logit matrix — the forward streams an online log-sum-exp
 over vocab chunks and the backward recomputes each chunk — so peak memory on
 MPS/CPU (where Triton is unavailable) stays bounded by one ``(tokens, chunk)``
-tile instead of the whole vocab. Gradients are bit-exact with the eager
-``matmul + F.cross_entropy`` reference (it is the same math, just streamed).
+tile instead of the whole vocab. Linear projections retain the input precision
+used by eager ``matmul`` while LSE and probability arithmetic run in FP32.
 
 Composes with ``vmap(grad(...))`` via ``generate_vmap_rule`` so the DP-SGD
 per-example path works identically to the Triton kernel, and supports the same
@@ -51,6 +51,14 @@ def _compute_dtype(e: torch.Tensor, weight: torch.Tensor) -> torch.dtype:
     )
 
 
+def _linear_chunk(e: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    """Match eager linear precision, then promote logits for CE statistics."""
+    compute_dtype = _compute_dtype(e, weight)
+    if e.dtype != weight.dtype:
+        return e.to(compute_dtype) @ weight.to(compute_dtype).t()
+    return (e @ weight.t()).to(compute_dtype)
+
+
 def _stream_lse(
     e,
     weight,
@@ -73,22 +81,20 @@ def _stream_lse(
     N = e.shape[0]
     V = weight.shape[0]
     Vc = (V + chunks - 1) // chunks
-    # Stream in >= fp32 (matmul accumulation + LSE) regardless of input dtype, to
-    # match the Triton kernel's fp32-accumulate ``tl.dot`` and HF's fp32 upcast.
-    # A bf16 matmul accumulation otherwise costs ~1 ULP of loss precision at the
-    # coarse logit magnitudes of a large vocab.
+    # Match eager linear precision, then stream CE statistics in >= fp32.
     cdt = _compute_dtype(e, weight)
-    e = e.to(cdt)
-    m = e.new_full((N,), float("-inf"))
-    s = e.new_zeros(N)
-    logit_target = e.new_zeros(N) if need_logit_target else None
-    sum_logits = e.new_zeros(N) if need_sum_logits else None
-    zero = e.new_zeros(())
+    m = torch.full((N,), float("-inf"), dtype=cdt, device=e.device)
+    s = torch.zeros(N, dtype=cdt, device=e.device)
+    logit_target = (
+        torch.zeros(N, dtype=cdt, device=e.device) if need_logit_target else None
+    )
+    sum_logits = torch.zeros(N, dtype=cdt, device=e.device) if need_sum_logits else None
+    zero = torch.zeros((), dtype=cdt, device=e.device)
     for c in range(chunks):
         lo, hi = c * Vc, min((c + 1) * Vc, V)
         if lo >= hi:
             break
-        lc = _softcap(e @ weight[lo:hi].to(cdt).t(), softcap)  # (N, hi-lo)
+        lc = _softcap(_linear_chunk(e, weight[lo:hi]), softcap)  # (N, hi-lo)
         cmax = torch.maximum(m, lc.max(-1).values)
         s = s * torch.exp(m - cmax) + torch.exp(lc - cmax[:, None]).sum(-1)
         m = cmax
@@ -191,9 +197,13 @@ class _ChunkedLinearCE(torch.autograd.Function):
         if ctx.use_token_scaling:
             row = row * torch.exp(logit_target - lse).detach()
 
-        # >= fp32 streaming (see _stream_lse); grads cast back to input dtypes.
-        ef = e.to(cdt)
-        grad_e = torch.zeros_like(ef)
+        # CE derivatives are FP32, then cross the same cast boundary as eager
+        # BF16 logits before each linear backward matmul.
+        low_precision_linear = (
+            e.dtype in {torch.float16, torch.bfloat16} and weight.dtype == e.dtype
+        )
+        ef = e if low_precision_linear else e.to(cdt)
+        grad_e = torch.zeros_like(e, dtype=cdt)
         # Accumulate per-vocab-chunk weight grads out-of-place and concat: under
         # vmap the weight is shared (unbatched) while gl@e is per-example, so an
         # in-place slice-assign into a (V, D) buffer is illegal — cat over the
@@ -203,8 +213,8 @@ class _ChunkedLinearCE(torch.autograd.Function):
             lo, hi = c * Vc, min((c + 1) * Vc, V)
             if lo >= hi:
                 break
-            wc = weight[lo:hi].to(cdt)
-            lc = _softcap(ef @ wc.t(), softcap)
+            wc = weight[lo:hi] if low_precision_linear else weight[lo:hi].to(cdt)
+            lc = _softcap(_linear_chunk(ef, wc), softcap)
             p = torch.exp(lc - lse[:, None])  # softmax chunk
             sel = (targets >= lo) & (targets < hi)
             idx = (targets - lo).clamp(0, hi - lo - 1)
@@ -217,9 +227,10 @@ class _ChunkedLinearCE(torch.autograd.Function):
             if softcap is not None:
                 gl.mul_(1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
             gl.mul_(row[:, None])
-            grad_e = grad_e + gl @ wc
+            linear_grad = gl.to(e.dtype) if low_precision_linear else gl
+            grad_e = grad_e + (linear_grad @ wc).to(cdt)
             if compute_dc:
-                w_chunks.append(gl.t() @ ef)
+                w_chunks.append(linear_grad.t() @ ef)
         grad_e = grad_e.to(e.dtype)
         grad_w = torch.cat(w_chunks, dim=0).to(weight.dtype) if compute_dc else None
         return grad_e, grad_w, None, None, None, None, None
