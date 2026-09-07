@@ -1903,6 +1903,25 @@ def main():
     def merged_params(trainable):
         return {**frozen_params, **trainable}
 
+    def _write_back(module, frozen, trainable):
+        """Copy the functional parameter dicts back into the live nn.Module.
+
+        Needed because training never touches the module: make_functional hands out
+        detached tensors, torchopt.apply_updates rebinds the trainable dict, and the
+        rotation returns fresh A/B tensors. Anything that evaluates the module rather
+        than fmodel -- save_pretrained, HumanEval, MBPP -- therefore sees the model at
+        initialisation unless the state is written back first.
+
+        Uses opaque.functional._set_module_params, which resolves dotted names to the
+        owning _parameters / _buffers dict with a per-module cache. Copies in place so
+        dtype and device stay whatever the module already had.
+        """
+        from opaque.functional import _set_module_params
+
+        merged = {**frozen, **trainable}
+        _set_module_params(module, {k: v.detach() for k, v in merged.items()})
+        return len(merged)
+
     # --- separate learning rate for the classification head ------------------
     # Implemented by scaling the head's UPDATES rather than building a second
     # optimizer, and that is exact rather than an approximation: for SGD, Adam,
@@ -3350,8 +3369,23 @@ def main():
             wandb.run.summary["eval/loss_ema"] = eval_loss_ema
 
     # Restore the best-eval checkpoint before saving / downstream eval.
-    # trainable_params share storage with peft_model (functional detach +
-    # in-place optimizer updates), so copy_ propagates to the live model.
+    #
+    # THE COMMENT THAT USED TO BE HERE WAS FALSE. It claimed trainable_params share
+    # storage with peft_model, so that copy_ propagates to the live model. It does
+    # not. Verified directly: after three rotating steps, R and B both change in the
+    # functional dicts and NEITHER changes in the module. Two reasons --
+    # torchopt.apply_updates rebinds the trainable dict, and _rotate_one_layer
+    # returns FRESH A_new/B_new tensors that the trainer rebinds into frozen_params
+    # (xse.py:1050-1051, trainer:2758).
+    #
+    # Consequence: every downstream/* metric ever logged evaluated peft_model at
+    # INITIALISATION -- R at sigma=1e-5 (so dW ~ 0) on the original W0-SVD basis.
+    # About 225 runs' HumanEval/MBPP numbers are the untouched base model's score,
+    # identical across every arm, carrying zero information about training. That is
+    # why they never separated anything.
+    #
+    # _write_back below fixes it by pushing both dicts into the module before save
+    # and before downstream eval.
     if best_snapshot is not None and is_main_process:
         if best_eval_step != global_step:
             print(
@@ -3432,6 +3466,11 @@ def main():
         print(f"\nSaving adapter to {args.output_dir}...")
         # Unwrap DP model to get the PEFT model
         peft_model = model._module if hasattr(model, "_module") else model
+        # Push the FINAL functional state into the module. Both dicts are needed:
+        # trainable carries the learned core R, frozen carries the ROTATED A/B, and
+        # combining a trained R with the stale original basis would be worse than
+        # either -- R was learned in the rotated coordinates.
+        _write_back(peft_model, frozen_params, trainable_params)
         peft_model.save_pretrained(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
         print(f"Saved adapter + tokenizer to {args.output_dir}")

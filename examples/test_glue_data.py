@@ -729,3 +729,78 @@ def test_zero_explore_isolates_the_span_change(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     import lora_privacy.peft_lora_xs.xse as xse
     importlib.reload(xse)
+
+
+def test_write_back_makes_the_module_see_training():
+    """Anything that evaluates the nn.Module must see the trained + rotated state.
+
+    Training never touches the module: make_functional hands out detached tensors,
+    torchopt.apply_updates rebinds the trainable dict, and _rotate_one_layer returns
+    fresh A/B tensors the trainer rebinds into frozen_params. So save_pretrained,
+    HumanEval and MBPP all evaluated the model at INITIALISATION -- R at sigma=1e-5
+    (dW ~ 0) on the original W0-SVD basis. About 225 runs of downstream metrics were
+    the untouched base model's score, identical across arms.
+
+    This pins the fix: after write-back the module must hold BOTH the learned core
+    and the rotated basis, and the module's forward must actually change.
+    """
+    import torchopt
+    from opaque.functional import _set_module_params, make_functional
+    from peft import get_peft_model
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    from lora_privacy.peft_lora_xs import LoraXSConfig, xse_sgd
+
+    cfg = AutoConfig.from_pretrained("gpt2")
+    cfg.n_layer = 2
+    model = AutoModelForCausalLM.from_config(cfg)
+    for p in model.parameters():
+        p.requires_grad_(False)
+    model = get_peft_model(
+        model,
+        LoraXSConfig(r=8, lora_alpha=16, sigma=1e-5, lora_dropout=0.0,
+                     target_modules=["c_attn"], task_type="CAUSAL_LM"),
+    )
+    fmodel, trainable, frozen = make_functional(
+        model, disable_autograd_tracking=True, partition_trainable=True
+    )
+
+    def mod_tensor(key):
+        obj = model
+        for part in key.split(".")[:-1]:
+            obj = getattr(obj, part)
+        return getattr(obj, key.split(".")[-1])
+
+    b_key = next(k for k in frozen if "lora_xs_B" in k)
+    r_key = next(k for k in trainable if "lora_xs_R" in k)
+    b0, r0 = mod_tensor(b_key).detach().clone(), mod_tensor(r_key).detach().clone()
+
+    torch.manual_seed(0)
+    ids = torch.randint(0, 1000, (2, 16))
+    out0 = model(ids).logits.detach().clone()
+
+    opt = xse_sgd(lr=1e-2, lora_alpha=16, p_e=0.25,
+                  rotation_step_interval=1, momentum=0.9)
+    state = opt.init(trainable, frozen)
+    for _ in range(3):
+        grads = {k: torch.randn_like(v) * 1e-2 for k, v in trainable.items()}
+        upd, state, frozen = opt.update(grads, state, params=trainable, frozen=frozen)
+        trainable = torchopt.apply_updates(trainable, upd)
+
+    # the defect: both moved in the dicts, neither in the module
+    assert not torch.equal(r0, trainable[r_key].detach()), "R did not train"
+    assert not torch.equal(b0, frozen[b_key].detach()), "basis did not rotate"
+    assert torch.equal(r0, mod_tensor(r_key).detach()), "module unexpectedly tracked R"
+    assert torch.equal(b0, mod_tensor(b_key).detach()), "module unexpectedly tracked B"
+
+    # the fix
+    merged = {**frozen, **trainable}
+    _set_module_params(model, {k: v.detach() for k, v in merged.items()})
+
+    assert torch.equal(mod_tensor(r_key).detach(), trainable[r_key].detach()), \
+        "write-back did not land the trained core"
+    assert torch.equal(mod_tensor(b_key).detach(), frozen[b_key].detach()), \
+        "write-back did not land the rotated basis"
+    out1 = model(ids).logits.detach()
+    assert not torch.allclose(out0, out1, atol=1e-7), \
+        "module forward unchanged after write-back — downstream eval would still be blind"
