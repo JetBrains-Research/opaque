@@ -323,12 +323,14 @@ def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeyp
             "rope": True,
             "rms_norm": True,
             "fused_linear_cross_entropy": True,
+            "chunked_linear_cross_entropy": 2048,
         },
     )
     assert len(calls) == 1
     assert calls[0]["kwargs"]["rope"] is True
     assert calls[0]["kwargs"]["rms_norm"] is True
     assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
+    assert calls[0]["kwargs"]["chunked_linear_cross_entropy"] == 2048
 
 
 def test_performance_kernels_config_can_disable_kv_cache(tmp_path, monkeypatch):

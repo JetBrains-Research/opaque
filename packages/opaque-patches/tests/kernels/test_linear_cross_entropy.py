@@ -747,7 +747,11 @@ class TestLinearCEMemory:
             * hidden.element_size()
         )
         contiguous_bytes = sum(
-            event.cuda_memory_usage
+            getattr(
+                event,
+                "device_memory_usage",
+                getattr(event, "cuda_memory_usage", 0),
+            )
             for event in profiler.key_averages()
             if event.key == "aten::contiguous"
         )

@@ -20,6 +20,7 @@ _MODULE_PATH = "transformers.models.mellum.modeling_mellum"
 apply_mellum_family_patches = make_apply_family_patches(
     family="mellum",
     module_path=_MODULE_PATH,
+    rope_replacement=None,
 )
 
 
@@ -38,6 +39,8 @@ apply_mellum_patches = make_apply_model_patches(
     moe_kind="swiglu",
     rms_norm_kind="llama",
     fused_add_rms_kind=None,
+    fused_linear_cross_entropy=False,
+    chunked_linear_cross_entropy=2048,
 )
 
 

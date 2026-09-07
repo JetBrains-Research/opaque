@@ -16,12 +16,13 @@ want to keep the cache (e.g. for an HF model whose forward depends on
 it) opt out explicitly via ``performance_kernels_config={"kv_cache":
 False}``.
 
-``performance_kernels_config`` is a flat ``dict[str, bool]`` forwarded
+``performance_kernels_config`` is a flat ``dict[str, bool | int]`` forwarded
 as-is to ``opaque.patches.apply_model_patches`` kwargs — no key
 translation.  Supported keys mirror the opaque-patches surface:
 ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-``fused_linear_cross_entropy``, ``kv_cache``, ``eager_attention``,
-``batchify``.
+``fused_linear_cross_entropy``, ``chunked_linear_cross_entropy``, ``kv_cache``,
+``eager_attention``, ``batchify``. The chunked setting accepts a positive
+vocabulary tile width; ``False`` or ``0`` disables it.
 """
 
 from __future__ import annotations
