@@ -650,18 +650,37 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         return (Q, K, V), (X_bdim, X_bdim, X_bdim)
 
 
-def _lora_adapter_grads(input_, grad, A, B, scaling):
+def _lora_adapter_grad_accumulator(A, B):
     if A is None or B is None:
+        return None
+    dtype = torch.promote_types(A.dtype, B.dtype)
+    if dtype in (torch.float16, torch.bfloat16):
+        dtype = torch.float32
+    A_acc = A.to(dtype)
+    B_acc = B.to(dtype)
+    return (
+        A_acc,
+        B_acc,
+        torch.zeros_like(A, dtype=dtype),
+        torch.zeros_like(B, dtype=dtype),
+    )
+
+
+def _accumulate_lora_adapter_grads(accumulator, input_, grad, scaling):
+    if accumulator is None:
+        return
+    A, B, dA, dB = accumulator
+    input_acc = input_.to(A.dtype)
+    grad_acc = grad.to(A.dtype)
+    grad_Bt = grad_acc @ B.t()
+    dA.addmm_(input_acc.t(), grad_Bt, alpha=scaling, beta=1)
+    dB.addmm_((input_acc @ A).t(), grad_acc, alpha=scaling, beta=1)
+
+
+def _finish_lora_adapter_grads(accumulator):
+    if accumulator is None:
         return None, None
-    dA = torch.zeros_like(A)
-    dB = torch.zeros_like(B)
-    for start in range(0, input_.shape[0], _LORA_MLP_GRAD_CHUNK_ROWS):
-        stop = min(start + _LORA_MLP_GRAD_CHUNK_ROWS, input_.shape[0])
-        input_chunk = input_[start:stop]
-        grad_chunk = grad[start:stop]
-        grad_Bt = grad_chunk @ B.t()
-        dA.addmm_(input_chunk.t(), grad_Bt, alpha=scaling, beta=1)
-        dB.addmm_((input_chunk @ A).t(), grad_chunk, alpha=scaling, beta=1)
+    _, _, dA, dB = accumulator
     return dA, dB
 
 
@@ -705,18 +724,9 @@ def _lora_mlp_weight_backward_impl(
     gate_flat = gate.reshape(-1, gate.shape[-1])
     up_flat = up.reshape(-1, up.shape[-1])
     act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
-    adapter_grads = [None] * 6
-
-    def accumulate(index, input_, grad, A, B, scaling):
-        dA, dB = _lora_adapter_grads(input_, grad, A, B, scaling)
-        if dA is None:
-            return
-        if adapter_grads[index] is None:
-            adapter_grads[index] = dA
-            adapter_grads[index + 1] = dB
-        else:
-            adapter_grads[index].add_(dA)
-            adapter_grads[index + 1].add_(dB)
+    gate_accumulator = _lora_adapter_grad_accumulator(Ag, Bg)
+    up_accumulator = _lora_adapter_grad_accumulator(Au, Bu)
+    down_accumulator = _lora_adapter_grad_accumulator(Ad, Bd)
 
     for start in range(0, X_flat.shape[0], _LORA_MLP_GRAD_CHUNK_ROWS):
         stop = min(start + _LORA_MLP_GRAD_CHUNK_ROWS, X_flat.shape[0])
@@ -728,11 +738,13 @@ def _lora_mlp_weight_backward_impl(
         h, dgate, dup = act_backward_fused(
             dh, gate_flat[start:stop], up_flat[start:stop]
         )
-        accumulate(4, h, grad_out_chunk, Ad, Bd, Sd)
-        accumulate(0, X_chunk, dgate, Ag, Bg, Sg)
-        accumulate(2, X_chunk, dup, Au, Bu, Su)
+        _accumulate_lora_adapter_grads(down_accumulator, h, grad_out_chunk, Sd)
+        _accumulate_lora_adapter_grads(gate_accumulator, X_chunk, dgate, Sg)
+        _accumulate_lora_adapter_grads(up_accumulator, X_chunk, dup, Su)
 
-    dAg, dBg, dAu, dBu, dAd, dBd = adapter_grads
+    dAg, dBg = _finish_lora_adapter_grads(gate_accumulator)
+    dAu, dBu = _finish_lora_adapter_grads(up_accumulator)
+    dAd, dBd = _finish_lora_adapter_grads(down_accumulator)
     return (
         gate_flat.reshape(gate.shape),
         up_flat.reshape(up.shape),
@@ -1109,8 +1121,20 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
             raise NotImplementedError("Repeated backward not supported for LoRA_MLP")
         ctx._opaque_backward_done = True
         Sg, Su, Sd = ctx.Sg, ctx.Su, ctx.Sd
+        saved_tensors = ctx.saved_tensors
+        adapter_dtypes = tuple(
+            tensor.dtype if tensor is not None else None
+            for tensor in (
+                saved_tensors[2],
+                saved_tensors[3],
+                saved_tensors[5],
+                saved_tensors[6],
+                saved_tensors[8],
+                saved_tensors[9],
+            )
+        )
         X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
-            ctx.compute_dtype, *ctx.saved_tensors
+            ctx.compute_dtype, *saved_tensors
         )
         X_flat = X.reshape(-1, X.shape[-1])
         gate = F.linear(X, Wg)
@@ -1137,6 +1161,12 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
                 gate,
                 up,
                 ctx.activation_type,
+            )
+            dAg, dBg, dAu, dBu, dAd, dBd = (
+                grad.to(dtype) if grad is not None and grad.dtype != dtype else grad
+                for grad, dtype in zip(
+                    (dAg, dBg, dAu, dBu, dAd, dBd), adapter_dtypes, strict=True
+                )
             )
             ctx.maybe_clear_saved_tensors()
             del X, X_flat, Wd, Ad, Bd, gate, up

@@ -1229,6 +1229,31 @@ class TestLoRAMLPBackward:
             label="Bd.grad",
         )
 
+    def test_long_bfloat16_reduction_preserves_adapter_gradient(self):
+        rows = 65_536
+        kw = {"device": "cuda", "dtype": torch.bfloat16}
+        X = torch.ones(rows, 1, **kw)
+        Wg = torch.ones(1, 1, **kw)
+        Wu = torch.ones(1, 1, **kw)
+        Wd = torch.zeros(1, 1, **kw)
+        Ad_pt = torch.ones(1, 1, **kw, requires_grad=True)
+        Bd_pt = torch.ones(1, 1, **kw, requires_grad=True)
+
+        out_pt = pytorch_lora_mlp(
+            X, Wg, None, None, 1.0, Wu, None, None, 1.0, Wd, Ad_pt, Bd_pt, 1.0
+        )
+        expected = torch.autograd.grad(out_pt.sum(), (Ad_pt, Bd_pt))
+
+        Ad_op = Ad_pt.detach().clone().requires_grad_(True)
+        Bd_op = Bd_pt.detach().clone().requires_grad_(True)
+        out_op = opaque_lora_mlp(
+            X, Wg, None, None, 1.0, Wu, None, None, 1.0, Wd, Ad_op, Bd_op, 1.0
+        )
+        actual = torch.autograd.grad(out_op.sum(), (Ad_op, Bd_op))
+
+        for actual_grad, expected_grad in zip(actual, expected, strict=True):
+            torch.testing.assert_close(actual_grad, expected_grad, rtol=1e-2, atol=0)
+
 
 class TestLoRAMLPVmapForward:
     """Test LoRA-MLP vmap forward precision."""

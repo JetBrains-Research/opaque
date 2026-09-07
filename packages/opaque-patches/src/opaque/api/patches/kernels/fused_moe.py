@@ -332,8 +332,6 @@ def _fused_moe_backward(
             dW2,
             per_route,
         )
-    if x_flat.device.type == "cuda":
-        torch.cuda.current_stream(x_flat.device).synchronize()
     return dx, dW1, dW2, dtw
 
 
