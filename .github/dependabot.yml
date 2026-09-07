@@ -19,6 +19,10 @@ updates:
     reviewers:
       - "evgri243"
     open-pull-requests-limit: 5
+    groups:
+      pipeline-dependencies:
+        patterns:
+          - "*"
 
   # Update Rust dependencies
   - package-ecosystem: "cargo"
