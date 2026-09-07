@@ -4,7 +4,13 @@
 
 from __future__ import annotations
 
-from ._utils import _active_lora_dtype, _extract_lora_params
+import torch
+
+from ._utils import (
+    _active_lora_dtype,
+    _extract_lora_params,
+    _lora_projections_use_dtype,
+)
 
 _MLP_ACTIVATION_MAP = {
     "LlamaMLP": 0,  # ACTIVATION_SWIGLU
@@ -49,6 +55,10 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         from opaque.api.patches.kernels.lora import Opaque_LoRA_MLP
 
         dtype = _active_lora_dtype(x)
+        if not torch.is_autocast_enabled("cuda") and not _lora_projections_use_dtype(
+            self, ("gate_proj", "up_proj", "down_proj"), dtype
+        ):
+            return original_forward(x)
 
         Wg, Ag, Bg, Sg = _extract_lora_params(self.gate_proj)
         Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)

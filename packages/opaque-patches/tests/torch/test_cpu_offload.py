@@ -24,11 +24,12 @@ pytestmark = [
 
 
 class TestSaveOnCpuWithClippedGrad:
-    def test_clipped_grad_correctness(self):
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+    def test_clipped_grad_correctness(self, dtype):
         """save_on_cpu produces identical clipped gradients."""
         from opaque.api.engine.clipping import clipped_grad
 
-        W = torch.randn(32, 32, device="cuda")
+        W = torch.randn(32, 32, device="cuda", dtype=dtype)
 
         def loss_fn(w, x):
             return (x @ w).relu().sum()
@@ -37,7 +38,7 @@ class TestSaveOnCpuWithClippedGrad:
             loss_fn, argnums=0, batch_argnums=(1,), clipping_norm=1.0
         )
 
-        x = torch.randn(4, 32, device="cuda")
+        x = torch.randn(4, 32, device="cuda", dtype=dtype)
         grads_vanilla, _ = grad_fn(W, x, state=state)
 
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
