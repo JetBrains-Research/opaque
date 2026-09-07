@@ -252,10 +252,10 @@ import opaque.dpftrl.accounting as dpftrl_acc
 # Strategy is a recipe; the amplifier supplies the horizon at PLD time.
 strategy = band_mf_strategy(bands=10, momentum=0.95)
 
-proc = dpftrl_acc.poisson(
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
@@ -273,8 +273,9 @@ proc = dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1000)  # bare use
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
-(see below).
+For stock BandMF training, wrap with
+`dpftrl_acc.b_min_sep(..., n_steps=..., p0=...)` (see below). The Poisson
+wrapper is the low-level fixed-universe cyclic construction documented below.
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
@@ -318,6 +319,11 @@ Poisson amplification for DP-FTRL. Whole-process accountant covering all
 Cyclic when the inner is `BandMf` with `bands > 1` (decomposes into
 `ceil(n_steps / bands)` independent groups), plain Poisson per round
 when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
+
+For BandMF this is a low-level fixed-universe result, not an unqualified
+add/remove guarantee. `sample_rate` is conditional in the active group, and
+the fixed/public partition and population must match
+`CyclicPoissonSampler`. Stock `DPTrainer` uses `b_min_sep` instead.
 
 ```python
 strategy = band_mf_strategy(bands=10)
@@ -369,10 +375,10 @@ strategy = band_mf_strategy(bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: dpftrl_acc.poisson(
+    lambda nm: dpftrl_acc.b_min_sep(
         dpftrl_acc.mf_gaussian(nm, strategy),
-        sample_rate=0.01,
         n_steps=1000,
+        p0=0.01,
     ),
     param_min=0.1,
     param_max=10.0,
@@ -495,10 +501,10 @@ from opaque.accounting import Accountant
 from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(bands=64)
-process = dpftrl_acc.poisson(
+process = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
-    sample_rate=0.01,
     n_steps=15_624,
+    p0=0.01,
 )
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 acct |= process

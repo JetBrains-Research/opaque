@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import fields
 from pathlib import Path
@@ -13,6 +14,9 @@ import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
+from opaque.api.transformers.trainer._participation import (
+    ResolvedParticipationPlan,
+)
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -164,6 +168,17 @@ class TestDpRuntimeBundle:
         _, noise = gaussian_noise(noise_multiplier=1.0, key=key(11))
 
         path = str(tmp_path / "dp_runtime.pt")
+        participation = ResolvedParticipationPlan.resolve(
+            mechanism_kind="gaussian",
+            sampling_mode="k_out_of_t",
+            sampling_kwargs={"k": 3, "allocation": "block"},
+            population_size=100,
+            expected_batch_size=10,
+            sample_rate=0.1,
+            total_steps=30,
+            num_bins=10,
+            world_size=1,
+        )
         ckpt.save_dp_runtime_state(
             path,
             clip_state=clip,
@@ -173,16 +188,17 @@ class TestDpRuntimeBundle:
                 "key_impl": "opaque_threefry_like",
                 "consumed": 2,
                 "num_samples": 100,
-                "sample_rate": 0.1,
-                "n_steps": 10,
-                "truncated_batch_size": None,
+                "k": 3,
+                "t": 30,
+                "allocation": "block",
             },
             sample_rate=0.1,
             target_delta=1e-5,
             noise_multiplier=1.1,
             expected_steps_per_epoch=10,
-            expected_batch_size=32,
+            expected_batch_size=10,
             total_steps=30,
+            participation_plan=participation.to_state_dict(),
             is_horizon_process=True,
             calibration_source="calibrated",
             target_epsilon=5.0,
@@ -200,6 +216,7 @@ class TestDpRuntimeBundle:
         assert loaded.noise_multiplier == pytest.approx(1.1)
         assert loaded.expected_steps_per_epoch == 10
         assert loaded.total_steps == 30
+        assert loaded.participation_plan == participation.to_state_dict()
         assert loaded.is_horizon_process is True
         assert loaded.calibration_source == "calibrated"
         assert loaded.target_epsilon == pytest.approx(5.0)
@@ -207,6 +224,236 @@ class TestDpRuntimeBundle:
             "type": "ExampleHorizon",
             "n_steps": 30,
         }
+
+    @staticmethod
+    def _legacy_band_runtime(sampler_state):
+        runtime = ckpt.RuntimeCheckpoint(
+            version=ckpt.DP_STATE_BUNDLE_VERSION,
+            clip_state={},
+            noise_state={},
+            sampler_state=sampler_state,
+            sample_rate=0.1,
+            target_delta=1e-5,
+            noise_multiplier=1.0,
+            expected_steps_per_epoch=10,
+            expected_batch_size=10,
+            total_steps=20,
+            mechanism_kind="mf_band",
+        )
+        runtime.__dict__.pop("participation_plan")
+        runtime.__dict__.pop("sampler_cursor_origin")
+        return runtime
+
+    @classmethod
+    def _coherent_legacy_b_min_sep_runtime(cls, sampler_state):
+        runtime = cls._legacy_band_runtime(sampler_state)
+        runtime.is_horizon_process = True
+        runtime.mf_n_steps = 20
+        runtime.mf_min_sep = 4
+        runtime.mf_max_participations = 5
+        return runtime
+
+    @staticmethod
+    def _issue_776_fixture():
+        path = (
+            Path(__file__).parents[1]
+            / "fixtures"
+            / "issue_776_legacy_sampler_states_v7.json"
+        )
+        with path.open() as fixture_file:
+            return json.load(fixture_file)
+
+    def test_legacy_band_poisson_is_inspectable_but_not_resumable(self, tmp_path):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        assert set(runtime.__dict__) == set(
+            fixture["_fixture"]["runtime_instance_fields"]
+        )
+        path = tmp_path / "legacy.pt"
+        torch.save(runtime, path)
+
+        loaded = ckpt.load_dp_runtime_state(str(path))
+        assert getattr(loaded, "participation_plan", None) is None
+        with pytest.raises(
+            CheckpointError,
+            match=r"Changing the sampler cannot repair.*mf_identity",
+        ):
+            ckpt.validate_dp_runtime_for_resume(loaded)
+
+    def test_legacy_band_b_min_sep_remains_resumable(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._coherent_legacy_b_min_sep_runtime(fixture["b_min_sep"])
+        ckpt.validate_dp_runtime_for_resume(runtime)
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("bands", 5, "contradicts its saved MF"),
+            ("sampling_prob", 0.2, "probability contradicts"),
+            ("n_steps", 19, "contradicts its saved MF"),
+            ("consumed", 21, "cursor is invalid"),
+        ],
+    )
+    def test_legacy_band_b_min_sep_rejects_contradictions(self, field, value, message):
+        fixture = self._issue_776_fixture()
+        sampler_state = dict(fixture["b_min_sep"])
+        sampler_state[field] = value
+        runtime = self._coherent_legacy_b_min_sep_runtime(sampler_state)
+        with pytest.raises(CheckpointError, match=message):
+            ckpt.validate_dp_runtime_for_resume(runtime)
+
+    def test_sampler_cursor_must_match_trainer_progress(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._coherent_legacy_b_min_sep_runtime(fixture["b_min_sep"])
+        runtime.sampler_state = dict(runtime.sampler_state, consumed=4)
+
+        ckpt.validate_sampler_cursor_for_resume(
+            runtime,
+            global_step=4,
+            ignore_data_skip=False,
+        )
+        with pytest.raises(CheckpointError, match="does not match trainer progress"):
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime,
+                global_step=3,
+                ignore_data_skip=False,
+            )
+
+    def test_sampler_cursor_origin_supports_chained_poisson_resume(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        runtime.mechanism_kind = "gaussian"
+        runtime.sampler_state = dict(runtime.sampler_state, consumed=2)
+        runtime.sampler_cursor_origin = 5
+
+        ckpt.validate_sampler_cursor_for_resume(
+            runtime,
+            global_step=7,
+            ignore_data_skip=False,
+        )
+        with pytest.raises(CheckpointError, match="does not match trainer progress"):
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime,
+                global_step=8,
+                ignore_data_skip=False,
+            )
+
+    def test_non_poisson_sampler_rejects_nonzero_cursor_origin(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._coherent_legacy_b_min_sep_runtime(fixture["b_min_sep"])
+        runtime.sampler_cursor_origin = 1
+
+        with pytest.raises(CheckpointError, match="whole-dataset Poisson"):
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime,
+                global_step=1,
+                ignore_data_skip=False,
+            )
+
+    @pytest.mark.parametrize("global_step", [True, 1.5])
+    def test_sampler_cursor_rejects_non_integer_trainer_progress(self, global_step):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        with pytest.raises(CheckpointError, match="global_step is invalid"):
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime,
+                global_step=global_step,
+                ignore_data_skip=True,
+            )
+
+    def test_sampler_cursor_rejects_non_boolean_skip_policy(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        with pytest.raises(CheckpointError, match="must be a bool"):
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime,
+                global_step=0,
+                ignore_data_skip=1,
+            )
+
+    def test_ignore_data_skip_explicitly_discards_saved_cursor(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        ckpt.validate_sampler_cursor_for_resume(
+            runtime,
+            global_step=7,
+            ignore_data_skip=True,
+        )
+
+    def test_legacy_band_ambiguous_sampler_state_fails_closed(self):
+        fixture = self._issue_776_fixture()
+        ambiguous = dict(fixture["plain_poisson"])
+        ambiguous["bands"] = 4
+        runtime = self._legacy_band_runtime(ambiguous)
+        with pytest.raises(CheckpointError, match="refusing to guess"):
+            ckpt.validate_dp_runtime_for_resume(runtime)
+
+    def test_current_plan_rejects_contradictory_sampler_state(self):
+        fixture = self._issue_776_fixture()
+        plan = ResolvedParticipationPlan.resolve(
+            mechanism_kind="mf_band",
+            sampling_mode="b_min_sep",
+            sampling_kwargs={},
+            population_size=100,
+            expected_batch_size=10,
+            sample_rate=0.1,
+            total_steps=20,
+            num_bins=10,
+            world_size=1,
+        )
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        runtime.participation_plan = plan.to_state_dict()
+        with pytest.raises(CheckpointError, match="Changing the sampler cannot repair"):
+            ckpt.validate_dp_runtime_for_resume(runtime)
+
+    def test_current_plan_accepts_rank_local_sampler_population(self):
+        fixture = self._issue_776_fixture()
+        sampler_state = dict(fixture["plain_poisson"])
+        sampler_state["num_samples"] = 50
+        plan = ResolvedParticipationPlan.resolve(
+            mechanism_kind="gaussian",
+            sampling_mode="poisson",
+            sampling_kwargs={},
+            population_size=100,
+            expected_batch_size=10,
+            sample_rate=0.1,
+            total_steps=20,
+            num_bins=10,
+            world_size=2,
+        )
+        runtime = self._legacy_band_runtime(sampler_state)
+        runtime.mechanism_kind = "gaussian"
+        runtime.participation_plan = plan.to_state_dict()
+
+        ckpt.validate_dp_runtime_for_resume(runtime)
+
+    def test_current_plan_rejects_malformed_sampler_scalar_type(self):
+        fixture = self._issue_776_fixture()
+        sampler_state = dict(fixture["plain_poisson"])
+        sampler_state["n_steps"] = True
+        plan = ResolvedParticipationPlan.resolve(
+            mechanism_kind="gaussian",
+            sampling_mode="poisson",
+            sampling_kwargs={},
+            population_size=100,
+            expected_batch_size=10,
+            sample_rate=0.1,
+            total_steps=20,
+            num_bins=10,
+            world_size=1,
+        )
+        runtime = self._legacy_band_runtime(sampler_state)
+        runtime.mechanism_kind = "gaussian"
+        runtime.participation_plan = plan.to_state_dict()
+
+        with pytest.raises(CheckpointError, match="horizon has an invalid type"):
+            ckpt.validate_dp_runtime_for_resume(runtime)
+
+    def test_legacy_non_band_poisson_is_not_rejected(self):
+        fixture = self._issue_776_fixture()
+        runtime = self._legacy_band_runtime(fixture["plain_poisson"])
+        runtime.mechanism_kind = "gaussian"
+        ckpt.validate_dp_runtime_for_resume(runtime)
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")

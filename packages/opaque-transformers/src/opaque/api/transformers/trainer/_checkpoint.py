@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 import random
 import re
 import shutil
+from collections.abc import Mapping
 from dataclasses import field
 from pathlib import Path
 from typing import Any
@@ -21,12 +23,14 @@ from typing import Any
 import numpy as np
 import torch
 
-from opaque.exceptions import CheckpointError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.serialization import state_dict as opaque_state_dict
 from opaque.types import ClipState, NoiseState
 from transformers.trainer import TRAINER_STATE_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
+
+from ._participation import ResolvedParticipationPlan
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +42,10 @@ DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
 # Version 7 records calibration provenance plus versioned MF runtime state,
-# including bounded BISR history and sensitivity latches.
+# including bounded BISR history and sensitivity latches. Participation-plan
+# provenance and the execution-aligned sampler-cursor origin are optional
+# additive fields so safe historical v7 bundles remain inspectable and
+# resumable.
 DP_STATE_BUNDLE_VERSION = 7
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
@@ -64,6 +71,8 @@ __all__ = [
     "rotate_checkpoints",
     "save_dp_runtime_state",
     "snapshot_rng_state",
+    "validate_dp_runtime_for_resume",
+    "validate_sampler_cursor_for_resume",
 ]
 
 
@@ -266,6 +275,16 @@ class RuntimeCheckpoint:
         default="gaussian",
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
     )
+    participation_plan: dict[str, Any] | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    # Global trainer step at which this sampler stream began. Usually zero;
+    # non-zero only after ``ignore_data_skip=True`` intentionally starts a new
+    # Poisson stream. ``sampler_state['consumed']`` is stored relative to this
+    # origin so DataLoader worker prefetch cannot move the persisted cursor past
+    # the number of optimizer steps that actually executed.
+    sampler_cursor_origin: int = 0
     is_horizon_process: bool = field(
         default=False,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
@@ -321,6 +340,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
     expected_batch_size: int,
     total_steps: int,
     mechanism_kind: str = "gaussian",
+    participation_plan: dict[str, Any] | None = None,
+    sampler_cursor_origin: int = 0,
     is_horizon_process: bool = False,
     calibration_source: str = "fixed",
     target_epsilon: float | None = None,
@@ -346,6 +367,13 @@ def save_dp_runtime_state(  # noqa: PLR0913
                 f"noise_state must be a NoiseState instance, got {type(noise_state).__name__}",
             )
         )
+    if type(sampler_cursor_origin) is not int or sampler_cursor_origin < 0:
+        raise CheckpointError(
+            *(
+                "sampler_cursor_origin must be a non-negative integer, got "
+                f"{sampler_cursor_origin!r}.",
+            )
+        )
     bundle = RuntimeCheckpoint(
         version=DP_STATE_BUNDLE_VERSION,
         clip_state=opaque_state_dict(clip_state),
@@ -358,6 +386,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
         expected_batch_size=int(expected_batch_size),
         total_steps=int(total_steps),
         mechanism_kind=str(mechanism_kind),
+        participation_plan=participation_plan,
+        sampler_cursor_origin=sampler_cursor_origin,
         is_horizon_process=bool(is_horizon_process),
         calibration_source=str(calibration_source),
         target_epsilon=(float(target_epsilon) if target_epsilon is not None else None),
@@ -372,6 +402,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
         warmup_steps=(float(warmup_steps) if warmup_steps is not None else None),
         lr_scheduler_kwargs=lr_scheduler_kwargs,
     )
+    if participation_plan is not None:
+        validate_dp_runtime_for_resume(bundle)
     # ``torch.save`` of a dataclass round-trips via pickle.  Kept as
     # pickle to handle the heterogeneous types (tensors inside
     # ``clip_state`` / ``noise_state``, Python objects in
@@ -407,3 +439,465 @@ def load_dp_runtime_state(path: str) -> RuntimeCheckpoint:
             )
         )
     return bundle
+
+
+_POISSON_SAMPLER_FIELDS = frozenset(
+    {
+        "key_seed",
+        "key_impl",
+        "consumed",
+        "num_samples",
+        "sample_rate",
+        "n_steps",
+        "truncated_batch_size",
+    }
+)
+_K_OUT_OF_T_SAMPLER_FIELDS = frozenset(
+    {
+        "key_seed",
+        "key_impl",
+        "consumed",
+        "num_samples",
+        "k",
+        "t",
+        "allocation",
+    }
+)
+_B_MIN_SEP_SAMPLER_FIELDS = frozenset(
+    {
+        "key_seed",
+        "key_impl",
+        "consumed",
+        "num_examples",
+        "bands",
+        "sampling_prob",
+        "n_steps",
+    }
+)
+_BALLS_IN_BINS_SAMPLER_FIELDS = frozenset(
+    {
+        "key_seed",
+        "key_impl",
+        "consumed",
+        "num_samples",
+        "num_bins",
+        "n_steps",
+    }
+)
+_SAMPLER_KIND_BY_FIELDS = {
+    _POISSON_SAMPLER_FIELDS: "whole_dataset_poisson",
+    _K_OUT_OF_T_SAMPLER_FIELDS: "k_out_of_t",
+    _B_MIN_SEP_SAMPLER_FIELDS: "b_min_sep",
+    _BALLS_IN_BINS_SAMPLER_FIELDS: "balls_in_bins",
+}
+
+
+def _sampler_state_kind(state: object) -> str | None:
+    if not isinstance(state, Mapping):
+        return None
+    return _SAMPLER_KIND_BY_FIELDS.get(frozenset(state))
+
+
+def _affected_band_poisson_error() -> CheckpointError:
+    return CheckpointError(
+        *(
+            "Cannot resume an mf_band checkpoint written with plain Poisson "
+            "sampling: its sampler and accountant describe different participation "
+            "processes. Changing the sampler cannot repair the executed prefix. "
+            "Restart from the original public/pre-training initialization with "
+            "sampling_mode='b_min_sep', or use privacy_noise_mechanism='mf_identity' "
+            "for a new whole-dataset Poisson run; do not treat affected DP-trained "
+            "weights as a zero-cost fresh initialization.",
+        )
+    )
+
+
+def _validate_sampler_state_against_plan(
+    plan: ResolvedParticipationPlan,
+    state: Mapping[str, Any],
+) -> None:
+    kind = _sampler_state_kind(state)
+    if kind != plan.contract_id:
+        if plan.mechanism_kind == "mf_band" and kind == "whole_dataset_poisson":
+            raise _affected_band_poisson_error()
+        raise CheckpointError(
+            *(
+                "checkpoint sampler state does not match its participation plan: "
+                f"sampler={kind!r}, plan={plan.contract_id!r}.",
+            )
+        )
+
+    expected_horizon_field = "t" if kind == "k_out_of_t" else "n_steps"
+    if type(state[expected_horizon_field]) is not int:
+        raise CheckpointError(*("checkpoint sampler horizon has an invalid type.",))
+    if state[expected_horizon_field] != plan.total_steps:
+        raise CheckpointError(
+            *("checkpoint sampler horizon does not match its participation plan.",)
+        )
+    _validate_sampler_cursor_range(state, horizon=plan.total_steps)
+    if type(state["key_seed"]) is not int or type(state["key_impl"]) is not str:
+        raise CheckpointError(*("checkpoint sampler RNG identity has invalid types.",))
+    population_field = "num_examples" if kind == "b_min_sep" else "num_samples"
+    if type(state[population_field]) is not int:
+        raise CheckpointError(*("checkpoint sampler population has an invalid type.",))
+    if state[population_field] != plan.local_population_size:
+        raise CheckpointError(
+            *("checkpoint sampler population does not match its participation plan.",)
+        )
+
+    kwargs = plan.sampler_kwargs_dict()
+    if kind == "whole_dataset_poisson":
+        if type(state["sample_rate"]) is not float:
+            raise CheckpointError(
+                *("checkpoint Poisson sampler rate has an invalid type.",)
+            )
+        expected_cap = kwargs.get("truncated_batch_size")
+        actual_cap = state["truncated_batch_size"]
+        if (actual_cap is not None and type(actual_cap) is not int) or (
+            expected_cap is not None and type(actual_cap) is not int
+        ):
+            raise CheckpointError(
+                *("checkpoint Poisson sampler cap has an invalid type.",)
+            )
+        if (
+            state["sample_rate"] != plan.sample_rate
+            or state["truncated_batch_size"] != expected_cap
+        ):
+            raise CheckpointError(
+                *(
+                    "checkpoint Poisson sampler parameters do not match its "
+                    "participation plan.",
+                )
+            )
+    elif kind == "k_out_of_t":
+        if type(state["k"]) is not int or type(state["allocation"]) is not str:
+            raise CheckpointError(
+                *("checkpoint k-out-of-t sampler parameters have invalid types.",)
+            )
+        if state["k"] != kwargs["k"] or state["allocation"] != kwargs["allocation"]:
+            raise CheckpointError(
+                *(
+                    "checkpoint k-out-of-t sampler parameters do not match its "
+                    "participation plan.",
+                )
+            )
+    elif kind == "balls_in_bins":
+        if type(state["num_bins"]) is not int:
+            raise CheckpointError(
+                *("checkpoint Balls-in-Bins num_bins has an invalid type.",)
+            )
+        if state["num_bins"] != plan.num_bins:
+            raise CheckpointError(
+                *(
+                    "checkpoint Balls-in-Bins sampler parameters do not match its "
+                    "participation plan.",
+                )
+            )
+
+
+def _validate_bundle_against_plan(
+    bundle: RuntimeCheckpoint,
+    plan: ResolvedParticipationPlan,
+) -> None:
+    cursor_origin = _validated_sampler_cursor_origin(bundle)
+    if cursor_origin > plan.total_steps:
+        raise CheckpointError(
+            *(
+                "checkpoint sampler_cursor_origin exceeds its participation "
+                f"horizon: {cursor_origin} > {plan.total_steps}.",
+            )
+        )
+    if cursor_origin != 0 and plan.contract_id != "whole_dataset_poisson":
+        raise CheckpointError(
+            *(
+                "checkpoint sampler_cursor_origin may be non-zero only for a "
+                "whole-dataset Poisson stream.",
+            )
+        )
+    expected_horizon = (
+        plan.mechanism_kind != "gaussian" or plan.sampling_mode == "k_out_of_t"
+    )
+    scalar_pairs = (
+        ("sample_rate", bundle.sample_rate, plan.sample_rate, float),
+        (
+            "expected_batch_size",
+            bundle.expected_batch_size,
+            plan.expected_batch_size,
+            int,
+        ),
+        ("total_steps", bundle.total_steps, plan.total_steps, int),
+        (
+            "expected_steps_per_epoch",
+            bundle.expected_steps_per_epoch,
+            plan.num_bins,
+            int,
+        ),
+        (
+            "is_horizon_process",
+            bundle.is_horizon_process,
+            expected_horizon,
+            bool,
+        ),
+    )
+    for field_name, actual, expected, expected_type in scalar_pairs:
+        if type(actual) is not expected_type or actual != expected:
+            raise CheckpointError(
+                *(
+                    f"checkpoint {field_name} contradicts its participation plan: "
+                    f"{actual!r} != {expected!r}.",
+                )
+            )
+
+    if plan.mechanism_kind != "gaussian":
+        if type(bundle.mf_n_steps) is not int or bundle.mf_n_steps != plan.total_steps:
+            raise CheckpointError(
+                *("checkpoint MF horizon contradicts its participation plan.",)
+            )
+    elif bundle.mf_n_steps is not None:
+        raise CheckpointError(
+            *("checkpoint Gaussian mechanism unexpectedly carries an MF horizon.",)
+        )
+
+    state = bundle.sampler_state
+    if plan.sampling_mode == "b_min_sep":
+        if not isinstance(state, Mapping):
+            raise CheckpointError(
+                *("checkpoint has a participation plan but no sampler state.",)
+            )
+        bands = state["bands"]
+        sampling_prob = state["sampling_prob"]
+        if type(bands) is not int or type(sampling_prob) is not float:
+            raise CheckpointError(
+                *("checkpoint b-min-separation parameters have invalid types.",)
+            )
+        if type(bundle.mf_min_sep) is not int or bundle.mf_min_sep != bands:
+            raise CheckpointError(
+                *(
+                    "checkpoint b-min-separation sampler contradicts its MF "
+                    "participation parameters.",
+                )
+            )
+        from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
+            participation_p_from_per_example_rate,
+        )
+
+        try:
+            expected_probability = participation_p_from_per_example_rate(
+                plan.sample_rate,
+                bands,
+            )
+        except ConfigurationError as exc:
+            raise CheckpointError(
+                *("checkpoint b-min-separation parameters are invalid.",)
+            ) from exc
+        if sampling_prob != expected_probability:
+            raise CheckpointError(
+                *(
+                    "checkpoint b-min-separation probability contradicts its "
+                    "participation plan.",
+                )
+            )
+
+
+def _validate_sampler_cursor_range(
+    state: Mapping[str, Any],
+    *,
+    horizon: int,
+) -> int:
+    consumed = state.get("consumed")
+    if type(consumed) is not int or not 0 <= consumed <= horizon:
+        raise CheckpointError(
+            *(
+                "checkpoint sampler cursor is invalid: "
+                f"consumed={consumed!r}, horizon={horizon!r}.",
+            )
+        )
+    return consumed
+
+
+def _validated_sampler_cursor_origin(bundle: RuntimeCheckpoint) -> int:
+    """Return the additive cursor origin, defaulting historical bundles to zero."""
+    origin = getattr(bundle, "sampler_cursor_origin", 0)
+    if type(origin) is not int or origin < 0:
+        raise CheckpointError(
+            *(f"checkpoint sampler_cursor_origin is invalid: {origin!r}.",)
+        )
+    return origin
+
+
+def _validate_legacy_b_min_sep_bundle(bundle: RuntimeCheckpoint) -> None:
+    """Prove every participation invariant available in a plan-less v7 bundle."""
+    state = bundle.sampler_state
+    if not isinstance(state, Mapping) or _sampler_state_kind(state) != "b_min_sep":
+        raise CheckpointError(
+            *(
+                "Cannot determine the participation process of this legacy mf_band "
+                "checkpoint; refusing to guess. Inspect the checkpoint separately "
+                "or restart from the original public/pre-training initialization.",
+            )
+        )
+
+    typed_ints = (
+        state["key_seed"],
+        state["num_examples"],
+        state["bands"],
+        state["n_steps"],
+        bundle.total_steps,
+        bundle.mf_n_steps,
+        bundle.mf_min_sep,
+        bundle.mf_max_participations,
+    )
+    if (
+        any(type(value) is not int for value in typed_ints)
+        or type(state["key_impl"]) is not str
+        or type(state["sampling_prob"]) is not float
+        or type(bundle.sample_rate) is not float
+        or state["num_examples"] < 1
+        or state["bands"] < 1
+        or state["n_steps"] < 1
+        or not math.isfinite(state["sampling_prob"])
+        or not 0.0 <= state["sampling_prob"] <= 1.0
+        or not math.isfinite(bundle.sample_rate)
+        or not 0.0 < bundle.sample_rate <= 1.0
+    ):
+        raise CheckpointError(
+            *("legacy b-min-separation checkpoint has invalid parameters.",)
+        )
+
+    _validate_sampler_cursor_range(state, horizon=state["n_steps"])
+    bands = state["bands"]
+    total_steps = state["n_steps"]
+    expected_max_participations = (total_steps + bands - 1) // bands
+    if (
+        total_steps != bundle.total_steps
+        or total_steps != bundle.mf_n_steps
+        or bands != bundle.mf_min_sep
+        or bundle.mf_max_participations != expected_max_participations
+        or bundle.is_horizon_process is not True
+    ):
+        raise CheckpointError(
+            *(
+                "legacy b-min-separation sampler contradicts its saved MF "
+                "participation parameters.",
+            )
+        )
+
+    from opaque.api.accounting.dpftrl.amplification._b_min_sep import (
+        participation_p_from_per_example_rate,
+    )
+
+    try:
+        expected_probability = participation_p_from_per_example_rate(
+            bundle.sample_rate,
+            bands,
+        )
+    except ConfigurationError as exc:
+        raise CheckpointError(
+            *("legacy b-min-separation checkpoint has invalid parameters.",)
+        ) from exc
+    if not math.isclose(
+        state["sampling_prob"],
+        expected_probability,
+        rel_tol=1e-15,
+        abs_tol=0.0,
+    ):
+        raise CheckpointError(
+            *(
+                "legacy b-min-separation probability contradicts its saved "
+                "sample rate and band count.",
+            )
+        )
+
+
+def validate_sampler_cursor_for_resume(
+    bundle: RuntimeCheckpoint,
+    *,
+    global_step: int,
+    ignore_data_skip: bool,
+) -> None:
+    """Bind an execution-aligned sampler cursor to ``trainer_state.json``."""
+    if type(ignore_data_skip) is not bool:
+        raise CheckpointError(
+            *(f"ignore_data_skip must be a bool, got {ignore_data_skip!r}.",)
+        )
+    if type(global_step) is not int or global_step < 0:
+        raise CheckpointError(
+            *(f"checkpoint trainer global_step is invalid: {global_step!r}.",)
+        )
+    cursor_origin = _validated_sampler_cursor_origin(bundle)
+    if ignore_data_skip:
+        return
+    state = bundle.sampler_state
+    kind = _sampler_state_kind(state)
+    if kind is None or not isinstance(state, Mapping):
+        raise CheckpointError(
+            *("checkpoint has no recognized sampler cursor to resume.",)
+        )
+    horizon_field = "t" if kind == "k_out_of_t" else "n_steps"
+    horizon = state[horizon_field]
+    if type(horizon) is not int or horizon < 1:
+        raise CheckpointError(*("checkpoint sampler horizon is invalid.",))
+    consumed = _validate_sampler_cursor_range(state, horizon=horizon)
+    if cursor_origin != 0 and kind != "whole_dataset_poisson":
+        raise CheckpointError(
+            *(
+                "checkpoint sampler_cursor_origin may be non-zero only for a "
+                "whole-dataset Poisson stream.",
+            )
+        )
+    if (
+        cursor_origin > global_step
+        or global_step > horizon
+        or cursor_origin + consumed != global_step
+    ):
+        raise CheckpointError(
+            *(
+                "checkpoint sampler cursor does not match trainer progress: "
+                f"origin={cursor_origin}, consumed={consumed}, "
+                f"global_step={global_step}. Refusing to resume a different "
+                "participation prefix.",
+            )
+        )
+
+
+def validate_dp_runtime_for_resume(bundle: RuntimeCheckpoint) -> None:
+    """Reject contradictory or historically unsafe participation provenance.
+
+    Loading remains available for inspection. The Trainer invokes this stricter
+    validator only when it intends to continue the recorded execution.
+    """
+    cursor_origin = _validated_sampler_cursor_origin(bundle)
+    saved_plan = getattr(bundle, "participation_plan", None)
+    sampler_kind = _sampler_state_kind(bundle.sampler_state)
+    if saved_plan is not None:
+        if not isinstance(saved_plan, Mapping):
+            raise CheckpointError(*("checkpoint participation plan is invalid.",))
+        plan = ResolvedParticipationPlan.from_state_dict(saved_plan)
+        if plan.mechanism_kind != bundle.mechanism_kind:
+            raise CheckpointError(
+                *(
+                    "checkpoint mechanism_kind contradicts its participation plan: "
+                    f"{bundle.mechanism_kind!r} != {plan.mechanism_kind!r}.",
+                )
+            )
+        if not isinstance(bundle.sampler_state, Mapping):
+            raise CheckpointError(
+                *("checkpoint has a participation plan but no sampler state.",)
+            )
+        _validate_sampler_state_against_plan(plan, bundle.sampler_state)
+        _validate_bundle_against_plan(bundle, plan)
+        return
+
+    if cursor_origin != 0:
+        raise CheckpointError(
+            *(
+                "checkpoint has a non-zero sampler_cursor_origin but no "
+                "participation plan proving a whole-dataset Poisson stream.",
+            )
+        )
+
+    if bundle.mechanism_kind != "mf_band":
+        return
+    if sampler_kind == "whole_dataset_poisson":
+        raise _affected_band_poisson_error()
+    _validate_legacy_b_min_sep_bundle(bundle)

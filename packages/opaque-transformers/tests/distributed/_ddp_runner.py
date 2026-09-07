@@ -23,14 +23,17 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.utils.data import Dataset
-from transformers import PretrainedConfig, PreTrainedModel
+from transformers import PretrainedConfig, PreTrainedModel, TrainerCallback
 from transformers.modeling_outputs import CausalLMOutput
 
+from opaque.exceptions import OperationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 
@@ -451,6 +454,445 @@ def scenario_gather_paths(rank: int, world_size: int, **_) -> None:
     assert gathered_tree["pred"].shape == (2 * world_size, 3)
 
 
+def scenario_step_authority_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-0-only on-save mutation fails uniformly instead of deadlocking."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_steps=1,
+        save_strategy="steps",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+
+    class _ForgeProgressOnSavingRank(TrainerCallback):
+        def on_save(self, args_, state_, control_, **_kwargs):
+            assert rank == 0
+            state_.global_step = 99
+
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+        callbacks=[_ForgeProgressOnSavingRank()],
+    )
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "executed-step authority" in str(exc)
+    failures = [None] * world_size
+    dist.all_gather_object(failures, failed)
+    assert failures == [True] * world_size, failures
+
+
+def scenario_post_optimizer_oom_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-local post-noise OOM aborts every rank without replay."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        microbatch_size=2,
+        auto_find_microbatch_size=True,
+        max_steps=2,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    callback_calls = 0
+
+    class _RankZeroOptimizerOom(TrainerCallback):
+        def on_optimizer_step(self, args_, state_, control_, **_kwargs):
+            nonlocal callback_calls
+            callback_calls += 1
+            if rank == 0:
+                raise torch.OutOfMemoryError("rank-zero post-optimizer OOM")
+
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+        callbacks=[_RankZeroOptimizerOom()],
+    )
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "privacy release became observable" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, (failed, callback_calls))
+    assert outcomes == [(True, 1)] * world_size, outcomes
+
+
+def scenario_input_oom_retry_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-local input-transfer OOM retries at one aligned boundary."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        microbatch_size=2,
+        auto_find_microbatch_size=True,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+    )
+    original_prepare = trainer._prepare_input
+    raised = False
+
+    def _oom_once(inputs):
+        nonlocal raised
+        if rank == 0 and trainer._ctx is not None and not raised:
+            raised = True
+            raise torch.OutOfMemoryError("rank-zero input preparation OOM")
+        return original_prepare(inputs)
+
+    trainer._prepare_input = _oom_once
+    result = trainer.train()
+    outcomes = [None] * world_size
+    dist.all_gather_object(
+        outcomes,
+        (result.global_step, trainer.state.converged_microbatch_size, raised),
+    )
+    assert outcomes == [(1, 1, True), (1, 1, False)], outcomes
+
+
+def scenario_metric_oom_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-local post-update metric OOM aborts without replay."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        microbatch_size=2,
+        auto_find_microbatch_size=True,
+        max_steps=2,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+    )
+    original_metrics = trainer._build_training_step_metrics
+    calls = 0
+
+    def _oom_on_rank_zero(grads, noisy_grads, aux):
+        nonlocal calls
+        calls += 1
+        if rank == 0:
+            raise torch.OutOfMemoryError("rank-zero metric construction OOM")
+        return original_metrics(grads, noisy_grads, aux)
+
+    trainer._build_training_step_metrics = _oom_on_rank_zero
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "privacy release became observable" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, (failed, calls))
+    assert outcomes == [(True, 1)] * world_size, outcomes
+
+
+def scenario_token_reduce_prep_oom_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-local OOM before token SUM aborts before any rank enters it."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        microbatch_size=2,
+        auto_find_microbatch_size=True,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        include_num_input_tokens_seen="all",
+        average_tokens_across_devices=True,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+    )
+    original_prepare = trainer._prepare_token_count_reduction
+    calls = 0
+
+    def _oom_on_rank_zero(n_tokens):
+        nonlocal calls
+        calls += 1
+        if rank == 0:
+            raise torch.OutOfMemoryError("rank-zero token reduction preparation OOM")
+        return original_prepare(n_tokens)
+
+    trainer._prepare_token_count_reduction = _oom_on_rank_zero
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "privacy release became observable" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, (failed, calls))
+    assert outcomes == [(True, 1)] * world_size, outcomes
+
+
+def scenario_on_save_exception_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """A rank-0-only on-save exception fails every rank coherently."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_steps=1,
+        save_strategy="steps",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    callback_calls = 0
+
+    class _FailOnSavingRank(TrainerCallback):
+        def on_save(self, args_, state_, control_, **_kwargs):
+            nonlocal callback_calls
+            callback_calls += 1
+            assert rank == 0
+            raise RuntimeError("rank-zero on_save failure")
+
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+        callbacks=[_FailOnSavingRank()],
+    )
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "on_save callback" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, (failed, callback_calls))
+    assert outcomes == [(True, 1), (True, 0)], outcomes
+
+
+def scenario_private_step_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """Locally consistent but cross-rank step authorities fail closed."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    trainer = None
+
+    class _ForgeBothAuthorities(TrainerCallback):
+        def on_train_begin(self, args_, state_, control_, **_kwargs):
+            if rank == 0:
+                state_.global_step = 1
+                assert trainer is not None
+                assert trainer._ctx is not None
+                trainer._ctx.executed_global_step = 1
+
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+        callbacks=[_ForgeBothAuthorities()],
+    )
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "phases diverged" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, failed)
+    assert outcomes == [True] * world_size, outcomes
+
+
+def scenario_token_policy_is_frozen(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """Rank-local callback mutations cannot branch around token reduction."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=2,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        include_num_input_tokens_seen="all",
+        average_tokens_across_devices=True,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+
+    class _MutateLiveTokenArgs(TrainerCallback):
+        def on_step_begin(self, args_, state_, control_, **_kwargs):
+            if rank == 0:
+                args_.include_num_input_tokens_seen = "no"
+                args_.average_tokens_across_devices = False
+
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+        callbacks=[_MutateLiveTokenArgs()],
+    )
+    result = trainer.train()
+    outcomes = [None] * world_size
+    dist.all_gather_object(
+        outcomes,
+        (result.global_step, trainer.state.num_input_tokens_seen),
+    )
+    assert outcomes[0] == outcomes[1]
+    assert outcomes[0][0] == 2
+    assert outcomes[0][1] > 0
+
+
+def scenario_hub_publication_is_collective_safe(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """Rank-zero Hub saving never mismatches a DDP barrier/status reduce."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        push_to_hub=True,
+        hub_model_id="opaque-tests/ddp-hub-publication",
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+
+    class _MutateLiveHubPolicy(TrainerCallback):
+        def on_train_end(self, args_, state_, control_, **_kwargs):
+            if rank == 1:
+                args_.push_to_hub = False
+
+    repo = SimpleNamespace(repo_id="opaque-tests/ddp-hub-publication")
+    with (
+        patch("opaque.api.transformers.trainer._hub._require_hub"),
+        patch(
+            "opaque.api.transformers.trainer._hub._create_repo",
+            return_value=repo,
+        ) as create_repo,
+        patch("opaque.api.transformers.trainer._hub.create_model_card") as create_card,
+        patch(
+            "opaque.api.transformers.trainer._hub._upload_folder",
+            return_value=SimpleNamespace(),
+        ) as upload_folder,
+    ):
+        trainer = DPTrainer(
+            model=TinyForCausalLM(cfg),
+            args=args,
+            train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+            data_collator=_collate,
+            callbacks=[_MutateLiveHubPolicy()],
+        )
+        result = trainer.train()
+
+    outcomes = [None] * world_size
+    dist.all_gather_object(
+        outcomes,
+        (
+            result.global_step,
+            create_repo.call_count,
+            create_card.call_count,
+            upload_folder.call_count,
+            trainer.args.push_to_hub,
+        ),
+    )
+    assert outcomes == [
+        (1, 1, 1, 1, True),
+        (1, 0, 0, 0, False),
+    ], outcomes
+
+
 def scenario_env_backend_diagnostic(
     output_dir: str, use_cpu: bool = False, **_
 ) -> None:
@@ -495,6 +937,15 @@ SCENARIOS = {
     "batch_eval_metrics": scenario_batch_eval_metrics,
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
+    "step_authority_consensus": scenario_step_authority_consensus,
+    "post_optimizer_oom_consensus": scenario_post_optimizer_oom_consensus,
+    "input_oom_retry_consensus": scenario_input_oom_retry_consensus,
+    "metric_oom_consensus": scenario_metric_oom_consensus,
+    "token_reduce_prep_oom_consensus": scenario_token_reduce_prep_oom_consensus,
+    "on_save_exception_consensus": scenario_on_save_exception_consensus,
+    "private_step_consensus": scenario_private_step_consensus,
+    "token_policy_is_frozen": scenario_token_policy_is_frozen,
+    "hub_publication_is_collective_safe": scenario_hub_publication_is_collective_safe,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
 }
 

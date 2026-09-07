@@ -17,6 +17,14 @@ Optional ``truncated_batch_size`` caps the realised per-step batch.  Pair with
 accounting matches the runtime cap; that combination is only supported for the
 identity strategy (``bands == 1``).
 
+For ``bands > 1``, this is a low-level fixed-universe construction.
+``sample_rate`` is the conditional inclusion probability inside the active
+group and must be fixed independently of private data. The default equal-size
+partition matches the cited analysis only when the universe and each record's
+group membership remain fixed across neighboring inputs (for example zero-out
+adjacency). Computing the rate or partition from a variable private
+``len(dataset)`` does not by itself establish add-or-remove privacy.
+
 For distributed training, shard the dataset before constructing the
 sampler with ``opaque.distributed.local_shard`` and derive a per-rank
 key with ``opaque.random.fold_in(key, rank)``.
@@ -61,6 +69,8 @@ class CyclicPoissonSampler(Sampler):
         sample_rate: Per-step inclusion probability ``∈ (0, 1]``.  At
             ``1.0`` every example of the active group participates — no
             amplification; accounting treats each step as the plain Gaussian.
+            For BandMF this is conditional on membership in the active group,
+            not a global ``expected_batch_size / len(dataset)`` rate.
         bands: Number of groups in the cycle.  ``1`` = identity-style plain
             Poisson on the full dataset every step.
         n_steps: Total number of batches to yield.  Defaults to ``1``.
@@ -83,7 +93,10 @@ class CyclicPoissonSampler(Sampler):
     Note:
         Batch sizes are variable (Poisson).  Expected batch size per step is
         ``|group| * sample_rate`` where ``|group| = |D| / bands``.  Use with
-        ``DataLoader``'s ``batch_sampler``.
+        ``DataLoader``'s ``batch_sampler``. For ``bands > 1``, callers are
+        responsible for satisfying the fixed-universe adjacency and partition
+        assumptions above; this independent sampler does not validate an
+        accounting process.
     """
 
     def __init__(

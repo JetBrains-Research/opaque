@@ -12,6 +12,11 @@ When ``truncated_batch_size`` and
 instead uses the truncated Poisson-Gaussian PLD — matching a per-step
 batch cap on the runtime sampler.
 
+For BandMF, this is conditional on the cited fixed-universe cyclic-group
+participation model: the active-group rate and partition must be fixed/public
+across neighbors. This independent accountant does not validate a sampler and
+does not by itself establish variable-cardinality add/remove privacy.
+
 References:
     - BandMF amplification: Choquette-Choo et al. (2023) https://arxiv.org/abs/2306.08153
 """
@@ -245,6 +250,14 @@ def poisson(
     Bernoulli draws happen over a fixed dataset of ``dataset_size``
     examples.
 
+    For ``BandMfStrategy``, the guarantee is conditional on the cited
+    fixed-universe cyclic-group participation model. In particular,
+    ``sample_rate`` is conditional within the active group, the partition and
+    rate must be fixed/public across neighbors, and this accountant does not
+    construct or validate a sampler. Independent use with a variable-cardinality
+    dataset is not automatically covered by Opaque's default add-or-remove
+    adjacency convention.
+
     Args:
         inner: ``mf_gaussian(nm, BandMfStrategy(...))`` or
             ``mf_gaussian(nm, identity_strategy())``.
@@ -267,8 +280,9 @@ def poisson(
         import opaque.dpftrl.accounting as ftrl_acc
         from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 
-        # BandMF
-        s = band_mf_strategy(n_steps=1000, bands=10)
+        # BandMF: low-level fixed-universe composition. The sampler must use
+        # the same fixed cyclic groups and conditional active-group rate.
+        s = band_mf_strategy(bands=10)
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, s),
             sample_rate=0.01, n_steps=1000,

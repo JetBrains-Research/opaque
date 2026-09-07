@@ -472,8 +472,8 @@ class TestClippingAndSamplingSurfaces:
             )
 
     def test_sampling_mode_not_allowed_for_mechanism_raises(self):
-        # ``sequential`` is a valid sampler name on the wider surface but
-        # not paired with the default ``gaussian`` mechanism.
+        # Low-level sampler names without a Trainer accountant are not part of
+        # the TrainingArguments vocabulary.
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, sampling_mode="sequential")
 
@@ -559,7 +559,24 @@ class TestClippingAndSamplingSurfaces:
         args = TrainingArguments(
             privacy_noise_multiplier=1.0, sampling_kwargs='{"max_batch_size": 8}'
         )
-        assert args.sampling_kwargs == {"max_batch_size": 8}
+        assert args.sampling_kwargs == {"truncated_batch_size": 8}
+
+    def test_poisson_rejects_conflicting_batch_cap_aliases(self):
+        with pytest.raises(ValueError, match="may not set both"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                sampling_kwargs={
+                    "truncated_batch_size": 8,
+                    "max_batch_size": 8,
+                },
+            )
+
+    def test_sampling_kwargs_rejects_ignored_keys(self):
+        with pytest.raises(ValueError, match="unsupported sampling_kwargs"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                sampling_kwargs={"unused": 8},
+            )
 
     def test_sampling_kwargs_rejects_bands(self):
         """``bands`` is owned by the strategy, not the sampler kwargs."""
@@ -611,13 +628,18 @@ class TestMechanismAndSamplerDefaults:
         )
         assert args.sampling_mode == expected_sampler
 
-    def test_mf_band_accepts_poisson_override(self):
-        args = TrainingArguments(
-            privacy_noise_multiplier=1.0,
-            privacy_noise_mechanism="mf_band",
-            sampling_mode="poisson",
-        )
-        assert args.sampling_mode == "poisson"
+    @pytest.mark.parametrize("bands", [1, 16])
+    def test_mf_band_rejects_poisson_override(self, bands):
+        with pytest.raises(
+            ValueError,
+            match=r"plain whole-dataset Poisson.*b_min_sep.*mf_identity",
+        ):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_band",
+                privacy_noise_mechanism_kwargs={"bands": bands},
+                sampling_mode="poisson",
+            )
 
     def test_mf_blt_rejects_poisson_override(self):
         with pytest.raises(ValueError, match="sampling_mode"):

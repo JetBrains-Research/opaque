@@ -20,7 +20,10 @@ Amplification (in :mod:`opaque.dpftrl.accounting.amplification`):
 
 - :func:`poisson` — Poisson subsampling.  Accepts MfGaussian wrapping a
   ``BandMfStrategy`` (bands read from ``len(coefficients)``) or
-  ``IdentityStrategy`` (bands ≡ 1).  Required keyword: ``n_steps``.
+  ``IdentityStrategy`` (bands ≡ 1).  BandMF use is a low-level,
+  fixed-universe construction whose conditional rate and cyclic partition must
+  match the cited theorem; the independent accountant does not validate a
+  sampler. Required keyword: ``n_steps``.
 - :func:`b_min_sep` — warm-start b-min-sep Monte Carlo PLD for
   ``BandMfStrategy``.  Required keywords: ``n_steps``, ``p0``.
 - :func:`balls_in_bins` — total privacy cost under fixed-partition
@@ -41,13 +44,13 @@ is the **composition algebra** identity (approximately ε=0), not MF
 
 Example::
 
-    import opaque.accounting as acc
     import opaque.dpftrl.accounting as ftrl_acc
-    from opaque.dpftrl.noise import band_mf_strategy, blt_strategy
+    from opaque.dpftrl.noise import identity_strategy
 
-    band_s = band_mf_strategy(bands=10)
     process = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, band_s), sample_rate=0.01, n_steps=1000,
+        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        sample_rate=0.01,
+        n_steps=1000,
     )
     eps = process.epsilon_at(1e-5)
 """

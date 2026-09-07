@@ -85,7 +85,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
 - Optional **`lr_schedule`** weights the optimizer objective on the training-step axis, matching \(W_{t,s}=\eta_t\beta^{t-s}\) while retaining BLT's Toeplitz strategy representation. Use the identical schedule in the optimizer; the strategy cannot validate an external optimizer's updates. Custom callables must be deterministic, side-effect-free, and immutable for the strategy's lifetime.
-- **Subsampling**: BLT does not use `dpftrl_acc.poisson` as BandMF does; combine it with Balls-in-Bins when using correlated MF with epoch structure (see examples).
+- **Subsampling**: BLT does not use the BandMF participation accountants; combine it with Balls-in-Bins when using correlated MF with epoch structure (see examples).
 - Overview: [Correlated noise (DP-FTRL)](../../user-guide/dp-ftrl.md).
 
 ## Supported amplifications
@@ -97,10 +97,10 @@ sensitivity computation. There is no external amplification wrapper.
 |---------------|:---------:|-------|
 | `poisson()` | No | Not applicable |
 | `poisson()` (truncated) | No | Not applicable |
-| `dpftrl_acc.poisson` | No | For BandMF / identity MF |
+| `dpftrl_acc.poisson` | No | Low-level fixed-universe BandMF / identity MF |
 
-If you need subsampling amplification with correlated noise, use
-[BandMF](band-mf.md) with `opaque.dpftrl.accounting.poisson` instead.
+If you need subsampling amplification with correlated noise, use BandMF with
+the [b-min-separation contract](band-mf.md#b-min-sep-subsampling-b_min_sep).
 
 !!! note "Multi-epoch vs subsampling"
     BLT and Poisson subsampling solve different problems. Poisson subsampling
@@ -109,7 +109,9 @@ If you need subsampling amplification with correlated noise, use
     multi-participation (min-sep / max-participations) sensitivity computation.
     BLT itself does **not** model subsampling amplification and has no
     `sample_rate` parameter. If you need subsampling with correlated noise,
-    use [BandMF](band-mf.md) with `opaque.dpftrl.accounting.poisson` instead.
+    use BandMF with
+    [`opaque.dpftrl.accounting.b_min_sep`](band-mf.md#b-min-sep-subsampling-b_min_sep)
+    instead.
 
 ## Code examples
 

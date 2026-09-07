@@ -83,6 +83,24 @@ Under DDP, side effects are rank-gated:
 - checkpoint and metrics writes by `save_on_each_node` policy,
 - Hub repo creation/push only on world rank zero.
 
+`truncated_batch_size` is rejected under DDP: applying the cap independently
+to rank-local shards is not the globally truncated Poisson process used by the
+accountant. The training population must be at least `world_size` and its
+length must be divisible by `world_size`; Opaque does not silently trim private
+tail records because that transformation is not stable under add/remove
+adjacency. Treat the population size and record-to-index mapping as public,
+fixed inputs to the run. Ordinary checkpoint resume also fails closed while checkpoints
+carry only rank 0's sampler snapshot. For Poisson sampling,
+`ignore_data_skip=True` derives fresh rank-separated streams; stateful
+participation samplers need per-rank snapshots before distributed resume can be
+supported.
+
+Stateful participation resume additionally requires the same record-to-index
+mapping as the original run. The checkpoint binds population size and cursor,
+but does not hash or otherwise prove dataset identity. Reordering or replacing
+records under the same length can assign a record a different Balls-in-Bins,
+k-out-of-t, or b-min-separation schedule; restart instead.
+
 ## CI checklist for distributed changes
 
 - `uv run pytest packages/opaque-transformers/tests/opaque_transformers/test_config.py`

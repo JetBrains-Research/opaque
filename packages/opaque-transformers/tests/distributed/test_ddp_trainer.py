@@ -195,6 +195,114 @@ def test_gloo_gather_fastpath_and_fallback() -> None:
 
 @pytest.mark.slow
 @pytest.mark.distributed
+def test_gloo_rank_zero_step_mutation_fails_uniformly(tmp_path) -> None:
+    _run_ddp(
+        "step_authority_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_post_optimizer_oom_fails_without_retry(tmp_path) -> None:
+    _run_ddp(
+        "post_optimizer_oom_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_input_oom_retries_in_lockstep(tmp_path) -> None:
+    _run_ddp(
+        "input_oom_retry_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_metric_oom_fails_without_retry(tmp_path) -> None:
+    _run_ddp(
+        "metric_oom_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_token_reduce_preparation_oom_fails_before_collective(tmp_path) -> None:
+    _run_ddp(
+        "token_reduce_prep_oom_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_on_save_exception_fails_uniformly(tmp_path) -> None:
+    _run_ddp(
+        "on_save_exception_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_cross_rank_private_step_mismatch_fails(tmp_path) -> None:
+    _run_ddp(
+        "private_step_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_token_reduction_policy_is_invocation_frozen(tmp_path) -> None:
+    _run_ddp(
+        "token_policy_is_frozen",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_hub_publication_uses_no_rank_zero_only_barrier(tmp_path) -> None:
+    _run_ddp(
+        "hub_publication_is_collective_safe",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
 def test_vendor_backend_fails_fast_without_runtime(tmp_path) -> None:
     _run_ddp(
         "env_backend_diagnostic",

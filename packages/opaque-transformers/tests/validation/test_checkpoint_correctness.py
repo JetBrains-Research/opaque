@@ -571,6 +571,26 @@ class TestArgDriftWarnings:
             f"{[r.getMessage() for r in drift_msgs]}"
         )
 
+    def test_missing_additive_legacy_field_is_compatible(
+        self, lora_model, tiny_dataset, tmp_path, caplog
+    ):
+        """A real pre-field pickle has no instance attribute to read."""
+        model, tokenizer = lora_model
+        trainer = DPTrainer(
+            model=model,
+            args=_args(tmp_path, per_device_train_batch_size=2),
+            processing_class=tokenizer,
+            train_dataset=tiny_dataset,
+            eval_dataset=tiny_dataset,
+        )
+        runtime = self._baseline_runtime(trainer, tiny_dataset)
+        runtime.__dict__.pop("participation_plan")
+
+        with caplog.at_level(logging.WARNING):
+            trainer._warn_on_arg_drift(runtime)
+
+        assert not [r for r in caplog.records if "drift" in r.getMessage().lower()]
+
     def test_total_steps_drift_silent_for_dp_sgd(
         self, lora_model, tiny_dataset, tmp_path, caplog
     ):

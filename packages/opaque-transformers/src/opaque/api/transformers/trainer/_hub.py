@@ -159,7 +159,10 @@ def push_to_hub(
         init_hf_repo(trainer, token=effective_token)
 
     # Restore params → save model and processing class to output_dir.
-    trainer.save_model(_internal_call=True)
+    # Hub publication is process-zero-only.  A normal ``save_model`` ends in
+    # a DDP barrier, which would deadlock against nonzero ranks that returned
+    # above (or are waiting in the trainer's enclosing status rendezvous).
+    trainer.save_model(_internal_call=True, _synchronize=False)
 
     # Add model-native tags (e.g. "llama") to kwargs if present.
     if getattr(trainer.model, "model_tags", None) is not None:

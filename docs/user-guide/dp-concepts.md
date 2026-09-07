@@ -167,7 +167,7 @@ Opaque supports several subsampling schemes:
 |--------|-------------|----------|
 | **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
 | **Truncated Poisson** | Poisson draw capped at a maximum batch size | DP-SGD when you want stable batch sizes; privacy is weaker than plain Poisson at the same $q$. |
-| **Cyclic Poisson (DP-FTRL)** | ``opaque.dpftrl.sampling.CyclicPoissonSampler``: ``bands`` disjoint groups, step ``i`` uses group ``i % bands``, inclusion prob. ``q`` per eligible example. ``bands=1`` is identity (full data each step); larger ``bands`` match BandMF-style rotation. | ``mf_gaussian_noise`` + ``dpftrl_acc.poisson`` (whole-process accountant). |
+| **Cyclic Poisson (DP-FTRL)** | ``opaque.dpftrl.sampling.CyclicPoissonSampler``: ``bands`` disjoint groups, step ``i`` uses group ``i % bands``, conditional inclusion probability ``q`` in the active group. ``bands=1`` is identity; larger ``bands`` are a low-level fixed-universe BandMF construction, not the default add/remove model. | Conditional ``mf_gaussian_noise`` + ``dpftrl_acc.poisson``; stock Trainer BandMF uses b-min-separation. |
 
 The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
 sampling produces variable-size batches but has a clean privacy analysis.
@@ -357,9 +357,10 @@ Three MF strategies are available:
 | **BandMF** | $O(b)$ | Streaming, long training runs |
 | **BLT** | $O(b)$ | Multi-epoch training |
 
-MF mechanisms use ``opaque.dpftrl.sampling.CyclicPoissonSampler`` (and other FTRL
-samplers) with amplification that depends on the mechanism; identity runs use
-``bands=1``. See the
+MF mechanisms use a mechanism-specific participation sampler. Trainer BandMF
+uses ``BMinSepSampler``; BLT-family mechanisms use Balls-in-Bins; identity MF
+can use whole-dataset Poisson. Low-level cyclic BandMF is subject to the
+fixed-universe assumptions documented above. See the
 [Mechanisms](../mechanisms/index.md) reference for details.
 
 ## Neighboring relations
@@ -371,7 +372,11 @@ The privacy guarantee depends on what "differ in one record" means:
 | Add or remove | $D' = D \pm$ one record | $C$ |
 | Replace one | $D' = D$ with one record swapped | $2C$ |
 
-Opaque uses the **add-or-remove** convention: clipped outputs carry
+Opaque uses the **add-or-remove** convention for mechanisms unless their
+documentation explicitly narrows the neighboring relation. Low-level cyclic
+BandMF with an equal-size fixed partition is one such exception: its cited
+analysis uses a fixed universe/participation pattern and must not be read as an
+add/remove guarantee. Otherwise, clipped outputs carry
 `grads.max_norm = C / normalize_by`. When `normalize_by` is set to the expected
 batch size $B$, the bound is $C/B$. If your analysis uses replace-one
 semantics, double the bound when calibrating noise.

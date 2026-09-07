@@ -281,7 +281,7 @@ a single sensitivity-1 Gaussian release at the same noise multiplier.
 ```python
 strategy = band_mf_strategy(bands=bands)
 mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
-process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
+process = dpftrl_acc.b_min_sep(mechanism, p0=q, n_steps=n)
 ```
 
 Same pattern for DP-SGD: just `dpsgd_acc.gaussian(nm)` (or

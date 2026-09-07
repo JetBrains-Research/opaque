@@ -144,6 +144,15 @@ examples, matching whole-process `dpftrl_acc.poisson` over
 `bands` to the same count as in `band_mf_strategy(bands=...)` so
 participation matches correlated ``mf_gaussian_noise``.
 
+!!! warning
+    BandMF with `bands > 1` is a low-level fixed-universe construction.
+    `sample_rate` is conditional within the active group; for equal groups,
+    a target global fraction `B/N` requires `sample_rate = bands * B/N <= 1`.
+    The population, partition, and rate must remain fixed/public across
+    neighboring inputs. `EQUAL_SPLIT` is scoped to a fixed-universe zero-out
+    analysis and does not establish variable-cardinality add/remove privacy.
+    Stock `DPTrainer` uses `BMinSepSampler` for BandMF instead.
+
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpftrl.sampling.types import PartitionType
@@ -173,10 +182,11 @@ loader = data.DataLoader(dataset, batch_sampler=sampler)
 
 **Partition types:**
 
-- `PartitionType.EQUAL_SPLIT` — shuffle the dataset, then split into groups
-  of equal size. Deterministic group sizes.
+- `PartitionType.EQUAL_SPLIT` — shuffle a fixed universe, then split into
+  equal groups. This is the zero-out construction.
 - `PartitionType.INDEPENDENT` — assign each example to a random group
-  (multinomial). Group sizes vary.
+  (multinomial). Group sizes vary; add/remove use requires a separate audited
+  contract for public population/rate and common-record preprocessing.
 
 See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how this
 sampler pairs with matrix-factorization noise.
@@ -484,15 +494,15 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
 | `PoissonSampler` + `truncated_batch_size` | Bounded above | Weaker than plain Poisson (same `sample_rate`) | Production, stable batch sizes / memory |
 | `KOutOfTSampler` (`opaque.dpsgd`, block) | Variable (Binomial) | Stronger than Poisson at rate `k/t` | DP-SGD, fixed-block passes |
-| `CyclicPoissonSampler` (`opaque.dpftrl`) | Variable | `dpftrl_acc.poisson` | DP-FTRL; identity MF → `bands=1`; BandMF → `bands` = strategy |
+| `CyclicPoissonSampler` (`opaque.dpftrl`) | Variable | Conditional `dpftrl_acc.poisson` | Identity MF with `bands=1`; BandMF only under the fixed-universe contract above |
 | `BallsInBinsSampler` | Variable (Binomial) | Balls-in-bins amplification | λCGD, BISR, BLT |
 | `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSampler` is sufficient.
 Use `truncated_batch_size` when you need **capped** batch sizes; expect
 **worse** privacy than plain Poisson at the same `sample_rate` unless you
-recalibrate noise. For DP-FTRL, use
-`opaque.dpftrl.sampling.CyclicPoissonSampler` as in the section above.
+recalibrate noise. For Trainer BandMF, use `BMinSepSampler`; use cyclic
+Poisson only for the explicitly scoped low-level construction above.
 `BallsInBinsSampler` and
 `SequentialBatchSampler` are used with matrix-factorization mechanisms
 that require fixed batch sizes.

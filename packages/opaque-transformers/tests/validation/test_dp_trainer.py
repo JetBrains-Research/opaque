@@ -648,7 +648,11 @@ class TestDPTrainerTrainerContractFlags:
         calls: list[int | None] = []
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             assert ignore_keys_for_eval is None
             calls.append(microbatch_size_override)
@@ -675,7 +679,7 @@ class TestDPTrainerTrainerContractFlags:
             model=model,
             args=_default_args(
                 auto_find_microbatch_size=False,
-                per_device_train_batch_size=32,
+                per_device_train_batch_size=8,
                 microbatch_size=4,
                 eval_strategy="no",
             ),
@@ -687,7 +691,11 @@ class TestDPTrainerTrainerContractFlags:
         captured: list[int | None] = []
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             captured.append(microbatch_size_override)
             return TrainOutput(
@@ -710,8 +718,8 @@ class TestDPTrainerTrainerContractFlags:
             model=model,
             args=_default_args(
                 auto_find_microbatch_size=True,
-                per_device_train_batch_size=32,
-                microbatch_size=8,
+                per_device_train_batch_size=8,
+                microbatch_size=4,
                 eval_strategy="no",
             ),
             processing_class=tokenizer,
@@ -722,7 +730,11 @@ class TestDPTrainerTrainerContractFlags:
         calls: list[int | None] = []
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             calls.append(microbatch_size_override)
             if len(calls) < 2:
@@ -733,8 +745,8 @@ class TestDPTrainerTrainerContractFlags:
 
         monkeypatch.setattr(trainer, "_train_once", fake_train_once)
         trainer.train()
-        # Starts at user-set 8 (not 32), halves once on OOM, succeeds at 4.
-        assert calls == [8, 4]
+        # Starts at user-set 4 (not logical batch 8), then halves once.
+        assert calls == [4, 2]
 
     def test_auto_find_batch_size_stops_at_floor(
         self,
@@ -756,7 +768,11 @@ class TestDPTrainerTrainerContractFlags:
         )
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             assert ignore_keys_for_eval is None
             raise torch.OutOfMemoryError("out of memory")
@@ -1770,6 +1786,43 @@ class TestDPTrainerCheckpointing:
             eval_dataset=tiny_lm_dataset,
         )
         with pytest.raises(CheckpointError, match="weights-only export"):
+            trainer2.train(resume_from_checkpoint=str(ckpt_dir))
+
+    @pytest.mark.parametrize("ignore_data_skip", [False, True])
+    def test_resume_missing_trainer_state_raises(
+        self,
+        gpt2_with_lora,
+        tiny_lm_dataset,
+        tmp_path,
+        ignore_data_skip,
+    ):
+        """Sampler restore and fresh-stream resume both require bound progress."""
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+        ckpt_dir = tmp_path / "checkpoint-2"
+        (ckpt_dir / "trainer_state.json").unlink()
+
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path / "resume",
+                max_steps=4,
+                save_steps=2,
+                ignore_data_skip=ignore_data_skip,
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        with pytest.raises(CheckpointError, match=r"trainer_state\.json"):
             trainer2.train(resume_from_checkpoint=str(ckpt_dir))
 
     def test_fresh_run_from_weights_only_checkpoint_via_model_arg(

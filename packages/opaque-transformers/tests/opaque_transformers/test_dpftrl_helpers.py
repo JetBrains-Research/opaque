@@ -13,14 +13,11 @@ from __future__ import annotations
 import pytest
 from torch.utils.data import Dataset
 
-from opaque.api.accounting.core._horizon import DpHorizonProcess
 from opaque.api.transformers.trainer import _dpftrl
-from opaque.dpftrl import (
-    BallsInBinsSampler,
-    BMinSepSampler,
-    CyclicPoissonSampler,
-    SequentialBatchSampler,
+from opaque.api.transformers.trainer._participation import (
+    ResolvedParticipationPlan,
 )
+from opaque.dpftrl import BallsInBinsSampler, BMinSepSampler
 from opaque.dpftrl.noise.types import (
     BandMfStrategy,
     BisrStrategy,
@@ -131,31 +128,25 @@ class TestBuildStrategy:
 
 
 class TestBuildAmplifierFactory:
-    def test_band_poisson(self):
+    def test_band_plain_poisson_guard(self):
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
-        amp = _dpftrl.build_amplifier_factory(
-            sampling_mode="poisson",
-            strategy=strategy,
-            sample_rate=0.05,
-            n_steps=100,
-            num_bins=10,
-            dataset_size=1000,
-            truncated_batch_size=None,
-        )
-        proc = amp(1.0)
-        assert isinstance(proc, DpHorizonProcess)
-        assert proc.n_steps == 100
+        plan = _plan("gaussian", "poisson", population_size=1000, batch_size=50)
+        with pytest.raises(ValueError, match="only supported with MF identity"):
+            _dpftrl.build_amplifier_factory(plan=plan, strategy=strategy)
 
     def test_band_b_min_sep(self):
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
-        amp = _dpftrl.build_amplifier_factory(
-            sampling_mode="b_min_sep",
-            strategy=strategy,
-            sample_rate=0.05,
+        plan = _plan(
+            "mf_band",
+            "b_min_sep",
+            population_size=1000,
+            batch_size=50,
             n_steps=100,
             num_bins=10,
-            dataset_size=1000,
-            truncated_batch_size=None,
+        )
+        amp = _dpftrl.build_amplifier_factory(
+            plan=plan,
+            strategy=strategy,
         )
         proc = amp(1.0)
         assert proc.n_steps == 100
@@ -163,77 +154,115 @@ class TestBuildAmplifierFactory:
 
     def test_blt_balls_in_bins(self):
         strategy = _dpftrl.build_strategy("mf_blt", {"max_buffers": 4})
-        amp = _dpftrl.build_amplifier_factory(
-            sampling_mode="balls_in_bins",
-            strategy=strategy,
-            sample_rate=0.1,
+        plan = _plan(
+            "mf_blt",
+            "balls_in_bins",
+            population_size=1000,
+            batch_size=100,
             n_steps=100,
             num_bins=10,
-            dataset_size=1000,
-            truncated_batch_size=None,
+        )
+        amp = _dpftrl.build_amplifier_factory(
+            plan=plan,
+            strategy=strategy,
         )
         proc = amp(1.0)
         assert proc.n_steps == 100
 
-    def test_unknown_sampling_mode_raises(self):
-        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
-        with pytest.raises(ValueError, match="sampling_mode"):
-            _dpftrl.build_amplifier_factory(
-                sampling_mode="cyclic_poisson",  # no accountant amplifier
-                strategy=strategy,
-                sample_rate=0.05,
-                n_steps=100,
-                num_bins=10,
-                dataset_size=1000,
-                truncated_batch_size=None,
-            )
+    def test_plan_rejects_different_mf_strategy_family(self):
+        strategy = _dpftrl.build_strategy("mf_lambda_cgd", {"lambda_": 0.5})
+        plan = _plan("mf_blt", "balls_in_bins")
+
+        with pytest.raises(ValueError, match="strategy does not match"):
+            _dpftrl.build_amplifier_factory(plan=plan, strategy=strategy)
 
 
-def _mf_band_context(bands: int, sample_rate: float, n_steps: int) -> _dpftrl.MFContext:
-    """Build an ``MFContext`` for BandMF tests — strategy + amplifier."""
-    strategy = _dpftrl.build_strategy("mf_band", {"bands": bands})
-    amplifier_factory = _dpftrl.build_amplifier_factory(
-        sampling_mode="b_min_sep",
-        strategy=strategy,
-        sample_rate=sample_rate,
-        n_steps=n_steps,
-        num_bins=0,
-        dataset_size=0,
-        truncated_batch_size=None,
+def _plan(
+    mechanism: str,
+    mode: str,
+    *,
+    population_size: int = 64,
+    batch_size: int = 4,
+    n_steps: int = 8,
+    num_bins: int = 4,
+    sampling_kwargs=None,
+    world_size: int = 1,
+) -> ResolvedParticipationPlan:
+    return ResolvedParticipationPlan.resolve(
+        mechanism_kind=mechanism,
+        sampling_mode=mode,
+        sampling_kwargs=sampling_kwargs,
+        population_size=population_size,
+        expected_batch_size=batch_size,
+        sample_rate=batch_size / population_size,
+        total_steps=n_steps,
+        num_bins=num_bins,
+        world_size=world_size,
     )
-    return _dpftrl.MFContext(strategy=strategy, amplifier_factory=amplifier_factory)
+
+
+def _mf_context(
+    mechanism: str,
+    strategy_kwargs: dict,
+    plan: ResolvedParticipationPlan,
+) -> _dpftrl.MFContext:
+    strategy = _dpftrl.build_strategy(mechanism, strategy_kwargs)
+    amplifier_factory = _dpftrl.build_amplifier_factory(
+        plan=plan,
+        strategy=strategy,
+    )
+    return _dpftrl.MFContext(
+        strategy=strategy,
+        amplifier_factory=amplifier_factory,
+        participation_plan=plan,
+    )
 
 
 class TestBuildSampler:
     def test_poisson(self):
         dataset = _ListDataset(64)
+        plan = _plan("gaussian", "poisson")
         sampler = _dpftrl.build_sampler(
-            sampling_mode="poisson",
+            plan=plan,
             dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
             key=key(0),
-            sampling_kwargs=None,
             mf=None,
             noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
         )
         assert isinstance(sampler, PoissonSampler)
 
-    def test_block_k_out_of_t(self):
-        dataset = _ListDataset(64)
+    def test_distributed_plan_validates_rank_local_population(self):
+        dataset = _ListDataset(32)
+        plan = _plan(
+            "gaussian",
+            "poisson",
+            population_size=64,
+            batch_size=8,
+            world_size=2,
+        )
         sampler = _dpftrl.build_sampler(
-            sampling_mode="k_out_of_t",
+            plan=plan,
             dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
             key=key(0),
-            sampling_kwargs={"k": 2, "allocation": "block"},
             mf=None,
             noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
+        )
+
+        assert sampler._num_samples == plan.local_population_size == 32
+
+    def test_block_k_out_of_t(self):
+        dataset = _ListDataset(64)
+        plan = _plan(
+            "gaussian",
+            "k_out_of_t",
+            sampling_kwargs={"k": 2, "allocation": "block"},
+        )
+        sampler = _dpftrl.build_sampler(
+            plan=plan,
+            dataset=dataset,
+            key=key(0),
+            mf=None,
+            noise_multiplier=None,
         )
         assert isinstance(sampler, KOutOfTSampler)
         assert sampler.k == 2
@@ -241,17 +270,17 @@ class TestBuildSampler:
 
     def test_total_k_out_of_t(self):
         dataset = _ListDataset(64)
-        sampler = _dpftrl.build_sampler(
-            sampling_mode="k_out_of_t",
-            dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
-            key=key(0),
+        plan = _plan(
+            "gaussian",
+            "k_out_of_t",
             sampling_kwargs={"k": 3, "allocation": "total"},
+        )
+        sampler = _dpftrl.build_sampler(
+            plan=plan,
+            dataset=dataset,
+            key=key(0),
             mf=None,
             noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
         )
         assert isinstance(sampler, KOutOfTSampler)
         assert sampler.allocation == "total"
@@ -261,119 +290,98 @@ class TestBuildSampler:
             participation_p_from_per_example_rate,
         )
 
-        dataset = _ListDataset(64)
+        dataset = _ListDataset(100)
         p0, bands, n_steps = 0.05, 4, 8
-        mf = _mf_band_context(bands=bands, sample_rate=p0, n_steps=n_steps)
-        sampler = _dpftrl.build_sampler(
-            sampling_mode="b_min_sep",
-            dataset=dataset,
-            sample_rate=p0,
+        plan = _plan(
+            "mf_band",
+            "b_min_sep",
+            population_size=100,
+            batch_size=5,
             n_steps=n_steps,
+        )
+        mf = _mf_context("mf_band", {"bands": bands}, plan)
+        sampler = _dpftrl.build_sampler(
+            plan=plan,
+            dataset=dataset,
             key=key(0),
-            sampling_kwargs=None,
             mf=mf,
             noise_multiplier=1.0,
-            num_bins=4,
-            expected_batch_size=4,
         )
         assert isinstance(sampler, BMinSepSampler)
         assert sampler.bands == bands
         assert sampler.sampling_prob == participation_p_from_per_example_rate(p0, bands)
+        seen: dict[int, int] = {}
+        for step, batch in enumerate(sampler):
+            for example in batch:
+                if example in seen:
+                    assert step - seen[example] >= bands
+                seen[example] = step
 
     def test_b_min_sep_without_mf_raises(self):
         dataset = _ListDataset(64)
+        plan = _plan("mf_band", "b_min_sep")
         with pytest.raises(ValueError, match="requires a built MFContext"):
             _dpftrl.build_sampler(
-                sampling_mode="b_min_sep",
+                plan=plan,
                 dataset=dataset,
-                sample_rate=0.05,
-                n_steps=8,
                 key=key(0),
-                sampling_kwargs=None,
                 mf=None,
                 noise_multiplier=1.0,
-                num_bins=4,
-                expected_batch_size=4,
             )
 
     def test_balls_in_bins(self):
         dataset = _ListDataset(64)
+        plan = _plan("mf_blt", "balls_in_bins")
+        mf = _mf_context("mf_blt", {"max_buffers": 4}, plan)
         sampler = _dpftrl.build_sampler(
-            sampling_mode="balls_in_bins",
+            plan=plan,
             dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
             key=key(0),
-            sampling_kwargs=None,
-            mf=None,
-            noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
+            mf=mf,
+            noise_multiplier=1.0,
         )
         assert isinstance(sampler, BallsInBinsSampler)
         assert sampler.num_bins == 4
 
-    def test_cyclic_poisson(self):
+    def test_mf_identity_poisson(self):
         dataset = _ListDataset(64)
-        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
+        plan = _plan("mf_identity", "poisson")
+        mf = _mf_context("mf_identity", {}, plan)
         sampler = _dpftrl.build_sampler(
-            sampling_mode="cyclic_poisson",
+            plan=plan,
             dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
             key=key(0),
-            sampling_kwargs=None,
             mf=mf,
             noise_multiplier=1.0,
-            num_bins=4,
-            expected_batch_size=4,
         )
-        assert isinstance(sampler, CyclicPoissonSampler)
+        assert isinstance(sampler, PoissonSampler)
 
-    def test_sequential(self):
+    def test_mismatched_mf_plan_raises(self):
         dataset = _ListDataset(64)
-        sampler = _dpftrl.build_sampler(
-            sampling_mode="sequential",
-            dataset=dataset,
-            sample_rate=0.1,
-            n_steps=8,
-            key=key(0),
-            sampling_kwargs=None,
-            mf=None,
-            noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=8,
-        )
-        assert isinstance(sampler, SequentialBatchSampler)
-
-    def test_unknown_sampling_mode_raises(self):
-        dataset = _ListDataset(64)
-        with pytest.raises(ValueError, match="Unknown sampling_mode"):
+        band_plan = _plan("mf_band", "b_min_sep")
+        mf = _mf_context("mf_band", {"bands": 4}, band_plan)
+        poisson_plan = _plan("gaussian", "poisson")
+        with pytest.raises(ValueError, match="different participation plans"):
             _dpftrl.build_sampler(
-                sampling_mode="nope",
+                plan=poisson_plan,
                 dataset=dataset,
-                sample_rate=0.1,
-                n_steps=8,
                 key=key(0),
-                sampling_kwargs=None,
-                mf=None,
-                noise_multiplier=None,
-                num_bins=4,
-                expected_batch_size=4,
+                mf=mf,
+                noise_multiplier=1.0,
             )
 
     def test_poisson_honors_truncated_batch_size(self):
         dataset = _ListDataset(64)
-        sampler = _dpftrl.build_sampler(
-            sampling_mode="poisson",
-            dataset=dataset,
-            sample_rate=0.5,
-            n_steps=4,
-            key=key(0),
+        plan = _plan(
+            "gaussian",
+            "poisson",
             sampling_kwargs={"truncated_batch_size": 8},
+        )
+        sampler = _dpftrl.build_sampler(
+            plan=plan,
+            dataset=dataset,
+            key=key(0),
             mf=None,
             noise_multiplier=None,
-            num_bins=4,
-            expected_batch_size=4,
         )
         assert sampler.truncated_batch_size == 8

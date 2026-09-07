@@ -71,10 +71,10 @@ strategy = band_mf_strategy(bands=10)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: dpftrl_acc.poisson(
+    lambda nm: dpftrl_acc.b_min_sep(
         dpftrl_acc.mf_gaussian(nm, strategy),
-        sample_rate=0.01,
         n_steps=1000,
+        p0=0.01,
     ),
     param_min=0.1, param_max=5.0,
 )
@@ -84,16 +84,17 @@ noise_multiplier = result.param
 Three amplification factories under
 `opaque.dpftrl.accounting` — pick the one that matches your sampler:
 
-- `dpftrl_acc.poisson(...)` — Poisson subsampling (cyclic-Poisson
-  under banded MF).
+- `dpftrl_acc.poisson(...)` — low-level fixed-universe cyclic Poisson
+  under banded MF; its rate is conditional in the active group.
 - `dpftrl_acc.b_min_sep(...)` — b-min-separation participation
   pattern.
 - `dpftrl_acc.balls_in_bins(...)` — fixed-partition participation.
 
 Each amplification factory wraps a mechanism into a single
 `DpProcess` describing the full training run. **Always pass the same
-strategy object** to `mf_gaussian_noise` and the accounting factory — that is
-how DP correctness is preserved.
+strategy object** to `mf_gaussian_noise` and the accounting factory. This is
+necessary but not sufficient: the sampler's realized participation contract
+must also match. Stock Trainer BandMF uses b-min-separation.
 
 ### Whole-process ε reporting
 
@@ -101,10 +102,10 @@ DP-FTRL processes are whole-process mechanisms. Include the process once at
 its declared `n_steps`; composing it once per optimizer step would over-count:
 
 ```python
-proc = dpftrl_acc.poisson(
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 acct |= proc
@@ -184,19 +185,25 @@ DP-FTRL has its own sampler family under `opaque.dpftrl.sampling`:
 
 ```python
 from opaque.dpftrl.sampling import (
-    CyclicPoissonSampler,    # banded MF: cyclic Poisson subsampling
-    BMinSepSampler,          # b-min-separation
+    CyclicPoissonSampler,    # expert fixed-universe cyclic construction
+    BMinSepSampler,          # supported Trainer BandMF contract
     BallsInBinsSampler,      # fixed-partition
     SequentialBatchSampler,  # deterministic order, used by BLT
 )
 
+global_sample_rate = batch_size / len(dataset)
 sampler = CyclicPoissonSampler(
-    dataset, sample_rate=0.01, bands=10, n_steps=1000, key=key(42),
+    dataset,
+    sample_rate=10 * global_sample_rate,  # conditional active-group rate
+    bands=10,
+    n_steps=1000,
+    key=key(42),
 )
 ```
 
 The sampler must match the amplification factory you used in
-calibration.
+calibration. The cyclic example assumes a fixed universe/partition across
+neighbors; it is not a `DPTrainer` mode or a default add/remove construction.
 
 ## 6. Optimizer
 

@@ -3,7 +3,9 @@
 These samplers generate the participation patterns required by MF
 mechanisms (band-MF, BLT, BSR, lambda-CGD) — b-min-separation, Poisson
 ``CyclicPoissonSampler`` (``bands=1`` identity baseline vs ``bands>1``
-cyclic BandMF), balls-in-bins, and sequential batches.
+cyclic BandMF), balls-in-bins, and sequential batches. Cyclic BandMF is a
+low-level fixed-universe construction: its conditional active-group rate and
+partition assumptions must match the independently constructed accountant.
 """
 
 from opaque.api.dpftrl.sampling import (

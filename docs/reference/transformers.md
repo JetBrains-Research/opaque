@@ -172,7 +172,7 @@ clip-noise-step.
 | `evaluation_loop(dataloader, *, description, prediction_loss_only, ignore_keys, metric_key_prefix)` | Override only if the full eval loop needs custom orchestration. |
 | `create_optimizer()` | Override only to swap the functional torchopt optimizer; prefer `optimizer_cls_and_kwargs`. |
 | `create_scheduler(num_training_steps)` | Override only for LR schedules outside the built-in factory. |
-| `get_train_dataloader()` | Override only to swap the sampler family.  DP-correctness requires the sampler produces each example with independent probability `ctx.sample_rate`. |
+| `get_train_dataloader()` | Override only to swap the sampler family. Stock Trainer enforces `ctx.participation`; a subclass override is outside that enforcement and must realize and validate the complete mechanism-specific participation contract. |
 | `get_eval_dataloader(eval_dataset=None)` | Standard `DataLoader` — usually no override needed. |
 
 ## `TrainingArguments`
@@ -189,8 +189,8 @@ Dataclass surface.  Every field listed here exists on
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
 | `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
-| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
-| `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism`. Supported pairs: Gaussian with `"poisson"` or `"k_out_of_t"`; BandMF with `"b_min_sep"`; BLT/BiSR/BSR/λ-CGD with `"balls_in_bins"`; identity MF with `"poisson"` or `"balls_in_bins"`. |
+| `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs. `truncated_batch_size` caps Poisson draws in single-process training and is rejected under DDP because rank-local caps do not realize one globally truncated draw. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ. When unset (and `privacy_target_epsilon` is set), calibration searches. Horizon mechanisms report the conservative declared full-horizon ε throughout training. |
 | `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
@@ -227,7 +227,7 @@ Dataclass surface.  Every field listed here exists on
 | `per_device_eval_batch_size` | `int \| None` | `None` | Eval batch size (fixed, not Poisson). When `None`, defaults to `microbatch_size` when configured, otherwise `per_device_train_batch_size`. |
 | `eval_accumulation_steps` | `int \| None` | `None` | Move eval tensors to CPU every N batches. `None` offloads every batch, minimizing device prediction memory; larger windows reduce transfer calls but retain up to N batches on device. CUDA copies use a bounded asynchronous pinned staging queue; complete predictions remain in pageable CPU memory for final metrics. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
-| `auto_find_microbatch_size` | `bool` | `False` | On train OOM, halve the microbatch and retry; on eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
+| `auto_find_microbatch_size` | `bool` | `False` | On a train OOM before noisy gradients become observable, halve the microbatch and retry with the restored validated arguments and frozen participation contract; all argument fields must support `deepcopy`. A later OOM fails closed. On eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
 
 ### Optimizer and LR
 
@@ -284,7 +284,7 @@ NPU, XLA) are rejected with a redirect message.
 | `restore_callback_states_from_checkpoint` | `bool` | `False` | Restore per-callback state on resume. |
 | `output_dir` | `str \| None` | `None` | Defaults to `"trainer_output"`. |
 | `overwrite_output_dir` | `bool` | `False` | If `False`, warn when `output_dir` already contains checkpoints. |
-| `resume_from_checkpoint` | `str \| None` | `None` | Path to a checkpoint directory.  `True` passed to `train()` auto-finds latest. |
+| `resume_from_checkpoint` | `str \| None` | `None` | Path to a complete checkpoint containing DP runtime, accountant, optimizer, and `trainer_state.json`. `True` passed to `train()` auto-finds latest. Stateful resume requires the original record-to-index mapping. Ordinary DDP sampler restore fails closed until checkpoints carry per-rank sampler snapshots; Poisson can use `ignore_data_skip=True`. |
 
 ### Evaluation
 
@@ -299,7 +299,7 @@ NPU, XLA) are rejected with a redirect message.
 | `metric_for_best_model` | `str \| None` | `None` | Auto-prefixed with `eval_`.  Required for `save_strategy="best"` / `load_best_model_at_end=True`. |
 | `greater_is_better` | `bool \| None` | `None` | Inferred from metric name (`loss` suffix → `False`). |
 | `load_best_model_at_end` | `bool` | `False` | After training, restore the best-eval checkpoint.  Raises if no improving step recorded. |
-| `ignore_data_skip` | `bool` | `False` | Skip sampler-state restore. Poisson resumes use a distinct stream. |
+| `ignore_data_skip` | `bool` | `False` | Skip sampler-state restore. Poisson resumes use a distinct stream and persist its cursor origin so later checkpoints resume normally. |
 
 ### Distributed
 
@@ -309,6 +309,9 @@ NPU, XLA) are rejected with a redirect message.
 | `ddp_backend` | `str \| None` | `None` | One of `{"nccl", "gloo", "mpi", "xccl", "hccl", "cncl", "mccl"}`. |
 | `ddp_timeout` | `int` | `1800` | Seconds passed to `init_process_group(timeout=...)`. |
 | `average_tokens_across_devices` | `bool` | `True` | Under DDP, average per-rank token counts for `num_input_tokens_seen`. |
+
+DDP training requires a public, fixed population whose length is divisible by
+`world_size`. Opaque fails closed instead of trimming private tail records.
 
 ### DataLoader
 

@@ -185,7 +185,11 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         calls = []
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             assert ignore_keys_for_eval is None
             calls.append((resume_from_checkpoint, microbatch_size_override))
@@ -248,7 +252,11 @@ class TestPredictionStepUnlabeledAndTupleOutputs:
         calls = []
 
         def fake_train_once(
-            *, resume_from_checkpoint, microbatch_size_override, ignore_keys_for_eval
+            *,
+            resume_from_checkpoint,
+            microbatch_size_override,
+            ignore_keys_for_eval,
+            invocation,
         ):
             calls.append(microbatch_size_override)
             if len(calls) == 1:

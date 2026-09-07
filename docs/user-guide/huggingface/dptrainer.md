@@ -78,7 +78,9 @@ queries and privacy-based early stopping are unsupported, so combining a fixed
 
 `resume_from_checkpoint` accepts a path string, `True` to auto-find
 the latest `checkpoint-*/` under `output_dir`, or `None` for a fresh
-run.
+run. Ordinary DDP sampler restore currently fails closed because the
+checkpoint has no per-rank sampler snapshots; Poisson runs can take the
+documented `ignore_data_skip=True` fresh-stream path.
 
 ## Per-example eval losses
 

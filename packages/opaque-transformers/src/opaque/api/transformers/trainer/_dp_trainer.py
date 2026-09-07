@@ -22,8 +22,10 @@ eval (vmap when ``include_for_metrics=['loss']``) route through.
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import functools
+import hashlib
 import inspect
 import json
 import logging
@@ -32,7 +34,7 @@ import os
 import shutil
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -101,6 +103,7 @@ from ._callback import (
     resolve_eval_metric,
 )
 from ._eval import EvalPrediction
+from ._participation import ResolvedParticipationPlan
 from ._precision import eval_dtype
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
@@ -224,6 +227,7 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
+    participation: ResolvedParticipationPlan
     # Cached process reused across independent step compositions. Whole-horizon
     # mechanisms are installed in ``accounting`` once and leave this as None.
     step_process: Any | None
@@ -234,10 +238,34 @@ class _TrainingContext:
     total_steps: int
     num_epochs: int
     collate_fn: Callable
+    # Immutable resume policy captured before callbacks can mutate args.
+    skip_sampler_state_on_resume: bool
+    # Global optimizer step at which the current sampler stream began.
+    sampler_cursor_origin: int
+    # Must remain FIFO for step-indexed participation and cursor projection.
+    dataloader_in_order: bool
+    # Callback-immutable token accounting policy. These values gate a native
+    # DDP reduction and therefore cannot be read from mutable args mid-run.
+    include_num_input_tokens_seen: str
+    average_tokens_across_devices: bool
+    include_tokens_per_second: bool
+    # End-of-run Hub publication is callback-immutable because it is a
+    # rank-asymmetric control path under DDP.
+    push_to_hub: bool
+    # Private authority for committed optimizer/noise/accounting steps. Public
+    # callback state is checked against this value but never drives it.
+    executed_global_step: int
     batch_keys: tuple[str, ...] = ()
     offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
     opt_name: str = "adamw"
     current_sampler: Any = None
+    # True from accounting/noise release start until the committed step is
+    # reflected in both private and callback-visible progress.
+    step_in_progress: bool = False
+    # Once noisy gradients can reach a callback or an optimizer update, an
+    # automatic replay could expose two releases. This remains true for the
+    # rest of the attempt, including cleanup.
+    attempt_has_exposed_release: bool = False
     # Checkpoint cursor for a distinct ignored-state Poisson stream.
     sampler_restart_step: int | None = None
     save_steps_resolved: int = 0
@@ -254,6 +282,23 @@ class _TrainingContext:
     # target is unreachable, unset, or the process is whole-horizon.
     # See :func:`predict_stop_step`.
     stop_at_step: int | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _TrainInvocation:
+    """Privacy-critical inputs frozen once before any retry or callback."""
+
+    participation: ResolvedParticipationPlan
+    skip_sampler_state_on_resume: bool
+    dataloader_in_order: bool
+    include_num_input_tokens_seen: str
+    average_tokens_across_devices: bool
+    include_tokens_per_second: bool
+    push_to_hub: bool
+    training_args_snapshot: tuple[tuple[str, Any], ...] | None = dataclasses.field(
+        repr=False,
+        compare=False,
+    )
 
 
 def _initialize_accounting(
@@ -553,6 +598,25 @@ class DPTrainer:
         # case (rank=0, world=1, is_distributed=False).
         self._ddp = _distributed.resolve_ddp_state(self._device, self.args)
         _distributed.validate_ddp_backend(self.args, self._ddp)
+        # Preallocate the small control-plane tensor before training can OOM.
+        # Every trainer-owned DDP failure/status rendezvous reuses this buffer,
+        # so reporting an OOM never depends on allocating another device tensor.
+        self._cluster_status = (
+            torch.zeros(8, dtype=torch.int64, device=self._device)
+            if self._ddp.is_distributed
+            else None
+        )
+        # Token accounting has its own native SUM. Allocate its scalar before
+        # an attempted privacy release so a rank-local device OOM cannot jump
+        # from allocation straight into the attempt-outcome status collective
+        # while sibling ranks have already entered the token SUM.
+        self._cluster_token_count = (
+            torch.zeros((), dtype=torch.int64, device=self._device)
+            if self._ddp.is_distributed
+            else None
+        )
+        self._cluster_phase_sequence = 0
+        self._cluster_protocol_failed = False
         # Apply per-rank logging verbosity now that rank/world is known
         # (HF parity: main process uses ``log_level``, replicas use
         # ``log_level_replica``).
@@ -975,10 +1039,13 @@ class DPTrainer:
           Poisson-amplified Gaussian step and the accountant composes the
           same number of mechanisms — and the resumed subsample sequence
           from iteration N onward matches a continuous run from the same
-          seed.  DP-valid either way.
+          seed. DataLoader worker prefetch is deliberately excluded from the
+          persisted cursor: only optimizer steps recorded in ``global_step``
+          are committed. DP-valid either way.
         - **``ignore_data_skip=True``** skips sampler-state restore.
-          Poisson resumes use a distinct stream; participation samplers
-          require the saved cursor.
+          Poisson resumes use a distinct stream whose global-step origin is
+          persisted, so a later checkpoint can be resumed normally;
+          participation samplers require the saved cursor.
         - **Accountant on resume** preserves the mechanism lifecycle:
           independent releases load the saved ``Accountant`` as a prefix and
           calibrate remaining steps against it; whole-horizon mechanisms retain
@@ -998,42 +1065,196 @@ class DPTrainer:
         finally:
             self.is_in_train = False
 
+    def _resolve_train_invocation(self) -> _TrainInvocation:
+        """Freeze the run's participation contract before callbacks/retries."""
+        if self._train_dataset is None:
+            raise ConfigurationError(*("DPTrainer.train() requires a train_dataset.",))
+
+        dataset_size = self._effective_train_dataset_size()
+        if dataset_size <= 0:
+            raise ConfigurationError(
+                *(
+                    "DPTrainer requires a non-empty train_dataset: DP-SGD needs "
+                    "at least one example to build the per-example loss surface "
+                    "and calibrate Poisson sampling.",
+                )
+            )
+        expected_batch_size = (
+            self.args.per_device_train_batch_size * self._ddp.world_size
+        )
+        sample_rate = expected_batch_size / dataset_size
+        if sample_rate > 1.0:
+            raise ConfigurationError(
+                *(
+                    "DPTrainer requires expected_batch_size <= len(train_dataset) "
+                    "for Poisson sampling; got expected_batch_size="
+                    f"{expected_batch_size} and len(train_dataset)={dataset_size}.",
+                )
+            )
+        expected_steps_per_epoch, total_steps, _ = self._steps_breakdown(dataset_size)
+        participation = ResolvedParticipationPlan.resolve(
+            mechanism_kind=self.args.privacy_noise_mechanism,
+            sampling_mode=self.args.sampling_mode,
+            sampling_kwargs=self.args.sampling_kwargs,
+            population_size=dataset_size,
+            expected_batch_size=expected_batch_size,
+            sample_rate=sample_rate,
+            total_steps=total_steps,
+            num_bins=expected_steps_per_epoch,
+            world_size=self._ddp.world_size,
+        )
+
+        skip_sampler_state_on_resume = self.args.ignore_data_skip
+        if type(skip_sampler_state_on_resume) is not bool:
+            raise ConfigurationError(
+                *(
+                    "ignore_data_skip must be a bool, got "
+                    f"{skip_sampler_state_on_resume!r}.",
+                )
+            )
+        dataloader_in_order = self.args.dataloader_in_order
+        if dataloader_in_order is not True:
+            raise ConfigurationError(
+                *(
+                    "dataloader_in_order must be True when training starts: "
+                    "step-indexed participation and execution-aligned checkpoint "
+                    "cursors require FIFO batch delivery.",
+                )
+            )
+        include_num_input_tokens_seen = self.args.include_num_input_tokens_seen
+        if include_num_input_tokens_seen not in ("no", "all", "non_padding"):
+            raise ConfigurationError(
+                *(
+                    "include_num_input_tokens_seen must be 'no', 'all', or "
+                    f"'non_padding', got {include_num_input_tokens_seen!r}.",
+                )
+            )
+        average_tokens_across_devices = self.args.average_tokens_across_devices
+        include_tokens_per_second = self.args.include_tokens_per_second
+        push_to_hub = self.args.push_to_hub
+        if (
+            type(average_tokens_across_devices) is not bool
+            or type(include_tokens_per_second) is not bool
+            or type(push_to_hub) is not bool
+        ):
+            raise ConfigurationError(
+                *(
+                    "average_tokens_across_devices, include_tokens_per_second, "
+                    "and push_to_hub must be bool values.",
+                )
+            )
+        training_args_snapshot: tuple[tuple[str, Any], ...] | None = None
+        if self.args.auto_find_microbatch_size:
+            try:
+                training_args_snapshot = tuple(
+                    (field.name, copy.deepcopy(getattr(self.args, field.name)))
+                    for field in dataclasses.fields(self.args)
+                )
+            except Exception as exc:
+                raise ConfigurationError(
+                    *(
+                        "auto_find_microbatch_size requires every TrainingArguments "
+                        "field to be deepcopy-compatible so an OOM retry can rebuild "
+                        "the exact validated invocation. Disable automatic retry or "
+                        "replace the uncopyable argument value.",
+                    )
+                ) from exc
+        return _TrainInvocation(
+            participation=participation,
+            skip_sampler_state_on_resume=skip_sampler_state_on_resume,
+            dataloader_in_order=True,
+            include_num_input_tokens_seen=include_num_input_tokens_seen,
+            average_tokens_across_devices=average_tokens_across_devices,
+            include_tokens_per_second=include_tokens_per_second,
+            push_to_hub=push_to_hub,
+            training_args_snapshot=training_args_snapshot,
+        )
+
+    def _restore_train_invocation_args(self, invocation: _TrainInvocation) -> None:
+        """Restore validated arguments before rebuilding an OOM retry context."""
+        if invocation.training_args_snapshot is None:
+            raise OperationError(
+                *("automatic retry has no immutable TrainingArguments snapshot.",)
+            )
+        for name, value in invocation.training_args_snapshot:
+            setattr(self.args, name, copy.deepcopy(value))
+
     def _train_dispatch(
         self,
         resume_from_checkpoint: str | bool | os.PathLike[str] | None,
         ignore_keys_for_eval: list[str] | None,
     ) -> TrainOutput:
         """Inner dispatch."""
-        if self._train_dataset is None:
-            raise ConfigurationError(*("DPTrainer.train() requires a train_dataset.",))
+        self._cluster_phase_sequence = 0
+        self._cluster_protocol_failed = False
+        resolved_resume_path: str | None = None
+        invocation: _TrainInvocation | None = None
+        effective_microbatch_size = 1
+        with self._cluster_local_phase(boundary="training invocation resolution"):
+            if self._train_dataset is None:
+                raise ConfigurationError(
+                    *("DPTrainer.train() requires a train_dataset.",)
+                )
 
-        # ``microbatch_size`` controls the vmap chunk and defaults to
-        # ``per_device_train_batch_size`` (one chunk per rank).
-        # ``auto_find_microbatch_size`` then halves from this value on
-        # CUDA-OOM.
-        effective_microbatch_size = max(
-            1,
-            int(
-                self.args.microbatch_size
-                if self.args.microbatch_size is not None
-                else self.args.per_device_train_batch_size
+            # Resolve every participation and resume-policy input once, before
+            # callbacks and before an automatic retry can rebuild the context.
+            if resume_from_checkpoint is None:
+                resume_from_checkpoint = self.args.resume_from_checkpoint
+            resolved_resume_path = self._resolve_resume_path(resume_from_checkpoint)
+            invocation = self._resolve_train_invocation()
+
+            # This is a physical vmap chunk, not the logical DP batch.
+            effective_microbatch_size = max(
+                1,
+                int(
+                    self.args.microbatch_size
+                    if self.args.microbatch_size is not None
+                    else self.args.per_device_train_batch_size
+                ),
+            )
+        assert invocation is not None
+        self._raise_cluster_phase_error(
+            None,
+            boundary=(
+                "resolved training invocation "
+                f"plan={invocation.participation.to_state_dict()!r},"
+                f"skip_sampler={invocation.skip_sampler_state_on_resume},"
+                f"fifo={invocation.dataloader_in_order},"
+                f"token_mode={invocation.include_num_input_tokens_seen!r},"
+                f"average_tokens={invocation.average_tokens_across_devices},"
+                f"token_rate={invocation.include_tokens_per_second},"
+                f"push_to_hub={invocation.push_to_hub},"
+                f"enabled={bool(self.args.auto_find_microbatch_size)},"
+                f"microbatch={effective_microbatch_size}"
             ),
         )
 
         if not self.args.auto_find_microbatch_size:
             self.state.converged_microbatch_size = effective_microbatch_size
-            return self._train_once(
-                resume_from_checkpoint=resume_from_checkpoint,
-                microbatch_size_override=effective_microbatch_size,
-                ignore_keys_for_eval=ignore_keys_for_eval,
+            local_error: Exception | None = None
+            result: TrainOutput | None = None
+            try:
+                result = self._train_once(
+                    resume_from_checkpoint=resolved_resume_path,
+                    microbatch_size_override=effective_microbatch_size,
+                    ignore_keys_for_eval=ignore_keys_for_eval,
+                    invocation=invocation,
+                )
+            except Exception as exc:
+                if self._cluster_protocol_failed:
+                    raise
+                local_error = exc
+            self._raise_cluster_phase_error(
+                local_error,
+                boundary="training attempt outcome",
             )
+            assert result is not None
+            return result
 
         initial_microbatch_size = effective_microbatch_size
         current_microbatch_size = initial_microbatch_size
-        state_snapshot = DPTrainerState.from_json(self.state.to_json())
-        model_snapshot = {
-            k: v.detach().to("cpu").clone() for k, v in self._model.state_dict().items()
-        }
+        state_snapshot: DPTrainerState | None = None
+        model_snapshot: dict[str, Tensor] = {}
         # ``load_state_dict`` restores tensor VALUES but not the
         # ``requires_grad`` partition.  An OOM raised mid-attempt (e.g.
         # inside the vmapped functional forward) can leave the trainable
@@ -1041,10 +1262,19 @@ class DPTrainer:
         # attempt's ``make_functional`` captures a different trainable set
         # and the post-training ``_restore_params`` guard fails with
         # "keys do not match the model's current requires_grad set".
-        requires_grad_snapshot = {
-            name: p.requires_grad for name, p in self._model.named_parameters()
-        }
-        rng_snapshot = ckpt.snapshot_rng_state()
+        requires_grad_snapshot: dict[str, bool] = {}
+        rng_snapshot: dict[str, Any] = {}
+        with self._cluster_local_phase(boundary="automatic-retry snapshot"):
+            state_snapshot = DPTrainerState.from_json(self.state.to_json())
+            model_snapshot = {
+                k: v.detach().to("cpu").clone()
+                for k, v in self._model.state_dict().items()
+            }
+            requires_grad_snapshot = {
+                name: p.requires_grad for name, p in self._model.named_parameters()
+            }
+            rng_snapshot = ckpt.snapshot_rng_state()
+        assert state_snapshot is not None
 
         # Under DDP the OOM retry decision MUST be a cluster-wide collective.
         # Each rank's OOM is triggered by per-rank memory fragmentation at a
@@ -1054,47 +1284,45 @@ class DPTrainer:
         # DP-SGD's per-step collectives (``sum_gradients_`` AllReduce + the
         # ``ClippedPytree.max_norm`` cross-rank equality assert) then meet at
         # mismatched logical steps and raise ``max_norm mismatch across ranks``.
-        # Fix: after every attempt, ``_cluster_needs_step_down`` all-reduces a
-        # MAX of each rank's "needs to step down" flag — if ANY rank OOMs, EVERY
-        # rank steps down together and restarts in lockstep. The returned run is
-        # the first attempt at which no rank OOMs, so all ranks ran it at an
-        # identical microbatch and stayed synchronised end-to-end.
+        # Every rank-local phase reports an OOM at a named rendezvous, and the
+        # attempt-outcome rendezvous below is the sole owner of retry versus
+        # fatal classification. If ANY rank OOMs before a release is exposed,
+        # EVERY rank steps down and restarts in lockstep.
         while True:
             # Stamp before the attempt so a successful run's logs carry it.
             self.state.converged_microbatch_size = current_microbatch_size
-            local_oom = False
-            local_oom_error: BaseException | None = None
-            result = None
+            local_error = None
+            result: TrainOutput | None = None
             try:
                 result = self._train_once(
-                    resume_from_checkpoint=resume_from_checkpoint,
+                    resume_from_checkpoint=resolved_resume_path,
                     microbatch_size_override=current_microbatch_size,
                     ignore_keys_for_eval=ignore_keys_for_eval,
+                    invocation=invocation,
+                )
+            except Exception as exc:
+                if self._cluster_protocol_failed:
+                    raise
+                local_error = exc
+
+            # This is the one attempt-level outcome rendezvous. Local phases
+            # inside the loop synchronize before trainer collectives; this
+            # final boundary also covers setup/cleanup and makes success,
+            # retryable OOM, and fatal failure uniform across ranks.
+            retry_error: RuntimeError | None = None
+            try:
+                self._raise_cluster_phase_error(
+                    local_error,
+                    boundary="training attempt outcome",
                 )
             except RuntimeError as err:
-                if not self._is_retryable_oom(err):
+                if self._cluster_protocol_failed or not self._is_retryable_oom(err):
                     raise
-                local_oom = True
-                local_oom_error = err
+                retry_error = err
 
-            # Cluster-wide retry decision: a rank that succeeded must still
-            # step down (and discard ``result``) if any sibling OOM'd, so the
-            # whole cluster re-runs the next attempt in lockstep.
-            if self._cluster_needs_step_down(local_oom):
+            if retry_error is not None:
                 if current_microbatch_size <= 1:
-                    # Propagate the original OOM so callers see the actionable
-                    # signal. Fall back to a synthetic message only when this
-                    # rank didn't OOM locally (sibling-OOM-at-floor case).
-                    if local_oom_error is not None:
-                        raise local_oom_error
-                    raise OperationError(
-                        *(
-                            "auto_find_microbatch_size exhausted: a sibling rank "
-                            "still OOMs at microbatch_size=1. Reduce "
-                            "per_device_train_batch_size (the logical Poisson batch) "
-                            "or the model/sequence length.",
-                        )
-                    )
+                    raise retry_error
                 next_microbatch_size = max(1, current_microbatch_size // 2)
                 if next_microbatch_size == current_microbatch_size:
                     raise OperationError(
@@ -1103,36 +1331,37 @@ class DPTrainer:
                             f"microbatch_size={current_microbatch_size}.",
                         )
                     )
-                log.warning(
-                    "auto_find_microbatch_size: cluster OOM at microbatch_size=%d "
-                    "(local_oom=%s), retrying all ranks with microbatch_size=%d",
-                    current_microbatch_size,
-                    local_oom,
-                    next_microbatch_size,
-                )
-                self._model.load_state_dict(model_snapshot, strict=False)
-                # Re-assert the trainable/frozen partition the OOM may have
-                # clobbered, so the next attempt rebuilds the same
-                # functional param set (see requires_grad_snapshot above).
-                for name, p in self._model.named_parameters():
-                    if name in requires_grad_snapshot:
-                        p.requires_grad_(requires_grad_snapshot[name])
-                ckpt.restore_rng_state(rng_snapshot)
-                self._reset_state_for_batch_size_retry(state_snapshot)
-                self._empty_device_cache_for_retry()
+                with self._cluster_local_phase(boundary="training retry restoration"):
+                    log.warning(
+                        "auto_find_microbatch_size: OOM at microbatch_size=%d; "
+                        "retrying all ranks with microbatch_size=%d",
+                        current_microbatch_size,
+                        next_microbatch_size,
+                    )
+                    self._model.load_state_dict(model_snapshot, strict=False)
+                    # Re-assert the trainable/frozen partition the OOM may have
+                    # clobbered, so the retry captures the same trainable set.
+                    for name, p in self._model.named_parameters():
+                        if name in requires_grad_snapshot:
+                            p.requires_grad_(requires_grad_snapshot[name])
+                    ckpt.restore_rng_state(rng_snapshot)
+                    self._reset_state_for_batch_size_retry(state_snapshot)
+                    self._restore_train_invocation_args(invocation)
+                    self._empty_device_cache_for_retry()
                 current_microbatch_size = next_microbatch_size
                 continue
 
             # No rank OOM'd at this size — every rank ran the identical
             # microbatch in lockstep, so ``result`` is valid on all ranks.
             assert result is not None  # local_oom is False here on every rank
-            if current_microbatch_size != initial_microbatch_size:
-                log.info(
-                    "auto_find_microbatch_size: converged at "
-                    "microbatch_size=%d (started at %d)",
-                    current_microbatch_size,
-                    initial_microbatch_size,
-                )
+            with self._cluster_local_phase(boundary="training retry completion"):
+                if current_microbatch_size != initial_microbatch_size:
+                    log.info(
+                        "auto_find_microbatch_size: converged at "
+                        "microbatch_size=%d (started at %d)",
+                        current_microbatch_size,
+                        initial_microbatch_size,
+                    )
             return result
 
     def _train_once(
@@ -1141,41 +1370,90 @@ class DPTrainer:
         resume_from_checkpoint: str | bool | os.PathLike[str] | None,
         microbatch_size_override: int | None,
         ignore_keys_for_eval: list[str] | None,
+        invocation: _TrainInvocation | None = None,
     ) -> TrainOutput:
+        if invocation is None:
+            invocation = self._resolve_train_invocation()
         if resume_from_checkpoint is None:
             resume_from_checkpoint = self.args.resume_from_checkpoint
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
+        skip_sampler_state_on_resume = invocation.skip_sampler_state_on_resume
+        if (
+            resume_path is not None
+            and self._ddp.world_size > 1
+            and not skip_sampler_state_on_resume
+        ):
+            raise CheckpointError(
+                *(
+                    "Distributed checkpoint resume cannot restore the shared "
+                    "rank-0 sampler snapshot on every rank: that would correlate "
+                    "rank-local participation and violate the sampling contract. "
+                    "For Poisson sampling, set ignore_data_skip=True to derive a "
+                    "fresh independent stream on each rank, or start a fresh run. "
+                    "Stateful DP-FTRL samplers require a future per-rank sampler "
+                    "checkpoint format.",
+                )
+            )
 
         # Pre-load weights so make_functional starts from the saved values.
         prefix_accountant: Accountant | None = None
         runtime_payload: ckpt.RuntimeCheckpoint | None = None
-        trainer_state_json: dict[str, Any] | None = None
+        resume_step = 0
         if resume_path is not None:
-            self._load_model_weights(resume_path)
             runtime_payload, prefix_accountant = self._read_runtime_for_resume(
                 resume_path
             )
-            self._validate_horizon_resume_calibration(runtime_payload)
             trainer_state_json = self._read_trainer_state(resume_path)
-            if trainer_state_json is not None:
-                self.state = DPTrainerState.from_json(trainer_state_json)
-                self._stamp_ddp_flags(self.state)
-                # Re-bind callback handler to the new state object.
-                self._callback_handler.state = self.state
+            if trainer_state_json is None:  # required-file check is defensive
+                raise CheckpointError(
+                    *("Cannot resume without trainer_state.json progress metadata.",)
+                )
+            self.state = DPTrainerState.from_json(trainer_state_json)
+            self._stamp_ddp_flags(self.state)
+            # Re-bind callback handler to the new state object.
+            self._callback_handler.state = self.state
+            ckpt.validate_sampler_cursor_for_resume(
+                runtime_payload,
+                global_step=self.state.global_step,
+                ignore_data_skip=skip_sampler_state_on_resume,
+            )
+            resume_step = self.state.global_step
+            # Validate the complete DP/runtime/progress bundle before mutating
+            # the live model with checkpoint weights.
+            self._validate_horizon_resume_calibration(runtime_payload)
+            self._load_model_weights(resume_path)
+        else:
+            # A fresh invocation starts at zero even when this trainer object
+            # was used previously.  The private counter below remains the
+            # authority once callbacks begin.
+            self.state.global_step = 0
 
-        ctx = self._setup_training(
-            prefix_accountant=prefix_accountant,
-            resume_runtime=runtime_payload,
-            global_step_already_done=(
-                self.state.global_step if resume_path is not None else 0
-            ),
-            microbatch_size_override=microbatch_size_override,
-            sampler_restart_step=(
-                self.state.global_step
-                if resume_path is not None and self.args.ignore_data_skip
-                else None
-            ),
+        sampler_cursor_origin = (
+            resume_step
+            if resume_path is not None and skip_sampler_state_on_resume
+            else (
+                getattr(runtime_payload, "sampler_cursor_origin", 0)
+                if runtime_payload is not None
+                else 0
+            )
         )
+
+        ctx: _TrainingContext | None = None
+        with self._cluster_local_phase(boundary="training context construction"):
+            ctx = self._setup_training(
+                prefix_accountant=prefix_accountant,
+                resume_runtime=runtime_payload,
+                global_step_already_done=resume_step,
+                microbatch_size_override=microbatch_size_override,
+                invocation=invocation,
+                sampler_cursor_origin=sampler_cursor_origin,
+                sampler_restart_step=(
+                    resume_step
+                    if resume_path is not None and skip_sampler_state_on_resume
+                    else None
+                ),
+            )
+        assert ctx is not None
         self._ctx = ctx
 
         if resume_path is not None:
@@ -1183,12 +1461,13 @@ class DPTrainer:
             # (dp_state + optimizer + accountant) or raises — weights-only
             # exports are rejected there — so resume always restores the full
             # DP runtime, never a partial one.
-            self._apply_runtime_state(
-                ctx, runtime_payload, prefix_accountant, resume_path
-            )
-            self._warn_on_arg_drift(runtime_payload)
-            self._load_rng_state(resume_path)
-            self._load_callback_states()
+            with self._cluster_local_phase(boundary="checkpoint runtime restoration"):
+                self._warn_on_arg_drift(runtime_payload)
+                self._apply_runtime_state(
+                    ctx, runtime_payload, prefix_accountant, resume_path
+                )
+                self._load_rng_state(resume_path)
+                self._load_callback_states()
             # Stop-at-ε on resume: if the restored accountant already
             # exceeds target, skip the training loop.
             a = self.args
@@ -1227,47 +1506,82 @@ class DPTrainer:
             and a.privacy_noise_multiplier is not None
             and a.privacy_noise_multiplier > 0
             and a.privacy_target_epsilon is not None
-            and a.sampling_mode not in ("b_min_sep", "balls_in_bins")
-            and self.state.global_step < ctx.total_steps
+            and ctx.participation.sampling_mode not in ("b_min_sep", "balls_in_bins")
+            and ctx.executed_global_step < ctx.total_steps
         ):
-            ctx.stop_at_step = predict_stop_step(
-                ctx.accounting.process,
-                ctx.step_process,
-                target_epsilon=a.privacy_target_epsilon,
-                delta=ctx.target_delta,
-                k0=self.state.global_step,
-                horizon=ctx.total_steps,
-            )
-            if ctx.stop_at_step is not None:
-                log.info(
-                    "stop-at-ε: will stop after step %d of %d (target ε=%g at δ=%.2e)",
-                    ctx.stop_at_step,
-                    ctx.total_steps,
-                    a.privacy_target_epsilon,
-                    ctx.target_delta,
+            with self._cluster_local_phase(boundary="privacy-stop prediction"):
+                ctx.stop_at_step = predict_stop_step(
+                    ctx.accounting.process,
+                    ctx.step_process,
+                    target_epsilon=a.privacy_target_epsilon,
+                    delta=ctx.target_delta,
+                    k0=ctx.executed_global_step,
+                    horizon=ctx.total_steps,
                 )
+                if ctx.stop_at_step is not None:
+                    log.info(
+                        "stop-at-ε: will stop after step %d of %d "
+                        "(target ε=%g at δ=%.2e)",
+                        ctx.stop_at_step,
+                        ctx.total_steps,
+                        a.privacy_target_epsilon,
+                        ctx.target_delta,
+                    )
 
         try:
-            return self._inner_training_loop(
-                ctx,
-                resume_path=resume_path,
-                saved_sampler_state=(
-                    runtime_payload.sampler_state
-                    if runtime_payload is not None
-                    else None
-                ),
-                ignore_keys_for_eval=ignore_keys_for_eval,
-            )
+            try:
+                return self._inner_training_loop(
+                    ctx,
+                    resume_path=resume_path,
+                    saved_sampler_state=(
+                        runtime_payload.sampler_state
+                        if runtime_payload is not None
+                        else None
+                    ),
+                    ignore_keys_for_eval=ignore_keys_for_eval,
+                )
+            except RuntimeError as err:
+                self._reject_unsafe_oom_retry(err, ctx)
+                raise
         finally:
-            self._restore_params(ctx.trainable_params)
-            # Promote accountant to trainer-level so save_model() can write
-            # ``accountant.json`` after train() returns.
-            self._accountant = ctx.accounting
-            self._ctx = None
-            self._train_dataloader = None
-            self._eval_dataloader = None
+            try:
+                try:
+                    # Never start a collective from an unconditional finalizer:
+                    # a sibling may still be inside the logical phase that
+                    # failed locally. The dispatch owns one explicit, named
+                    # attempt-outcome rendezvous after every rank has completed
+                    # this local cleanup.
+                    self._restore_params(ctx.trainable_params)
+                except RuntimeError as err:
+                    self._reject_unsafe_oom_retry(err, ctx)
+                    raise
+            finally:
+                # Promote accountant to trainer-level so save_model() can write
+                # ``accountant.json`` after train() returns.
+                self._accountant = ctx.accounting
+                self._ctx = None
+                self._train_dataloader = None
+                self._eval_dataloader = None
 
-    def _is_retryable_oom(self, err: RuntimeError) -> bool:
+    def _reject_unsafe_oom_retry(
+        self,
+        err: RuntimeError,
+        ctx: _TrainingContext,
+    ) -> None:
+        """Reject replay once noisy state or updated parameters were exposed."""
+        if self._is_retryable_oom(err) and ctx.attempt_has_exposed_release:
+            raise OperationError(
+                *(
+                    "auto_find_microbatch_size cannot retry after a privacy "
+                    "release became observable: optimizer callbacks, logs, or "
+                    "checkpoints may already have exposed the attempted prefix. "
+                    "The in-memory accountant conservatively retains that spend; "
+                    "account for every emitted artifact before starting again "
+                    "with a smaller microbatch_size.",
+                )
+            ) from err
+
+    def _is_retryable_oom(self, err: BaseException) -> bool:
         """``True`` for an OOM that justifies a microbatch retry.
 
         ``torch.OutOfMemoryError`` (torch >= 2.4) is the typed exception
@@ -1277,46 +1591,155 @@ class DPTrainer:
         """
         return isinstance(err, torch.OutOfMemoryError)
 
-    def _synchronize_grad_failure(self, error: Exception | None) -> None:
-        """Raise rank-symmetrically before gradient collectives after a failure."""
-        if not self._ddp.is_distributed:
-            if error is not None:
-                raise error
-            return
+    @staticmethod
+    def _cluster_phase_code(boundary: str) -> int:
+        """Return a stable positive control-plane identifier for ``boundary``."""
+        digest = hashlib.blake2b(
+            boundary.encode("utf-8"),
+            digest_size=8,
+            person=b"opaque.ddp",
+        ).digest()
+        return (int.from_bytes(digest, "big") & ((1 << 62) - 1)) + 1
 
-        local_oom = isinstance(error, RuntimeError) and self._is_retryable_oom(error)
-        flags = torch.tensor(
-            [
-                1.0 if local_oom else 0.0,
-                1.0 if error is not None and not local_oom else 0.0,
-            ],
-            device=self._device,
-        )
-        torch.distributed.all_reduce(flags, op=torch.distributed.ReduceOp.MAX)
-        if flags[1].item() > 0.0:
-            if error is not None and not local_oom:
-                raise error
-            raise RuntimeError(  # noqa: TRY003 - preserve rank symmetry
-                "collective gradient computation failed on a sibling rank"
-            )
-        if flags[0].item() > 0.0:
-            raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
-                "collective microbatch retry (a rank OOM'd in grad_fn; "
-                "whole cluster steps down to a smaller microbatch)."
-            )
+    def _raise_cluster_phase_error(
+        self,
+        local_error: Exception | None,
+        *,
+        boundary: str,
+    ) -> None:
+        """Rendezvous at one named phase and raise failures uniformly.
 
-    def _cluster_needs_step_down(self, local_oom: bool) -> bool:
-        """Whether any rank OOM'd this attempt (cluster-wide MAX all-reduce).
-
-        The OOM-retry decision must be collective: if one rank steps the batch
-        down and a sibling doesn't, they desync on the next collective. Returns
-        ``local_oom`` unchanged when not distributed.
+        The preallocated status vector carries both an ordinal and a stable
+        boundary identifier. If ranks ever enter different trainer-owned
+        control collectives, every participant detects the protocol mismatch
+        instead of silently matching two unrelated scalar all-reduces.
         """
         if not self._ddp.is_distributed:
-            return local_oom
-        flag = torch.tensor([1.0 if local_oom else 0.0], device=self._device)
-        torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
-        return bool(flag.item() > 0.0)
+            if local_error is not None:
+                raise local_error
+            return
+
+        status = self._cluster_status
+        if status is None:
+            raise OperationError(
+                *("distributed failure status buffer is not initialized.",)
+            ) from local_error
+        sequence = self._cluster_phase_sequence
+        phase_code = self._cluster_phase_code(boundary)
+        local_oom = local_error is not None and self._is_retryable_oom(local_error)
+        status.zero_()
+        status[0] = sequence
+        status[1] = -sequence
+        status[2] = phase_code
+        status[3] = -phase_code
+        status[4] = int(local_error is not None)
+        status[5] = int(local_error is not None and not local_oom)
+        status[6] = int(local_oom)
+        self._cluster_phase_sequence += 1
+        try:
+            torch.distributed.all_reduce(status, op=torch.distributed.ReduceOp.MAX)
+        except Exception as exc:
+            self._cluster_protocol_failed = True
+            raise OperationError(
+                *(
+                    "distributed failure consensus itself failed at "
+                    f"{boundary!r}; the process group is no longer safe to use.",
+                )
+            ) from (local_error or exc)
+
+        max_sequence = int(status[0].item())
+        min_sequence = -int(status[1].item())
+        max_phase = int(status[2].item())
+        min_phase = -int(status[3].item())
+        if max_sequence != min_sequence or max_phase != min_phase:
+            self._cluster_protocol_failed = True
+            raise OperationError(
+                *(
+                    "distributed trainer phases diverged before "
+                    f"{boundary!r}: sequence range [{min_sequence}, "
+                    f"{max_sequence}], phase-code range [{min_phase}, "
+                    f"{max_phase}]. Refusing to continue with mismatched "
+                    "collectives.",
+                )
+            ) from local_error
+
+        any_error = bool(status[4].item())
+        any_fatal = bool(status[5].item())
+        any_oom = bool(status[6].item())
+        if not any_error:
+            return
+        if any_fatal or not any_oom:
+            local_detail = (
+                f" Local failure: {type(local_error).__name__}: {local_error}"
+                if local_error is not None
+                else ""
+            )
+            raise OperationError(
+                *(
+                    f"distributed phase {boundary!r} failed on at least one "
+                    f"rank; all ranks are failing closed.{local_detail}",
+                )
+            ) from local_error
+        if local_error is not None and local_oom:
+            raise local_error
+        raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
+            f"collective failure: a rank OOM'd during {boundary}."
+        )
+
+    @contextlib.contextmanager
+    def _cluster_local_phase(self, *, boundary: str) -> Iterator[None]:
+        """Run rank-local work followed by an aligned failure rendezvous."""
+        local_error: Exception | None = None
+        try:
+            yield
+        except Exception as exc:
+            local_error = exc
+        if self._cluster_protocol_failed:
+            if local_error is not None:
+                raise local_error
+            raise OperationError(
+                *("distributed trainer control protocol is already invalid.",)
+            )
+        self._raise_cluster_phase_error(local_error, boundary=boundary)
+
+    def _assert_control_consensus(self, *, boundary: str) -> None:
+        """Require callback control-flow flags to agree before branching."""
+        control = self._control
+        flags = (
+            bool(control.should_log),
+            bool(control.should_evaluate),
+            bool(control.should_save),
+            bool(control.should_training_stop),
+            bool(control.should_epoch_stop),
+        )
+        self._raise_cluster_phase_error(
+            None,
+            boundary=f"{boundary} callback-control={flags!r}",
+        )
+
+    def _cluster_needs_step_down(self, local_oom: bool) -> bool:
+        """Compatibility wrapper for aligned evaluation retry boundaries."""
+        local_error = (
+            torch.OutOfMemoryError("local evaluation OOM") if local_oom else None
+        )
+        try:
+            self._raise_cluster_phase_error(
+                local_error,
+                boundary="evaluation retry decision",
+            )
+        except torch.OutOfMemoryError:
+            return True
+        return False
+
+    def _prepare_token_count_reduction(self, n_tokens: int) -> Tensor:
+        """Populate the preallocated scalar used by the token-count SUM."""
+        token_count = self._cluster_token_count
+        if token_count is None:
+            raise OperationError(
+                *("distributed token-count buffer is not initialized.",)
+            )
+        token_count.fill_(n_tokens)
+        return token_count
 
     def _reset_state_for_batch_size_retry(self, snapshot: DPTrainerState) -> None:
         self.state = DPTrainerState.from_json(snapshot.to_json())
@@ -1361,6 +1784,8 @@ class DPTrainer:
         resume_runtime: ckpt.RuntimeCheckpoint | None = None,
         global_step_already_done: int = 0,
         microbatch_size_override: int | None = None,
+        invocation: _TrainInvocation | None = None,
+        sampler_cursor_origin: int = 0,
         sampler_restart_step: int | None = None,
     ) -> _TrainingContext:
         """Functional conversion, clipping, calibration, optimizer.
@@ -1370,6 +1795,41 @@ class DPTrainer:
         recalibrate their complete declared process without composing a prefix.
         """
         a = self.args
+        if invocation is None:
+            invocation = self._resolve_train_invocation()
+        participation = invocation.participation
+        skip_sampler_state_on_resume = invocation.skip_sampler_state_on_resume
+        dataloader_in_order = invocation.dataloader_in_order
+
+        # The invocation binds the public population and distributed topology.
+        # Recheck the live inputs without re-resolving from mutable args.
+        live_population_size = self._effective_train_dataset_size()
+        if live_population_size != participation.population_size:
+            raise ConfigurationError(
+                *(
+                    "train_dataset length changed after the participation plan "
+                    "was resolved: planned="
+                    f"{participation.population_size}, live={live_population_size}.",
+                )
+            )
+        if self._ddp.world_size != participation.world_size:
+            raise ConfigurationError(
+                *(
+                    "world_size changed after the participation plan was resolved: "
+                    f"planned={participation.world_size}, live={self._ddp.world_size}.",
+                )
+            )
+        if type(global_step_already_done) is not int or not (
+            0 <= global_step_already_done <= participation.total_steps
+        ):
+            raise ConfigurationError(
+                *(
+                    "global_step_already_done must be an integer within the "
+                    "resolved participation horizon; got "
+                    f"{global_step_already_done!r} for horizon "
+                    f"{participation.total_steps}.",
+                )
+            )
         # --- Gradient checkpointing ---
         if a.gradient_checkpointing:
             gc_kwargs = a.gradient_checkpointing_kwargs or {"use_reentrant": False}
@@ -1429,24 +1889,17 @@ class DPTrainer:
         # --- Sampling & step calculations ---
         # Logical batch (Poisson round size) drives DP accounting; physical
         # batch (per-device size) is the vmap chunk fed into clipping.
-        expected_batch_size = a.train_batch_size
+        dataset_size = participation.population_size
+        expected_batch_size = participation.expected_batch_size
+        sample_rate = participation.sample_rate
+        expected_steps_per_epoch = participation.num_bins
+        total_steps = participation.total_steps
+        num_epochs = math.ceil(total_steps / expected_steps_per_epoch)
         microbatch_size = (
             int(microbatch_size_override)
             if microbatch_size_override is not None
             else a.per_device_train_batch_size
         )
-
-        if self._train_dataset is None:
-            raise ConfigurationError(*("DPTrainer.train() requires a train_dataset.",))
-        dataset_size = self._effective_train_dataset_size()
-        if dataset_size <= 0:
-            raise ConfigurationError(
-                *(
-                    "DPTrainer requires a non-empty train_dataset: DP-SGD needs "
-                    "at least one example to build the per-example loss surface "
-                    "and calibrate Poisson sampling.",
-                )
-            )
         # Rank-local sample rate.  The user's ``expected_batch_size`` is the
         # *global* (cluster-wide) expected Poisson round size.  Under DDP we
         # shard the dataset (``opaque.distributed.local_shard``) and run the
@@ -1454,25 +1907,40 @@ class DPTrainer:
         # the *local* rate equals the *global* rate by construction.  The
         # accountant uses regular ``acc.poisson`` over the global rate.
         #
-        # ``dataset_size`` is the *post-trim* effective size — under DDP we
-        # drop ``len(train_dataset) % world_size`` tail examples so every
-        # rank ends up with an identical-length shard (avoids deadlocks for
-        # fixed-order FTRL samplers).  Computing ``sample_rate`` here from
-        # the trimmed denominator means the accountant calibrates noise for
-        # exactly the ``q`` the sampler will use — there is no "actual q
-        # vs accounted q" drift.
-        sample_rate = expected_batch_size / dataset_size
-        if sample_rate > 1.0:
+        # Under DDP, ``dataset_size`` is required to divide evenly across
+        # ranks. The trainer never data-dependently trims tail records: that
+        # preprocessing is not stable under add/remove adjacency. Computing
+        # ``sample_rate`` from this validated global population means the
+        # accountant and every rank-local sampler consume the same ``q``.
+        if type(skip_sampler_state_on_resume) is not bool:
+            raise ConfigurationError(*("skip_sampler_state_on_resume must be a bool.",))
+        if dataloader_in_order is not True:
+            raise ConfigurationError(
+                *("the resolved train invocation must require FIFO data loading.",)
+            )
+        if type(sampler_cursor_origin) is not int or sampler_cursor_origin < 0:
             raise ConfigurationError(
                 *(
-                    "DPTrainer requires expected_batch_size <= len(train_dataset) "
-                    "for Poisson sampling; got expected_batch_size="
-                    f"{expected_batch_size} and len(train_dataset)={dataset_size}.",
+                    "sampler_cursor_origin must be a non-negative integer, got "
+                    f"{sampler_cursor_origin!r}.",
                 )
             )
-        expected_steps_per_epoch, total_steps, num_epochs = self._steps_breakdown(
-            dataset_size
-        )
+        if sampler_cursor_origin != 0 and participation.sampling_mode != "poisson":
+            raise ConfigurationError(
+                *(
+                    "a non-zero sampler cursor origin requires whole-dataset "
+                    "Poisson sampling.",
+                )
+            )
+        if skip_sampler_state_on_resume and participation.sampling_mode != "poisson":
+            raise ConfigurationError(
+                *(
+                    "ignore_data_skip=True requires the resolved participation "
+                    "plan to use whole-dataset Poisson sampling; got "
+                    f"{participation.sampling_mode!r}. Restore the saved sampler "
+                    "cursor or start a fresh run.",
+                )
+            )
 
         self.state.max_steps = total_steps
         # HF-parity bookkeeping for ``trainer_state.json``.
@@ -1537,7 +2005,7 @@ class DPTrainer:
         lr_schedule = self.create_scheduler(num_training_steps=total_steps)
 
         # --- MF strategy (DP-FTRL only) ---
-        mechanism_kind = a.privacy_noise_mechanism
+        mechanism_kind = participation.mechanism_kind
         mf: _dpftrl.MFContext | None = None
         if mechanism_kind != "gaussian":
             mf_strategy = _dpftrl.build_strategy(
@@ -1549,19 +2017,14 @@ class DPTrainer:
                 ),
                 lr_schedule=lr_schedule,
             )
-            sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
             mf_amplifier_factory = _dpftrl.build_amplifier_factory(
-                sampling_mode=a.sampling_mode,
+                plan=participation,
                 strategy=mf_strategy,
-                sample_rate=sample_rate,
-                n_steps=total_steps,
-                num_bins=expected_steps_per_epoch,
-                dataset_size=dataset_size,
-                truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
             )
             mf = _dpftrl.MFContext(
-                strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
+                strategy=mf_strategy,
+                amplifier_factory=mf_amplifier_factory,
+                participation_plan=participation,
             )
 
         # --- Privacy calibration ---
@@ -1573,11 +2036,8 @@ class DPTrainer:
         mechanism = self._build_mechanism(
             a,
             expected_batch_size,
-            sample_rate,
             clip_norm,
-            dataset_size,
-            n_steps=total_steps,
-            num_bins=expected_steps_per_epoch,
+            participation=participation,
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
@@ -1604,8 +2064,7 @@ class DPTrainer:
             expected_batch_size=expected_batch_size,
             total_steps=total_steps,
         )
-        _sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        _trunc_cap = _sk.get("truncated_batch_size", _sk.get("max_batch_size"))
+        _trunc_cap = participation.sampler_kwargs_dict().get("truncated_batch_size")
         log.info(
             "Resolved privacy config: delta=%.2e, noise_multiplier=%.4f (%s), "
             "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
@@ -1625,6 +2084,7 @@ class DPTrainer:
             clip_state,
             noise_multiplier,
         )
+        realized_process = mechanism(noise_multiplier)
         # --- Noise ---
         # Sensitivity flows through the ``ClippedPytree`` returned by
         # ``clipped_grad`` (its ``.max_norm`` field).  ``noise_fn`` reads
@@ -1655,7 +2115,12 @@ class DPTrainer:
             # ``min_sep`` / ``max_participations``) off the raw amplifier so
             # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
-            _amp = mf.amplifier_factory(noise_multiplier)
+            _amp = _dpftrl.validate_mf_process_for_plan(
+                participation,
+                mf,
+                noise_multiplier,
+            )
+            realized_process = _amp
             if int(_amp.n_steps) != total_steps:
                 raise OperationError(
                     *(
@@ -1679,7 +2144,7 @@ class DPTrainer:
         collate_fn = self._resolve_collate_fn()
 
         accounting, step_process, horizon_process = _initialize_accounting(
-            mechanism(noise_multiplier)
+            realized_process
         )
 
         return _TrainingContext(
@@ -1696,6 +2161,7 @@ class DPTrainer:
             lr_schedule=lr_schedule,
             accounting=accounting,
             mechanism=mechanism,
+            participation=participation,
             step_process=step_process,
             target_delta=target_delta,
             sample_rate=sample_rate,
@@ -1704,6 +2170,14 @@ class DPTrainer:
             total_steps=total_steps,
             num_epochs=num_epochs,
             collate_fn=collate_fn,
+            skip_sampler_state_on_resume=skip_sampler_state_on_resume,
+            sampler_cursor_origin=sampler_cursor_origin,
+            dataloader_in_order=dataloader_in_order,
+            include_num_input_tokens_seen=invocation.include_num_input_tokens_seen,
+            average_tokens_across_devices=invocation.average_tokens_across_devices,
+            include_tokens_per_second=invocation.include_tokens_per_second,
+            push_to_hub=invocation.push_to_hub,
+            executed_global_step=global_step_already_done,
             batch_keys=batch_keys,
             offload_ctx=offload_ctx,
             opt_name=(
@@ -1720,7 +2194,81 @@ class DPTrainer:
             mf=mf,
         )
 
-    def _inner_training_loop(
+    def _restore_sampler_for_resume(
+        self,
+        ctx: _TrainingContext,
+        saved_sampler_state: dict[str, Any],
+    ) -> None:
+        """Restore and revalidate a sampler before a DataLoader can consume it."""
+        from opaque.serialization import from_state_dict
+
+        # Build a template over the current rank-local dataset, without leaving
+        # a DataLoader bound to it. The serializer restores the saved cursor and
+        # stream; the plan check then rejects any saved privacy-parameter drift.
+        if ctx.current_sampler is None:
+            self._train_dataloader = None
+            self.get_train_dataloader()
+            self._train_dataloader = None
+        ctx.current_sampler = from_state_dict(ctx.current_sampler, saved_sampler_state)
+        try:
+            _dpftrl.validate_sampler_for_plan(
+                ctx.participation,
+                ctx.current_sampler,
+                mf=ctx.mf,
+                noise_multiplier=ctx.noise_multiplier,
+                process=ctx.horizon_process,
+            )
+        except ConfigurationError as exc:
+            raise CheckpointError(
+                *(
+                    "restored sampler does not match the current participation "
+                    "plan; refusing to consume a differently accounted stream.",
+                )
+            ) from exc
+
+    def _assert_execution_step(
+        self,
+        ctx: _TrainingContext,
+        *,
+        boundary: str,
+    ) -> None:
+        """Fail closed when callback-visible progress leaves private authority."""
+        expected = ctx.executed_global_step
+        observed = self.state.global_step
+        invalid_authority = (
+            type(expected) is not int or expected < 0 or expected > ctx.total_steps
+        )
+        local_mismatch = invalid_authority or (
+            type(observed) is not int or observed != expected
+        )
+        local_error: OperationError | None = None
+        if invalid_authority:
+            local_error = OperationError(
+                *(
+                    "internal executed-step authority is invalid at "
+                    f"{boundary}: {expected!r}.",
+                )
+            )
+        elif local_mismatch:
+            local_error = OperationError(
+                *(
+                    "callback-visible TrainerState.global_step diverged from "
+                    "the private executed-step authority at "
+                    f"{boundary}: observed={observed!r}, expected={expected}. "
+                    "Callbacks may inspect progress but must not mutate "
+                    "state.global_step.",
+                )
+            )
+        self._raise_cluster_phase_error(
+            local_error,
+            boundary=(
+                f"executed-step authority after {boundary}: "
+                f"expected={expected!r},total={ctx.total_steps!r},"
+                f"cursor_origin={ctx.sampler_cursor_origin!r}"
+            ),
+        )
+
+    def _inner_training_loop(  # noqa: PLR0915 - explicit callback guards
         self,
         ctx: _TrainingContext,
         *,
@@ -1731,9 +2279,12 @@ class DPTrainer:
         """Epoch/step loop with Poisson sampling."""
         a = self.args
 
-        self._control = self._callback_handler.on_train_begin(
-            self.args, self.state, self._control
-        )
+        with self._cluster_local_phase(boundary="on_train_begin callback"):
+            self._control = self._callback_handler.on_train_begin(
+                self.args, self.state, self._control
+            )
+        self._assert_execution_step(ctx, boundary="on_train_begin")
+        self._assert_control_consensus(boundary="on_train_begin")
 
         # Emit setup-time constants once now so they land in W&B summary
         # (via _PRIVACY_SUMMARY_KEYS) for cross-run comparison while the run
@@ -1759,8 +2310,10 @@ class DPTrainer:
             setup_constants["converged_microbatch_size"] = (
                 self.state.converged_microbatch_size
             )
-        if setup_constants:
-            self.log(setup_constants)
+        with self._cluster_local_phase(boundary="setup logging"):
+            if setup_constants:
+                self.log(setup_constants)
+        self._assert_execution_step(ctx, boundary="setup logging")
 
         log.info(
             "Starting DP-SGD training: %d epochs, ~%d steps/epoch, %d total",
@@ -1770,7 +2323,7 @@ class DPTrainer:
         )
 
         # On resume, pick up from the saved global_step/epoch.
-        global_step = self.state.global_step if resume_path is not None else 0
+        global_step = ctx.executed_global_step
         last_loss = 0.0
         last_step_result: dict[str, Any] = {}
         # HF parity: derive ``start_epoch`` from ``global_step``, not
@@ -1808,7 +2361,9 @@ class DPTrainer:
         # fresh runs.  Disable ``eval_on_start`` if you don't want it
         # on resume.
         if a.eval_on_start:
-            self.evaluate(ignore_keys=ignore_keys_for_eval)
+            with self._cluster_local_phase(boundary="eval_on_start"):
+                self.evaluate(ignore_keys=ignore_keys_for_eval)
+            self._assert_execution_step(ctx, boundary="eval_on_start")
 
         # Build the train loader ONCE: a single
         # ``PoissonSampler(n_steps=total_steps)`` drives every
@@ -1819,64 +2374,79 @@ class DPTrainer:
         # is installed on ``ctx.current_sampler`` *before* loader
         # construction so ``DataLoader`` binds to it (the
         # ``batch_sampler`` attribute is immutable post-init).
-        if (
-            resume_path is not None
-            and saved_sampler_state is not None
-            and not a.ignore_data_skip
-        ):
-            from opaque.serialization import from_state_dict
+        with self._cluster_local_phase(boundary="train dataloader construction"):
+            if (
+                resume_path is not None
+                and saved_sampler_state is not None
+                and not ctx.skip_sampler_state_on_resume
+            ):
+                self._restore_sampler_for_resume(ctx, saved_sampler_state)
 
-            # Need a template sampler whose ``data_source`` matches the
-            # saved length so ``from_state_dict`` can validate.  Build
-            # one (without caching the loader yet), then replace it
-            # with the restored cursor before the actual loader binds.
-            if ctx.current_sampler is None:
-                self._train_dataloader = None
-                self.get_train_dataloader()  # populates ctx.current_sampler
-                self._train_dataloader = None  # drop the cached loader
-            ctx.current_sampler = from_state_dict(
-                ctx.current_sampler, saved_sampler_state
-            )
-
-        train_loader = self.get_train_dataloader()
-        train_loader_iter = iter(train_loader)
+            train_loader = self.get_train_dataloader()
+            train_loader_iter = iter(train_loader)
+        self._assert_execution_step(ctx, boundary="train dataloader construction")
 
         for epoch in range(start_epoch, ctx.num_epochs):
             self.state.epoch = float(epoch)
-            self._control = self._callback_handler.on_epoch_begin(
-                self.args, self.state, self._control
-            )
+            with self._cluster_local_phase(boundary="on_epoch_begin callback"):
+                self._control = self._callback_handler.on_epoch_begin(
+                    self.args, self.state, self._control
+                )
+            self._assert_execution_step(ctx, boundary="on_epoch_begin")
+            self._assert_control_consensus(boundary="on_epoch_begin")
             if self._control.should_training_stop:
                 break
 
             for step_idx in range(ctx.expected_steps_per_epoch):
-                try:
-                    batch = next(train_loader_iter)
-                except StopIteration:
-                    # Sampler exhausted before this epoch's quota — happens
-                    # when ``total_steps`` doesn't divide evenly into the
-                    # ``num_epochs × expected_steps_per_epoch`` budget, or
-                    # on resume past the recorded ``total_steps``.
+                exhausted = False
+                batch = None
+                batch_size = 0
+                with self._cluster_local_phase(
+                    boundary="train batch fetch and input preparation"
+                ):
+                    try:
+                        batch = next(train_loader_iter)
+                    except StopIteration:
+                        # Sampler exhausted before this epoch's quota — happens
+                        # when ``total_steps`` doesn't divide evenly into the
+                        # ``num_epochs × expected_steps_per_epoch`` budget, or
+                        # on resume past the recorded ``total_steps``.
+                        exhausted = True
+                    if not exhausted:
+                        batch = self._prepare_input(batch)
+                        batch_size = _eval.find_batch_size(batch) or 0
+                if exhausted:
                     break
-                batch = self._prepare_input(batch)
-                batch_size = _eval.find_batch_size(batch) or 0
+                assert batch is not None
 
-                self._control = self._callback_handler.on_step_begin(
-                    self.args, self.state, self._control
-                )
+                with self._cluster_local_phase(boundary="on_step_begin callback"):
+                    self._control = self._callback_handler.on_step_begin(
+                        self.args, self.state, self._control
+                    )
+                self._assert_execution_step(ctx, boundary="on_step_begin")
+                self._assert_control_consensus(boundary="on_step_begin")
 
                 # Independent mechanisms compose here; horizon contexts carry
                 # no step process because their complete run was attached once.
-                _account_independent_step(ctx)
+                with self._cluster_local_phase(boundary="privacy-step accounting"):
+                    if ctx.step_in_progress:
+                        raise OperationError(
+                            *("a privacy step was already marked in progress.",)
+                        )
+                    ctx.step_in_progress = True
+                    _account_independent_step(ctx)
 
                 # Training step: clip → noise → optimize.  DP-SGD has no
                 # substep concept; each iteration is a full optimizer step
                 # over one Poisson-sampled logical batch.  ``on_substep_end``
                 # is therefore not fired.
                 step_result = self.training_step(self._model, batch)
+                self._assert_execution_step(ctx, boundary="training_step")
 
-                global_step += 1
+                ctx.executed_global_step += 1
+                global_step = ctx.executed_global_step
                 self.state.global_step = global_step
+                ctx.step_in_progress = False
                 # HF parity: ``state.epoch`` is fractional during the inner
                 # loop — ``epoch + (step + 1) / steps_per_epoch``.  This is
                 # what ``ProgressCallback``, W&B / TensorBoard timeline, and
@@ -1893,88 +2463,104 @@ class DPTrainer:
                 # ``{loss: 0, batch_size: 0}`` here, which the gate reads via
                 # ``.get`` defaults (the logged loss is the windowed average,
                 # unaffected by this step).
-                if batch_size != 0:
-                    last_loss = step_result["loss"]
-                    last_step_result = step_result
-                    # Loss accumulator stays on device for DDP gather.  A NaN
-                    # reaching here reflects a genuine forward / loss-math
-                    # divergence — propagate it through the running average so
-                    # the user sees the honest signal instead of a
-                    # smoothed-over fake curve.
-                    tr_loss_step = torch.tensor(float(last_loss), device=self._device)
-                    self._tr_loss = torch.add(self._tr_loss, tr_loss_step)
-                # Token counting.
-                if batch_size != 0 and a.include_num_input_tokens_seen != "no":
-                    main_input_name = getattr(
-                        self._model, "main_input_name", "input_ids"
-                    )
-                    if main_input_name in batch:
-                        if a.include_num_input_tokens_seen == "non_padding":
-                            if "attention_mask" in batch:
-                                n_tokens = int(batch["attention_mask"].sum().item())
-                            elif (
-                                self._processing_class is not None
-                                and hasattr(self._processing_class, "pad_token_id")
-                                and self._processing_class.pad_token_id is not None
-                            ):
-                                n_tokens = int(
-                                    (
-                                        batch[main_input_name]
-                                        != self._processing_class.pad_token_id
+                n_tokens = 0
+                token_count_for_reduction: Tensor | None = None
+                with self._cluster_local_phase(
+                    boundary="post-optimizer metric construction"
+                ):
+                    if batch_size != 0:
+                        last_loss = step_result["loss"]
+                        last_step_result = step_result
+                        # Loss accumulator stays on device for DDP gather. A NaN
+                        # reaching here reflects a genuine forward / loss-math
+                        # divergence — propagate it through the running average.
+                        tr_loss_step = torch.tensor(
+                            float(last_loss), device=self._device
+                        )
+                        self._tr_loss = torch.add(self._tr_loss, tr_loss_step)
+                    # Compute the rank-local token contribution before the
+                    # common reduction below. Empty Poisson ranks contribute 0
+                    # but must still enter that reduction.
+                    if batch_size != 0 and ctx.include_num_input_tokens_seen != "no":
+                        main_input_name = getattr(
+                            self._model, "main_input_name", "input_ids"
+                        )
+                        if main_input_name in batch:
+                            if ctx.include_num_input_tokens_seen == "non_padding":
+                                if "attention_mask" in batch:
+                                    n_tokens = int(batch["attention_mask"].sum().item())
+                                elif (
+                                    self._processing_class is not None
+                                    and hasattr(self._processing_class, "pad_token_id")
+                                    and self._processing_class.pad_token_id is not None
+                                ):
+                                    n_tokens = int(
+                                        (
+                                            batch[main_input_name]
+                                            != self._processing_class.pad_token_id
+                                        )
+                                        .sum()
+                                        .item()
                                     )
-                                    .sum()
-                                    .item()
-                                )
-                            else:
-                                log.warning(
-                                    "include_num_input_tokens_seen='non_padding': "
-                                    "no attention_mask and no pad_token_id on "
-                                    "processing_class — falling back to all tokens."
-                                )
+                                else:
+                                    log.warning(
+                                        "include_num_input_tokens_seen='non_padding': "
+                                        "no attention_mask and no pad_token_id on "
+                                        "processing_class — falling back to all "
+                                        "tokens."
+                                    )
+                                    n_tokens = batch[main_input_name].numel()
+                            else:  # "all"
                                 n_tokens = batch[main_input_name].numel()
-                        else:  # "all"
-                            n_tokens = batch[main_input_name].numel()
-                        # ``average_tokens_across_devices=True``
-                        # (HF parity) sums the per-rank token count into the
-                        # cluster-wide total so ``num_input_tokens_seen`` and
-                        # the live tokens/sec rate reflect the whole DDP
-                        # batch.  The flag default is True in HF; we respect
-                        # whatever the user set on ``args``.
-                        if self._ddp.is_distributed and getattr(
-                            a, "average_tokens_across_devices", True
-                        ):
-                            from opaque.api.engine.distributed._state import (
-                                reduce_scalar,
-                            )
-
-                            n_tokens = int(
-                                reduce_scalar(
-                                    n_tokens,
-                                    op="sum",
-                                    device=self._device,
-                                )
-                            )
-                        self.state.num_input_tokens_seen += n_tokens
+                    if (
+                        ctx.include_num_input_tokens_seen != "no"
+                        and self._ddp.is_distributed
+                        and ctx.average_tokens_across_devices
+                    ):
+                        token_count_for_reduction = self._prepare_token_count_reduction(
+                            n_tokens
+                        )
+                if ctx.include_num_input_tokens_seen != "no":
+                    # ``average_tokens_across_devices=True`` (HF parity) sums
+                    # every rank, including locally empty Poisson rounds.
+                    if self._ddp.is_distributed and ctx.average_tokens_across_devices:
+                        assert token_count_for_reduction is not None
+                        torch.distributed.all_reduce(
+                            token_count_for_reduction,
+                            op=torch.distributed.ReduceOp.SUM,
+                        )
+                        n_tokens = int(token_count_for_reduction.item())
+                    self.state.num_input_tokens_seen += n_tokens
                 # ``DefaultFlowCallback.on_step_end`` populates the
                 # ``should_log/save/evaluate/training_stop`` flags from
                 # ``state.{logging,eval,save}_steps``; user callbacks
                 # registered after it can override.
-                self._control = self._callback_handler.on_step_end(
-                    self.args, self.state, self._control
-                )
+                with self._cluster_local_phase(boundary="on_step_end callback"):
+                    self._control = self._callback_handler.on_step_end(
+                        self.args, self.state, self._control
+                    )
+                self._assert_execution_step(ctx, boundary="on_step_end")
+                self._assert_control_consensus(boundary="on_step_end")
                 self._maybe_log_save_evaluate(
                     ctx,
                     step_result,
                     global_step,
                     ignore_keys_for_eval=ignore_keys_for_eval,
                 )
+                self._assert_execution_step(
+                    ctx, boundary="post-step log/eval/save callbacks"
+                )
+                self._assert_control_consensus(
+                    boundary="post-step log/eval/save callbacks"
+                )
 
                 # Stop-at-ε: free integer comparison against the predicted
                 # crossing step — after the accounted step and its
-                # log/save/eval gate, before the next batch fetch, so the
-                # resumable sampler never advances past ``global_step`` and a
-                # target reached exactly on the final step still sets the
-                # flag (checked before the ``total_steps`` ceiling) (#392).
+                # log/save/eval gate, before this loop requests the next batch.
+                # Workers may already have prefetched later batches, but the
+                # checkpoint projection commits only ``global_step``. A target
+                # reached exactly on the final step still sets the flag
+                # (checked before the ``total_steps`` ceiling) (#392).
                 if ctx.stop_at_step is not None and global_step >= ctx.stop_at_step:
                     self.state.privacy_target_epsilon_reached = True
                     self._control.should_training_stop = True
@@ -1987,8 +2573,6 @@ class DPTrainer:
                 if self._control.should_training_stop:
                     break
                 if self._control.should_epoch_stop:
-                    break
-                if 0 < a.max_steps <= global_step:
                     break
                 # Hard ceiling at the calibrated horizon.  Noise was
                 # calibrated for exactly ``ctx.total_steps`` composed
@@ -2006,81 +2590,97 @@ class DPTrainer:
             # epoch-strategy cadence; ``_maybe_log_save_evaluate`` then acts
             # on the flags exactly as the step-end path does, so the
             # epoch-boundary log / eval / save sequence shares one call site.
-            self._control = self._callback_handler.on_epoch_end(
-                self.args, self.state, self._control
-            )
+            with self._cluster_local_phase(boundary="on_epoch_end callback"):
+                self._control = self._callback_handler.on_epoch_end(
+                    self.args, self.state, self._control
+                )
+            self._assert_execution_step(ctx, boundary="on_epoch_end")
+            self._assert_control_consensus(boundary="on_epoch_end")
             self._maybe_log_save_evaluate(
                 ctx,
                 last_step_result,
                 global_step,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
+            self._assert_execution_step(
+                ctx, boundary="post-epoch log/eval/save callbacks"
+            )
+            self._assert_control_consensus(
+                boundary="post-epoch log/eval/save callbacks"
+            )
 
             if self._control.should_training_stop:
-                break
-            if 0 < a.max_steps <= global_step:
                 break
             if global_step >= ctx.total_steps:  # calibrated-horizon ceiling
                 break
 
         # Final save — parity with HF: when saving is enabled, the last step always
         # produces (or refreshes) a checkpoint, even if it doesn't align with save_steps.
-        self._maybe_final_save(ctx, global_step)
+        self._assert_execution_step(ctx, boundary="final save")
+        self._maybe_final_save(ctx)
 
         # Best-model rewind happens after the final save so the checkpoint dir exists.
-        if a.load_best_model_at_end:
-            self._load_best_model(ctx)
+        with self._cluster_local_phase(boundary="best-model restoration"):
+            if a.load_best_model_at_end:
+                self._load_best_model(ctx)
 
         # Final metrics
-        final_epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
-        # HF parity: add any remaining tr_loss to the total before computing avg.
-        # This ensures that even if logging_steps didn't align perfectly with the
-        # final step, the total training loss includes all steps.
-        self._total_loss_scalar += self._tr_loss.item()
-        effective_global_step = max(global_step, 0.001)  # Avoid ZeroDivisionError
-        train_loss = self._total_loss_scalar / effective_global_step
-        train_start = self._train_start_time or time.time()
-        metrics: dict[str, Any] = speed_metrics(
-            "train",
-            train_start,
-            num_samples=len(self._train_dataset) * ctx.num_epochs,
-            num_steps=global_step,
-            num_tokens=(
-                self.state.num_input_tokens_seen
-                if a.include_tokens_per_second
-                else None
-            ),
-        )
-        metrics.update(
-            {
-                "train_loss": train_loss,
-                "train_steps": global_step,
-                "privacy_epsilon": final_epsilon,
-                "privacy_delta": ctx.target_delta,
-                "privacy_noise_multiplier": ctx.noise_multiplier,
-            }
-        )
-        if a.include_num_input_tokens_seen != "no":
-            metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
-        self._memory_tracker.stop_and_update_metrics(metrics)
+        final_epsilon = 0.0
+        train_loss = 0.0
+        metrics: dict[str, Any] = {}
+        with self._cluster_local_phase(boundary="final metric construction"):
+            final_epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
+            # Include any loss remaining after the last logging boundary.
+            self._total_loss_scalar += self._tr_loss.item()
+            effective_global_step = max(global_step, 0.001)
+            train_loss = self._total_loss_scalar / effective_global_step
+            train_start = self._train_start_time or time.time()
+            metrics = speed_metrics(
+                "train",
+                train_start,
+                num_samples=len(self._train_dataset) * ctx.num_epochs,
+                num_steps=global_step,
+                num_tokens=(
+                    self.state.num_input_tokens_seen
+                    if ctx.include_tokens_per_second
+                    else None
+                ),
+            )
+            metrics.update(
+                {
+                    "train_loss": train_loss,
+                    "train_steps": global_step,
+                    "privacy_epsilon": final_epsilon,
+                    "privacy_delta": ctx.target_delta,
+                    "privacy_noise_multiplier": ctx.noise_multiplier,
+                }
+            )
+            if ctx.include_num_input_tokens_seen != "no":
+                metrics["num_input_tokens_seen"] = self.state.num_input_tokens_seen
+            self._memory_tracker.stop_and_update_metrics(metrics)
 
-        log.info(
-            "Training complete: %d steps, final loss=%.4f, epsilon=%.3f",
-            global_step,
-            train_loss,
-            final_epsilon,
-        )
-        self.log(metrics, start_time=self._train_start_time)
-        self._refresh_final_checkpoint_state(global_step)
+        with self._cluster_local_phase(boundary="final logging"):
+            log.info(
+                "Training complete: %d steps, final loss=%.4f, epsilon=%.3f",
+                global_step,
+                train_loss,
+                final_epsilon,
+            )
+            self.log(metrics, start_time=self._train_start_time)
+        self._assert_execution_step(ctx, boundary="final logging")
+        self._refresh_final_checkpoint_state(ctx)
 
-        self._control = self._callback_handler.on_train_end(
-            self.args, self.state, self._control
-        )
+        with self._cluster_local_phase(boundary="on_train_end callback"):
+            self._control = self._callback_handler.on_train_end(
+                self.args, self.state, self._control
+            )
+        self._assert_execution_step(ctx, boundary="on_train_end")
 
         # Publish the finished model once, at the end of training (the only
         # auto-push point — no per-checkpoint uploads).
-        if self.args.push_to_hub:
-            _hub.push_to_hub(self, commit_message="End of training")
+        with self._cluster_local_phase(boundary="final Hub publication"):
+            if ctx.push_to_hub:
+                _hub.push_to_hub(self, commit_message="End of training")
 
         return TrainOutput(global_step, train_loss, metrics)
 
@@ -2109,38 +2709,29 @@ class DPTrainer:
                     "DPTrainer's functional context is not initialised.",
                 )
             )
-        inputs = self._prepare_input(inputs)
-        # Subclass hook: augment the batch with tensors computed *outside* vmap
-        # (e.g. TR-DPO's per-step reference logps). Default is a no-op. Any keys
-        # it adds must already be present in ``ctx.batch_keys`` (discovered at
-        # setup), so subclasses seed placeholder columns at construction and the
-        # hook overwrites their values here.
-        inputs = self._augment_inputs(inputs)
-        # Positional batch tensors in the order discovered at
-        # ``_setup_training`` time.  Matches the ``batch_argnums`` the
-        # loss builder published, so ``vmap`` batches correctly.
-        try:
-            batch_args = tuple(inputs[k] for k in ctx.batch_keys)
-        except KeyError as missing:
-            raise InputTypeError(
-                *(
-                    f"data_collator output is missing required key {missing!s}; "
-                    f"expected keys {list(ctx.batch_keys)!r} (discovered at "
-                    f"_setup_training time from a dry run on one example).",
-                )
-            ) from None
-        # Tracked separately for batch-size accounting; the first
-        # tensor's leading dim is what HF's ``find_batch_size`` would
-        # return.  ``clipped_grad`` short-circuits on empty batches
-        # internally (returning zero grads + empty aux), and the DDP
-        # collectives below run unchanged on a zero-grad pytree — every
-        # rank issues a SUM AllReduce on identical-zero tensors, so the
-        # cluster stays in lockstep even when individual ranks see empty
-        # Poisson rounds.  Privacy budget is consumed for every step
-        # regardless of realized batch size (Poisson accounting is
-        # data-independent).
-        leading = batch_args[0]
-        step_batch_size = int(leading.shape[0])
+        batch_args: tuple[Tensor, ...] = ()
+        step_batch_size = 0
+        with self._cluster_local_phase(boundary="training-step input augmentation"):
+            inputs = self._prepare_input(inputs)
+            # Subclass hook: augment the batch with tensors computed *outside*
+            # vmap (e.g. TR-DPO's per-step reference logps). Any keys it adds
+            # must already be present in ``ctx.batch_keys``.
+            inputs = self._augment_inputs(inputs)
+            # Positional batch tensors in the order discovered at setup.
+            try:
+                batch_args = tuple(inputs[k] for k in ctx.batch_keys)
+            except KeyError as missing:
+                raise InputTypeError(
+                    *(
+                        f"data_collator output is missing required key {missing!s}; "
+                        f"expected keys {list(ctx.batch_keys)!r} (discovered at "
+                        f"_setup_training time from a dry run on one example).",
+                    )
+                ) from None
+            # Empty local Poisson rounds still enter every DDP collective with
+            # zero gradients; privacy spend advances independent of batch size.
+            leading = batch_args[0]
+            step_batch_size = int(leading.shape[0])
         # Per-step perf tracker covers clip → DDP sync → noise → optimizer;
         # post-step metric bookkeeping below stays outside the scope.
         # ``sp.mark`` records the elapsed time since the previous mark.
@@ -2150,20 +2741,21 @@ class DPTrainer:
             # AllReduce below. This includes lazy strict-compilation failures:
             # a rank with an empty Poisson draw skips the compiled kernel while
             # a non-empty sibling may fail during its first compilation.
-            local_grad_error: Exception | None = None
             grads = aux = None
-            try:
+            with (
+                self._cluster_local_phase(boundary="clipped-gradient construction"),
+                ctx.offload_ctx,
+                self._autocast_ctx(),
+            ):
                 # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
                 # the placement that actually casts on MPS (see _autocast_ctx).
-                with ctx.offload_ctx, self._autocast_ctx():
-                    (grads, aux), ctx.clip_state = ctx.grad_fn(
-                        ctx.trainable_params,
-                        *batch_args,
-                        state=ctx.clip_state,
-                    )
-            except Exception as grad_error:
-                local_grad_error = grad_error
-            self._synchronize_grad_failure(local_grad_error)
+                (grads, aux), ctx.clip_state = ctx.grad_fn(
+                    ctx.trainable_params,
+                    *batch_args,
+                    state=ctx.clip_state,
+                )
+            assert grads is not None
+            assert aux is not None
 
             # DDP collectives between clipping and noise.
             # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
@@ -2191,13 +2783,16 @@ class DPTrainer:
             # reads it directly and returns a ``NoisedPytree``.  Adaptive
             # clipping flows through unchanged because the wrapper updates
             # ``max_norm`` per call.
-            noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
-            sp.mark("noise")
+            noisy_grads = None
+            with self._cluster_local_phase(boundary="noise generation"):
+                noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
+                sp.mark("noise")
 
-            # HF parity: empty device cache *after* the forward/backward pass
-            # (activations are freed) but *before* the optimizer update.
-            # Uses global_step (pre-increment) to match HF's cadence.
-            self._maybe_empty_device_cache()
+                # HF parity: empty device cache *after* the forward/backward pass
+                # (activations are freed) but *before* the optimizer update.
+                # Uses global_step (pre-increment) to match HF's cadence.
+                self._maybe_empty_device_cache()
+            assert noisy_grads is not None
 
             # Pre-optimizer hook fires *after* clipping+noise but *before* the
             # optimizer update.  ``grads`` exposes the clipped-and-noised
@@ -2207,54 +2802,60 @@ class DPTrainer:
             # ``call_event`` rather than the per-hook method so we can forward
             # DP-specific kwargs (``grads``, ``trainable_params``) — HF's
             # ``CallbackHandler.on_pre_optimizer_step`` has a fixed signature.
-            self._control = self._callback_handler.call_event(
-                "on_pre_optimizer_step",
-                self.args,
-                self.state,
-                self._control,
-                grads=noisy_grads,
-                trainable_params=ctx.trainable_params,
-            )
+            ctx.attempt_has_exposed_release = True
+            with self._cluster_local_phase(boundary="on_pre_optimizer_step"):
+                self._control = self._callback_handler.call_event(
+                    "on_pre_optimizer_step",
+                    self.args,
+                    self.state,
+                    self._control,
+                    grads=noisy_grads,
+                    trainable_params=ctx.trainable_params,
+                )
 
             # Optimizer step — DP-aware optimizers read σ directly off the
             # ``NoisedPytree`` when ``noise_bias_correction=True`` was set at
             # construction (via ``optim_args``); no per-step kwargs are accepted.
-            updates, ctx.opt_state = ctx.opt.update(
-                noisy_grads,
-                ctx.opt_state,
-                params=ctx.trainable_params,
-            )
-            ctx.trainable_params = torchopt.apply_updates(ctx.trainable_params, updates)
-            sp.mark("optimizer")
+            with self._cluster_local_phase(boundary="optimizer update"):
+                updates, ctx.opt_state = ctx.opt.update(
+                    noisy_grads,
+                    ctx.opt_state,
+                    params=ctx.trainable_params,
+                )
+                ctx.trainable_params = torchopt.apply_updates(
+                    ctx.trainable_params, updates
+                )
+                sp.mark("optimizer")
 
             # Post-optimizer hook: surface the post-update parameters so
             # callbacks tracking weight-update norms can snapshot them.
-            self._control = self._callback_handler.call_event(
-                "on_optimizer_step",
-                self.args,
-                self.state,
-                self._control,
-                trainable_params=ctx.trainable_params,
-            )
+            with self._cluster_local_phase(boundary="on_optimizer_step"):
+                self._control = self._callback_handler.call_event(
+                    "on_optimizer_step",
+                    self.args,
+                    self.state,
+                    self._control,
+                    trainable_params=ctx.trainable_params,
+                )
 
-        # After ``sync(aux)`` in distributed mode, ``aux.batch_size`` is
-        # the cluster-wide realized batch size (sum across ranks); on a
-        # single process it equals the local batch.  Use it as the truth
-        # for the empty-step gate so a rank with local_bs=0 still reports
-        # the cluster-wide loss when other ranks contributed examples.
+        metrics: dict[str, Any] = {}
+        with self._cluster_local_phase(boundary="training-step metric construction"):
+            metrics = self._build_training_step_metrics(grads, noisy_grads, aux)
+        return metrics
+
+    def _build_training_step_metrics(
+        self,
+        grads: Any,
+        noisy_grads: Any,
+        aux: Any,
+    ) -> dict[str, Any]:
+        """Build local scalar telemetry after every required DDP collective."""
+        # ``sync(aux)`` makes this cluster-wide under DDP. A locally empty rank
+        # therefore reports the same global batch result as its siblings.
         batch_size = int(getattr(aux, "batch_size", 0) or 0)
         if batch_size == 0:
             return {"loss": 0.0, "batch_size": 0}
 
-        # Noise σ travels on the ``NoisedPytree`` wrapper; ``_effective``
-        # handles both scalar and ``PerGroup`` shapes.  ``grads.max_norm``
-        # is the *realized* per-step clipping threshold: ``adaptive_clipped_grad``
-        # updates it geometrically via ``_next_clipping_norm`` each step, and
-        # ``FixedClipState`` leaves it equal to the configured ``ctx.clip_norm``.
-        # Read it off the ``ClippedPytree`` rather than ``ctx.clip_norm`` —
-        # under adaptive mode ``AdaptiveClipState`` carries
-        # ``_current_clipping_norm`` / ``_next_clipping_norm``, not
-        # ``clipping_norm``.
         noise_std = noisy_grads.noise_stddev
         clipping_norm = grads.max_norm
         metrics: dict[str, Any] = {
@@ -2288,23 +2889,16 @@ class DPTrainer:
                 group_metrics[group_name] = group_values
             if group_metrics:
                 metrics["group_metrics"] = group_metrics
-                # Per-group aggregate: mean engagement + worst group, rather
-                # than the engine's worst-group-only ``clipping_rate``.
-                _rates = [g["clip_rate"] for g in group_metrics.values()]
-                if _rates:
-                    metrics["clip_rate"] = sum(_rates) / len(_rates)
-                    metrics["clip_rate_max"] = max(_rates)
+                rates = [group["clip_rate"] for group in group_metrics.values()]
+                if rates:
+                    metrics["clip_rate"] = sum(rates) / len(rates)
+                    metrics["clip_rate_max"] = max(rates)
 
-        # Per-example training telemetry from the loss closure (e.g. DPO
-        # rewards). ``aux.loss_aux`` is a dict of per-example tensors, already
-        # summed/gathered across ranks by ``sync(aux)``; mean each into a scalar.
-        # Same un-noised diagnostic posture as the logged ``loss`` mean above.
         loss_aux = getattr(aux, "loss_aux", None)
         if loss_aux:
             metrics["loss_aux"] = {
                 name: value.float().mean().item() for name, value in loss_aux.items()
             }
-
         return metrics
 
     # ------------------------------------------------------------------
@@ -3714,16 +4308,14 @@ class DPTrainer:
         """Train DataLoader.
 
         During training (``self._ctx`` populated) returns a
-        single-pass :class:`PoissonSampler`-backed DataLoader bounded
-        by ``ctx.total_steps`` (one sampler instance for the whole
-        run; the outer epoch loop just synthesises boundaries for the
-        HF callback surface).  Outside training (``ctx is None``,
-        inspection mode) returns a standard DataLoader.
+        single-pass participation-sampler-backed DataLoader bounded by
+        ``ctx.total_steps`` (one sampler instance for the whole run; the outer
+        epoch loop just synthesises boundaries for the HF callback surface).
+        Outside training (``ctx is None``, inspection mode) returns a standard
+        DataLoader.
 
-        Override in a subclass to plug in a custom sampler — DP
-        correctness depends on the sampler producing each example with
-        independent probability ``ctx.sample_rate``, so any override
-        must preserve that invariant.
+        Override in a subclass to plug in a custom sampler only if it realizes
+        the exact ``ctx.participation`` contract used by the accountant.
         """
         a = self.args
         ctx = self._ctx
@@ -3766,49 +4358,33 @@ class DPTrainer:
         # mask: with a shared key every rank would select the *same* local
         # offsets, perfectly co-including the records that happen to share a
         # local index across shards — not the i.i.d. global Poisson draw the
-        # design intends (the per-record marginal stays Bernoulli(q) either
-        # way, so the privacy accounting is unaffected; this is a sampling
-        # *diversity* fix).  ``ctx.sample_rate`` was computed in
-        # ``_setup_training`` from the same trimmed denominator we use here
-        # (see :meth:`_effective_train_dataset_size`), so the rate the
-        # sampler is configured with matches the rate the accountant
-        # calibrated against — both bind to the post-trim ``q``.
+        # accountant requires. A target record's inclusion could then be
+        # exposed through common-record outputs at matching offsets, so the
+        # correct marginal alone is insufficient for amplification.
+        # ``ctx.sample_rate`` was computed in ``_setup_training`` from the
+        # same validated, divisible population we shard here (see
+        # :meth:`_effective_train_dataset_size`), so the sampler rate matches
+        # the accountant without data-dependent tail removal.
         #
-        # Resume caveat (multi-GPU only): the sampler snapshot is
+        # Resume boundary (multi-GPU only): the sampler snapshot is
         # self-contained (carries its own key) and is written once on rank
-        # 0, so resuming a DDP run currently restores rank 0's per-rank key
-        # on every rank, re-introducing the cross-rank correlation after the
-        # resume point.  Fully fixing that needs per-rank sampler snapshots;
-        # tracked for the multi-GPU work and validated there.
+        # 0. Ordinary DDP resume therefore fails before setup rather than
+        # restoring rank 0's key everywhere. ``ignore_data_skip=True`` takes
+        # the explicit fresh-stream path below; stateful samplers need a
+        # future per-rank snapshot format.
         if self._ddp.world_size > 1:
-            from torch.utils.data import Subset
-
             from opaque.distributed import local_shard
 
             world_size = self._ddp.world_size
-            trim_to = self._effective_train_dataset_size()
-            if trim_to < len(dataset):
-                dataset = Subset(dataset, range(trim_to))
+            self._effective_train_dataset_size()
             dataset = local_shard(
                 dataset,
                 rank=self._ddp.rank,
                 world_size=world_size,
             )
 
-        # ONE sampler for the whole run.  Resume installs
-        # ``ctx.current_sampler`` from a registry-deserialised snapshot
-        # before calling here, so the loader picks up the right cursor;
-        # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode``.  Three modes are reachable through
-        # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
-        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
-        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
-        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
-        # call it directly, but those are not exposed as config
-        # ``sampling_mode`` values (no matching accountant amplifier) and the
-        # config layer rejects them.  The sampler iterates end-to-end without
-        # per-epoch re-instantiation; the outer epoch loop is purely a
-        # synthetic boundary layer for HF callbacks.
+        # One sampler spans the run. Resume restores its cursor; a fresh loader
+        # consumes the same immutable participation plan as the accountant.
         if ctx.current_sampler is None:
             from opaque.random import fold_in
 
@@ -3829,18 +4405,11 @@ class DPTrainer:
             if self._ddp.world_size > 1:
                 sampler_key = fold_in(sampler_key, self._ddp.rank)
             ctx.current_sampler = _dpftrl.build_sampler(
-                sampling_mode=a.sampling_mode,
+                plan=ctx.participation,
                 dataset=dataset,
-                sample_rate=ctx.sample_rate,
-                n_steps=ctx.total_steps,
                 key=sampler_key,
-                sampling_kwargs=(
-                    a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else None
-                ),
                 mf=ctx.mf,
                 noise_multiplier=ctx.noise_multiplier,
-                num_bins=ctx.expected_steps_per_epoch,
-                expected_batch_size=int(a.train_batch_size),
             )
         sampler = ctx.current_sampler
 
@@ -3851,7 +4420,7 @@ class DPTrainer:
             "pin_memory": self._pin_memory_enabled(),
             "worker_init_fn": worker_init,
             "multiprocessing_context": self._dataloader_multiprocessing_context(),
-            "in_order": a.dataloader_in_order,
+            "in_order": ctx.dataloader_in_order,
         }
         if a.dataloader_num_workers > 0:
             kwargs["persistent_workers"] = a.dataloader_persistent_workers
@@ -4052,7 +4621,12 @@ class DPTrainer:
             return
         if self.state.epoch is not None:
             logs["epoch"] = self.state.epoch
-        if self.args.include_num_input_tokens_seen != "no":
+        token_mode = (
+            self._ctx.include_num_input_tokens_seen
+            if self._ctx is not None
+            else self.args.include_num_input_tokens_seen
+        )
+        if token_mode != "no":
             logs["num_input_tokens_seen"] = self.state.num_input_tokens_seen
             if start_time is not None:
                 logs.update(
@@ -4179,19 +4753,23 @@ class DPTrainer:
             ctrl = self._control
             ctrl.should_log = False
 
-        if ctrl.should_evaluate:
-            metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
-            # ``evaluate()`` fires ``on_evaluate`` from inside
-            # ``_after_evaluate``; :class:`BestModelSaveCallback` (auto-
-            # injected when ``save_strategy="best"``) may have set
-            # ``should_save`` there.  Refresh the local handle accordingly.
-            ctrl = self._control
-            is_new_best_metric = self._update_best_metric(metrics, global_step)
-            if is_new_best_metric and self.args.load_best_model_at_end:
-                # The regular save cadence can be less frequent than
-                # evaluation, so materialize the parameters just evaluated.
-                ctrl.should_save = True
-            ctrl.should_evaluate = False
+        # No rank may enter evaluation collectives until every rank has
+        # finished its rank-gated/local logging path.
+        self._raise_cluster_phase_error(None, boundary="training logging completion")
+
+        with self._cluster_local_phase(boundary="training evaluation dispatch"):
+            if ctrl.should_evaluate:
+                metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
+                # ``evaluate()`` fires ``on_evaluate`` from inside
+                # ``_after_evaluate``; :class:`BestModelSaveCallback` may have
+                # set ``should_save`` there. Refresh the local handle.
+                ctrl = self._control
+                is_new_best_metric = self._update_best_metric(metrics, global_step)
+                if is_new_best_metric and self.args.load_best_model_at_end:
+                    ctrl.should_save = True
+                ctrl.should_evaluate = False
+
+        self._assert_control_consensus(boundary="post-evaluation bookkeeping")
 
         if ctrl.should_save:
             self._save_checkpoint()
@@ -4323,12 +4901,9 @@ class DPTrainer:
         self,
         a: TrainingArguments,
         expected_batch_size: int,
-        sample_rate: float,
         clip_norm: Any,
-        dataset_size: int,
         *,
-        n_steps: int,
-        num_bins: int,
+        participation: ResolvedParticipationPlan,
         mf_amplifier_factory: Callable[[float], Any] | None = None,
     ) -> Callable[..., Any]:
         """Build the privacy accounting mechanism chain.
@@ -4337,7 +4912,7 @@ class DPTrainer:
         DP-SGD k-out-of-t and all DP-FTRL mechanisms return complete
         whole-horizon processes and must not be composed per step.
         """
-        if a.privacy_noise_mechanism != "gaussian":
+        if participation.mechanism_kind != "gaussian":
             if mf_amplifier_factory is None:
                 raise OperationError(
                     *(
@@ -4369,11 +4944,11 @@ class DPTrainer:
         def _unamplified(nm, _b=_dp_element):
             return acc.nonprivate() if nm == 0.0 else _b(nm)
 
-        sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+        sk = participation.sampler_kwargs_dict()
+        tb_raw = sk.get("truncated_batch_size")
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
-        if a.sampling_mode == "k_out_of_t":
+        if participation.sampling_mode == "k_out_of_t":
             k_raw = sk.get("k")
             allocation = sk.get("allocation")
             if k_raw is None or allocation is None:
@@ -4395,7 +4970,7 @@ class DPTrainer:
                 nm,
                 _u=_unamplified,
                 _k=int(k_raw),
-                _t=n_steps,
+                _t=participation.total_steps,
                 _allocation=allocation,
             ):
                 return dpsgd_acc.k_out_of_t(
@@ -4411,8 +4986,8 @@ class DPTrainer:
                 nm,
                 _u=_unamplified,
                 _cap=tb_cap,
-                _n=dataset_size,
-                _rate=sample_rate,
+                _n=participation.population_size,
+                _rate=participation.sample_rate,
             ):
                 return dpsgd_acc.poisson(
                     _u(nm),
@@ -4422,7 +4997,7 @@ class DPTrainer:
                 )
         else:
 
-            def mechanism(nm, _u=_unamplified, _rate=sample_rate):
+            def mechanism(nm, _u=_unamplified, _rate=participation.sample_rate):
                 return dpsgd_acc.poisson(_u(nm), sample_rate=_rate)
 
         return mechanism
@@ -4548,24 +5123,32 @@ class DPTrainer:
             state_dict[name] = tensor.detach()
         self._model.load_state_dict(state_dict, strict=True)
 
+    def _restore_params_with_oom_consensus(
+        self,
+        ctx: _TrainingContext,
+        *,
+        boundary: str,
+    ) -> None:
+        """Restore functional parameters at an explicitly aligned boundary."""
+        with self._cluster_local_phase(boundary=boundary):
+            self._restore_params(ctx.trainable_params)
+
     # ------------------------------------------------------------------
     # Save / checkpoint
     # ------------------------------------------------------------------
 
     def _effective_train_dataset_size(self) -> int:
-        """Length of ``self._train_dataset`` after the DDP equal-shard trim.
+        """Return the validated global population used for DP training.
 
-        Single source of truth for the training-time dataset size: under DDP
-        the trainer drops ``len(train_dataset) % world_size`` tail examples
-        before sharding so every rank ends up with an identical-length local
-        shard (avoids batch-count desynchronisation under fixed-order
-        samplers).  Callers that drive privacy accounting and the Poisson
-        sampler must agree on which denominator they're using; routing both
-        through this helper guarantees that.
+        Under DDP, equal-length shards are required for synchronized
+        step-indexed samplers. Uneven populations fail closed: silently
+        trimming a length-dependent tail can turn add/remove neighbors into
+        executions differing in more than one processed record. Callers that
+        drive privacy accounting and sampling both use this exact population.
 
         Raises:
-            ValueError: If ``len(train_dataset) < world_size``, which would
-                trim the whole dataset away.
+            ConfigurationError: If a DDP population is smaller than or not
+                divisible by ``world_size``.
         """
         if self._train_dataset is None:
             return 0
@@ -4573,8 +5156,7 @@ class DPTrainer:
         world_size = self._ddp.world_size
         if world_size <= 1:
             return n
-        trimmed = (n // world_size) * world_size
-        if trimmed < 1:
+        if n < world_size:
             raise ConfigurationError(
                 *(
                     f"Train dataset has {n} example(s), fewer than "
@@ -4582,7 +5164,18 @@ class DPTrainer:
                     "example after sharding.",
                 )
             )
-        return trimmed
+        if n % world_size:
+            raise ConfigurationError(
+                *(
+                    "Distributed DP training requires len(train_dataset) to be "
+                    "divisible by world_size; got "
+                    f"{n} and {world_size}. Opaque does not trim private tail "
+                    "records because that preprocessing is not stable under "
+                    "add/remove adjacency. Use a public, fixed-size population "
+                    "contract divisible by world_size or change world_size.",
+                )
+            )
+        return n
 
     def _steps_breakdown(
         self,
@@ -4601,7 +5194,8 @@ class DPTrainer:
         cadence resolution.
         """
         a = self.args
-        sample_rate = a.train_batch_size / max(1, dataset_size)
+        expected_batch_size = a.per_device_train_batch_size * self._ddp.world_size
+        sample_rate = expected_batch_size / max(1, dataset_size)
         steps_per_epoch = math.ceil(1.0 / sample_rate)
         if a.max_steps > 0:
             total = a.max_steps
@@ -4618,7 +5212,7 @@ class DPTrainer:
 
         Returns the same value as the ``total_steps`` field of
         ``_steps_breakdown(self._effective_train_dataset_size())`` — the
-        post-trim denominator the actual training run will see, so
+        validated global population the actual training run will see, so
         ``state.max_steps`` matches the cadence ``_setup_training`` produces.
         Override in subclasses where the dataset isn't sized at construction
         time (e.g. streaming datasets) — return ``0`` to signal "unknown" and
@@ -4849,6 +5443,7 @@ class DPTrainer:
         self,
         output_dir: str | None = None,
         _internal_call: bool = False,
+        _synchronize: bool = True,
     ) -> None:
         """Restore in-memory params into the model and call ``model.save_pretrained``.
 
@@ -4859,6 +5454,9 @@ class DPTrainer:
             _internal_call: Set by :meth:`push_to_hub` to avoid push recursion
                 (a direct user ``save_model`` with ``push_to_hub=True`` also
                 publishes; the push path saves with this flag to skip that).
+            _synchronize: Private Hub-path escape hatch. Normal saves require
+                every DDP rank and end with a barrier. Hub publication is
+                rank-zero-only, so its nested save disables that barrier.
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -4875,7 +5473,11 @@ class DPTrainer:
             # Privacy provenance travels with every saved model.
             self.save_accountant(target)
         # Barrier so non-saving ranks don't proceed before the save lands.
-        _distributed.barrier(self._ddp)
+        # A Hub push is rank-zero-only and therefore uses a deliberately
+        # non-collective nested save; its enclosing training phase propagates
+        # any rank-zero failure to every rank.
+        if _synchronize:
+            _distributed.barrier(self._ddp)
         # A direct user save with push_to_hub=True also publishes (HF parity).
         # ``_internal_call`` short-circuits the push triggered from within
         # ``push_to_hub`` itself.
@@ -4958,14 +5560,29 @@ class DPTrainer:
                     "running.",
                 )
             )
-        step = int(self.state.global_step)
+        self._assert_execution_step(ctx, boundary="checkpoint save")
+        step = ctx.executed_global_step
         a = self.args
-        output_dir = self._effective_output_dir()
-        if output_dir is None:
-            raise ConfigurationError(
-                *("Saving checkpoints requires args.output_dir to be set",)
-            )
-        ckpt_dir = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+        output_dir = ""
+        ckpt_dir = ""
+        staging_dir = ""
+        with self._cluster_local_phase(boundary="checkpoint metadata validation"):
+            if ctx.step_in_progress:
+                raise OperationError(
+                    *(
+                        "cannot save a checkpoint while a privacy step is in "
+                        "progress; accounting, noise, optimizer state, and the "
+                        "sampler cursor do not yet share a committed step boundary.",
+                    )
+                )
+            resolved_output_dir = self._effective_output_dir()
+            if resolved_output_dir is None:
+                raise ConfigurationError(
+                    *("Saving checkpoints requires args.output_dir to be set",)
+                )
+            output_dir = resolved_output_dir
+            ckpt_dir = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{step}")
+            staging_dir = ckpt_dir + ".tmp"
         # Atomic publish: write everything into a sibling ``*.tmp`` staging
         # directory, then ``os.replace`` it onto the final ``checkpoint-N``
         # name only once all artefacts (and every rank's RNG snapshot) have
@@ -4974,83 +5591,95 @@ class DPTrainer:
         # rotation never select a half-written checkpoint (which, missing
         # ``dp_state.pt``, would otherwise route into the save_only_model
         # noise-reuse path).  Same-directory rename ⇒ atomic on POSIX.
-        staging_dir = ckpt_dir + ".tmp"
         # Rank-0 owns the directory creation + bulk artefacts; every rank
         # restores params (needed for either RNG snapshot writers reading
         # `self._model.state_dict()` shapes consistently in future, and for
         # callbacks below that may inspect params).
-        self._restore_params(ctx.trainable_params)
-        if _distributed.should_save(a, self._ddp):
-            if Path(staging_dir).is_dir():
-                shutil.rmtree(staging_dir)  # stale leftover from a prior crash
-            Path(staging_dir).mkdir(parents=True, exist_ok=True)
-            self._save_model_artifacts(staging_dir)
+        self._restore_params_with_oom_consensus(
+            ctx,
+            boundary="checkpoint parameter restoration",
+        )
+        with self._cluster_local_phase(boundary="checkpoint rank-zero serialization"):
+            if _distributed.should_save(a, self._ddp):
+                if Path(staging_dir).is_dir():
+                    shutil.rmtree(staging_dir)  # stale leftover from a prior crash
+                Path(staging_dir).mkdir(parents=True, exist_ok=True)
+                self._save_model_artifacts(staging_dir)
 
-            # Register ``best_model_checkpoint`` by *looking up* the folder
-            # named ``checkpoint-{best_global_step}``, rather than only when
-            # the best step is this save's step.  The best-metric flow
-            # materializes intermediate evaluation improvements immediately;
-            # this fallback also preserves an existing best directory when a
-            # later regular save writes its own trainer state.
-            # Resolve *before* writing ``trainer_state.json`` so the file
-            # lands once with the final ``best_model_checkpoint`` populated.
-            # The path always uses the *final* ``checkpoint-N`` name (not the
-            # staging dir), since that's what exists after the rename below.
-            if self.state.best_global_step is not None:
-                if self.state.best_global_step == step:
-                    # This very checkpoint is the best — point at its final
-                    # name (it materialises at the rename).
-                    self.state.best_model_checkpoint = ckpt_dir
-                else:
-                    best_dir = str(
-                        Path(output_dir)
-                        / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}"
-                    )
-                    if Path(best_dir).is_dir():
-                        self.state.best_model_checkpoint = best_dir
+                # Resolve the best checkpoint before trainer-state serialization
+                # so its final (not staging) path is written once.
+                if self.state.best_global_step is not None:
+                    if self.state.best_global_step == step:
+                        self.state.best_model_checkpoint = ckpt_dir
                     else:
-                        log.debug(
-                            "best_global_step=%d but no checkpoint-%d/ folder "
-                            "exists (best step fell into a non-saved bucket); "
-                            "leaving best_model_checkpoint unset",
-                            self.state.best_global_step,
-                            self.state.best_global_step,
+                        best_dir = str(
+                            Path(output_dir)
+                            / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{self.state.best_global_step}"
                         )
+                        if Path(best_dir).is_dir():
+                            self.state.best_model_checkpoint = best_dir
+                        else:
+                            log.debug(
+                                "best_global_step=%d but no checkpoint-%d/ folder "
+                                "exists; leaving best_model_checkpoint unset",
+                                self.state.best_global_step,
+                                self.state.best_global_step,
+                            )
 
-            self._save_trainer_state(staging_dir)
-            self._save_training_args(staging_dir)
-            self._save_accountant(staging_dir, ctx.accounting)
-            if not a.save_only_model:
-                self._save_optimizer(staging_dir, ctx)
-                self._save_dp_runtime(staging_dir, ctx)
+                self._save_trainer_state(staging_dir)
+                self._save_training_args(staging_dir)
+                self._save_accountant(staging_dir, ctx.accounting)
+                if not a.save_only_model:
+                    self._save_optimizer(staging_dir, ctx)
+                    self._save_dp_runtime(staging_dir, ctx)
+
+        # Callback-state serialization runs only on the saving rank and can
+        # execute user code. Reach one common consensus before any rank enters
+        # the staging-directory barriers, so a forged progress value fails on
+        # every rank instead of stranding peers.
+        self._assert_execution_step(ctx, boundary="checkpoint serialization")
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
         # staging directory.  Barrier guarantees it exists before non-zero
         # ranks try to write into it.
         _distributed.barrier(self._ddp)
-        if not a.save_only_model:
-            self._save_rng_state(staging_dir)
+        with self._cluster_local_phase(
+            boundary="checkpoint per-rank RNG serialization"
+        ):
+            if not a.save_only_model:
+                self._save_rng_state(staging_dir)
         # All ranks have finished writing into the staging dir; publish it.
         _distributed.barrier(self._ddp)
 
-        if _distributed.should_save(a, self._ddp):
-            if Path(ckpt_dir).is_dir():
-                # Defensive: the only callers target a fresh step, but never
-                # let a stale dir block the atomic rename.
-                shutil.rmtree(ckpt_dir)
-            Path(staging_dir).replace(ckpt_dir)
-            # Rotation honours ``save_total_limit`` and protects best when set.
-            ckpt.rotate_checkpoints(
-                output_dir,
-                save_total_limit=a.save_total_limit,
-                best_model_checkpoint=self.state.best_model_checkpoint,
-            )
-            self._control.should_save = False
-            log.info("Saved checkpoint to %s", ckpt_dir)
-            # Notify callbacks that a checkpoint was just written.
-            self._control = self._callback_handler.on_save(
-                self.args, self.state, self._control
-            )
+        with self._cluster_local_phase(boundary="checkpoint rank-zero publication"):
+            if _distributed.should_save(a, self._ddp):
+                if Path(ckpt_dir).is_dir():
+                    # Defensive: callers target a fresh step, but never let a
+                    # stale dir block the atomic rename.
+                    shutil.rmtree(ckpt_dir)
+                Path(staging_dir).replace(ckpt_dir)
+                ckpt.rotate_checkpoints(
+                    output_dir,
+                    save_total_limit=a.save_total_limit,
+                    best_model_checkpoint=self.state.best_model_checkpoint,
+                )
+                log.info("Saved checkpoint to %s", ckpt_dir)
+
+        # Trainer-owned control transitions happen on every rank. The callback
+        # itself remains rank-gated; any rank-0-only mutation it makes is
+        # rejected by the post-save control consensus in the caller.
+        self._control.should_save = False
+
+        with self._cluster_local_phase(boundary="on_save callback"):
+            if _distributed.should_save(a, self._ddp):
+                self._control = self._callback_handler.on_save(
+                    self.args, self.state, self._control
+                )
+
+        # ``on_save`` executes only on the saving rank. All ranks rendezvous in
+        # this validation before the final barrier.
+        self._assert_execution_step(ctx, boundary="on_save")
+        self._assert_control_consensus(boundary="on_save")
 
         # Final barrier so all ranks see post-save state consistently before
         # any continues into the next training step / eval / rotation.
@@ -5088,20 +5717,81 @@ class DPTrainer:
             str(Path(ckpt_dir) / ckpt.DP_OPTIMIZER_NAME),
         )
 
+    def _execution_aligned_sampler_state(
+        self,
+        ctx: _TrainingContext,
+    ) -> dict[str, Any] | None:
+        """Snapshot the sampler at executed, not prefetched, optimizer progress."""
+        if ctx.current_sampler is None:
+            return None
+
+        sampler_state = opaque_state_dict(ctx.current_sampler)
+        if not isinstance(sampler_state, dict):
+            raise CheckpointError(
+                *("sampler serialization did not produce a dictionary.",)
+            )
+        raw_consumed = sampler_state.get("consumed")
+        global_step = ctx.executed_global_step
+        origin = ctx.sampler_cursor_origin
+        if (
+            type(raw_consumed) is not int
+            or type(global_step) is not int
+            or type(origin) is not int
+            or origin < 0
+            or global_step < origin
+        ):
+            raise CheckpointError(
+                *(
+                    "cannot align sampler cursor with trainer progress: "
+                    f"origin={origin!r}, consumed={raw_consumed!r}, "
+                    f"global_step={global_step!r}.",
+                )
+            )
+        executed_relative = global_step - origin
+        if (
+            executed_relative > ctx.participation.total_steps
+            or global_step > ctx.participation.total_steps
+            or raw_consumed < executed_relative
+            or raw_consumed > ctx.participation.total_steps
+        ):
+            raise CheckpointError(
+                *(
+                    "live sampler cursor contradicts executed trainer progress: "
+                    f"origin={origin}, consumed={raw_consumed}, "
+                    f"global_step={global_step}, "
+                    f"horizon={ctx.participation.total_steps}.",
+                )
+            )
+
+        # DataLoader workers can request future batches before their optimizer
+        # steps execute. Persist only the prefix committed by ``global_step``;
+        # replay from the stream key reconstructs the same next batch on resume.
+        aligned_state = dict(sampler_state)
+        aligned_state["consumed"] = executed_relative
+        return aligned_state
+
     def _save_dp_runtime(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
         # ``state_dict`` from the opaque.serialization registry — each
         # sampler family (Poisson here, dp-ftrl variants in subclasses)
         # registers its own serializer pair at module-import time.
         from opaque.serialization import state_dict as opaque_state_dict
 
-        sampler_state = (
-            opaque_state_dict(ctx.current_sampler)
-            if ctx.current_sampler is not None
-            else None
-        )
+        if ctx.current_sampler is not None:
+            _dpftrl.validate_sampler_for_plan(
+                ctx.participation,
+                ctx.current_sampler,
+                mf=ctx.mf,
+                noise_multiplier=ctx.noise_multiplier,
+                process=ctx.horizon_process,
+            )
+        sampler_state = self._execution_aligned_sampler_state(ctx)
 
         if ctx.mf is not None:
-            _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)
+            _amp = _dpftrl.validate_mf_process_for_plan(
+                ctx.participation,
+                ctx.mf,
+                ctx.noise_multiplier,
+            )
             mf_n_steps: int | None = int(_amp.n_steps)
             mf_min_sep: int | None = int(_amp.min_sep)
             mf_max_participations: int | None = int(_amp.max_participations)
@@ -5114,13 +5804,15 @@ class DPTrainer:
             clip_state=ctx.clip_state,
             noise_state=ctx.noise_state,
             sampler_state=sampler_state,
-            sample_rate=ctx.sample_rate,
+            sample_rate=ctx.participation.sample_rate,
             target_delta=ctx.target_delta,
             noise_multiplier=ctx.noise_multiplier,
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
-            expected_batch_size=int(a.train_batch_size),
-            total_steps=ctx.total_steps,
+            expected_batch_size=ctx.participation.expected_batch_size,
+            total_steps=ctx.participation.total_steps,
             mechanism_kind=ctx.mechanism_kind,
+            participation_plan=ctx.participation.to_state_dict(),
+            sampler_cursor_origin=ctx.sampler_cursor_origin,
             is_horizon_process=ctx.is_horizon_process,
             calibration_source=ctx.calibration_source,
             target_epsilon=a.privacy_target_epsilon,
@@ -5178,12 +5870,22 @@ class DPTrainer:
         by ``cb.state()``); callbacks that don't implement ``state()`` are
         skipped.
         """
+        ctx = self._ctx
+        if ctx is not None and not self._ddp.is_distributed:
+            self._assert_execution_step(ctx, boundary="trainer-state serialization")
+            if ctx.step_in_progress:
+                raise OperationError(
+                    *("cannot serialize trainer state during a privacy step.",)
+                )
         cb_states: dict[str, Any] = {}
         for cb in self._callback_handler.callbacks:
             state_fn = getattr(cb, "state", None)
             if callable(state_fn):
                 cb_states[type(cb).__name__] = state_fn()
         self.state.stateful_callbacks = cb_states
+
+        if ctx is not None and not self._ddp.is_distributed:
+            self._assert_execution_step(ctx, boundary="callback-state serialization")
 
         payload = self.state.to_json()
         path = Path(ckpt_dir) / ckpt.TRAINER_STATE_NAME
@@ -5197,32 +5899,46 @@ class DPTrainer:
         # superset of ``TrainingArguments``.
         torch.save(self.args, str(Path(ckpt_dir) / ckpt.TRAINING_ARGS_NAME))
 
-    def _maybe_final_save(self, ctx: _TrainingContext, global_step: int) -> None:
+    def _maybe_final_save(self, ctx: _TrainingContext) -> None:
         """Always emit a final checkpoint when saving is enabled (HF parity).
 
         Skipped if a checkpoint at this exact step already exists (e.g. an
         epoch-strategy save just fired and we're now at end-of-training).
         """
-        if self.args.save_strategy == "no":
-            return
-        output_dir = self._effective_output_dir()
-        if output_dir is None:
-            return
-        target = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
-        if Path(target).is_dir():
-            return
-        self._save_checkpoint()
+        should_save = False
+        with self._cluster_local_phase(boundary="final checkpoint lookup"):
+            if self.args.save_strategy != "no":
+                output_dir = self._effective_output_dir()
+                if output_dir is not None:
+                    global_step = ctx.executed_global_step
+                    target = str(
+                        Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}"
+                    )
+                    should_save = not Path(target).is_dir()
+        self._raise_cluster_phase_error(
+            None,
+            boundary=f"final checkpoint decision={should_save}",
+        )
+        self._assert_execution_step(ctx, boundary="final checkpoint lookup")
+        if should_save:
+            self._save_checkpoint()
 
-    def _refresh_final_checkpoint_state(self, global_step: int) -> None:
+    def _refresh_final_checkpoint_state(self, ctx: _TrainingContext) -> None:
         """Refresh final checkpoint metadata after final logs update callbacks."""
-        if self.args.save_strategy == "no":
-            return
-        output_dir = self._effective_output_dir()
-        if output_dir is None:
-            return
-        target = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
-        if Path(target).is_dir():
-            self._save_trainer_state(target)
+        with self._cluster_local_phase(boundary="final trainer-state refresh"):
+            if self.args.save_strategy != "no":
+                output_dir = self._effective_output_dir()
+                if output_dir is not None:
+                    global_step = ctx.executed_global_step
+                    target = str(
+                        Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}"
+                    )
+                    if Path(target).is_dir() and _distributed.should_save(
+                        self.args, self._ddp
+                    ):
+                        self._save_trainer_state(target)
+        self._assert_execution_step(ctx, boundary="final trainer-state refresh")
+        self._assert_execution_step(ctx, boundary="final trainer-state serialization")
 
     # ------------------------------------------------------------------
     # Resume / load
@@ -5295,9 +6011,10 @@ class DPTrainer:
 
         A resumable DP checkpoint must carry the full runtime needed to
         continue a privacy-accounted process: ``dp_state.pt`` (clip /
-        noise / sampler state), ``dp_optimizer.pt`` (optimizer state), and
-        ``accountant.json`` (privacy provenance).  A checkpoint missing
-        any of these is a **weights-only export** — e.g. one written with
+        noise / sampler state), ``dp_optimizer.pt`` (optimizer state),
+        ``accountant.json`` (privacy provenance), and ``trainer_state.json``
+        (the execution step bound to the sampler cursor). A checkpoint missing
+        any of these is a **weights-only or incomplete export** — e.g. one written with
         ``save_only_model=True``, an HF checkpoint, or a plain pretrained
         model — and is *not resumable*: continuing a DP run from it would
         rebuild the noise stream from scratch and/or discard the spent
@@ -5318,6 +6035,7 @@ class DPTrainer:
             ckpt.DP_STATE_NAME,
             ckpt.DP_OPTIMIZER_NAME,
             ckpt.DP_ACCOUNTANT_NAME,
+            ckpt.TRAINER_STATE_NAME,
         )
         missing = [name for name in required if not (Path(ckpt_dir) / name).exists()]
         if missing:
@@ -5338,6 +6056,7 @@ class DPTrainer:
         runtime_payload = ckpt.load_dp_runtime_state(
             str(Path(ckpt_dir) / ckpt.DP_STATE_NAME)
         )
+        ckpt.validate_dp_runtime_for_resume(runtime_payload)
         with (
             (Path(ckpt_dir) / ckpt.DP_ACCOUNTANT_NAME).open() as f,
             _deep_json_recursion(),
@@ -5510,12 +6229,61 @@ class DPTrainer:
         for f in dataclasses.fields(runtime):
             if not f.metadata.get("compare_on_resume"):
                 continue
-            saved = getattr(runtime, f.name)
+            # Additive fields are absent from genuinely old pickled dataclass
+            # instances even though they exist on the current class. Treat
+            # that wire-level absence as the field's compatibility default.
+            saved = getattr(runtime, f.name, None)
             current = current_by_name.get(f.name)
             if saved is None or current is None:
                 continue
             if not _drift_differs(saved, current):
                 continue
+
+            if f.name == "participation_plan":
+                try:
+                    saved_plan = ResolvedParticipationPlan.from_state_dict(saved)
+                    current_plan = ResolvedParticipationPlan.from_state_dict(current)
+                except CheckpointError:
+                    raise
+                saved_shape = saved_plan.to_state_dict()
+                current_shape = current_plan.to_state_dict()
+                saved_steps = saved_shape.pop("total_steps")
+                current_steps = current_shape.pop("total_steps")
+                horizon_only_extension = (
+                    saved_shape == current_shape
+                    and saved_plan.mechanism_kind == "gaussian"
+                    and saved_plan.sampling_mode == "poisson"
+                    and current_steps > saved_steps
+                )
+                restarting_independent_poisson = (
+                    ctx is not None
+                    and ctx.skip_sampler_state_on_resume
+                    and saved_plan.mechanism_kind == "gaussian"
+                    and current_plan.mechanism_kind == "gaussian"
+                    and saved_plan.sampling_mode == "poisson"
+                    and current_plan.sampling_mode == "poisson"
+                    and not horizon_resume
+                )
+                if horizon_only_extension:
+                    continue
+                if restarting_independent_poisson:
+                    log.warning(
+                        "Resume participation-plan drift is safe only because "
+                        "ignore_data_skip=True discards the saved Poisson sampler "
+                        "and starts a current-plan stream: saved=%r, current=%r.",
+                        saved,
+                        current,
+                    )
+                    continue
+                raise CheckpointError(
+                    *(
+                        "Resume forbids participation_plan drift while restoring "
+                        f"sampler state: saved={saved!r}, current={current!r}. Only "
+                        "a horizon-only extension of plain Gaussian Poisson "
+                        "sampling is compatible; otherwise restart from scratch "
+                        "or use the supported ignore_data_skip Poisson path.",
+                    )
+                )
 
             disposition = _resolve_drift_disposition(f.metadata, saved_mechanism)
             if (
@@ -5577,18 +6345,16 @@ class DPTrainer:
         # mirror ``_setup_training``'s computation — same numerator
         # (``expected_batch_size``, which is ``world_size *
         # per_device_train_batch_size``) and same denominator (the
-        # post-DDP-trim dataset size).  Using ``len(self._train_dataset)``
-        # raw would falsely report drift on every DDP resume because
-        # the trim hasn't been applied at compare time.  Returns
-        # ``None`` (skips the check) when the dataset isn't available.
+        # DDP-divisible global population). Returns ``None`` (skips the check)
+        # when the dataset isn't available.
         if ctx is not None:
             fallback_rate: float | None = ctx.sample_rate
         elif self._train_dataset is None:
             fallback_rate = None
         else:
-            fallback_rate = a.train_batch_size / max(
-                1, self._effective_train_dataset_size()
-            )
+            fallback_rate = (
+                a.per_device_train_batch_size * self._ddp.world_size
+            ) / max(1, self._effective_train_dataset_size())
         return {
             "sample_rate": fallback_rate,
             "target_delta": (
@@ -5612,12 +6378,19 @@ class DPTrainer:
             "total_steps": (
                 ctx.total_steps if ctx is not None else self._predict_total_steps()
             ),
-            "expected_batch_size": int(a.train_batch_size),
+            "expected_batch_size": (
+                ctx.participation.expected_batch_size
+                if ctx is not None
+                else int(a.per_device_train_batch_size * self._ddp.world_size)
+            ),
             "expected_steps_per_epoch": (
                 ctx.expected_steps_per_epoch if ctx is not None else None
             ),
             "mechanism_kind": (
                 ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+            ),
+            "participation_plan": (
+                ctx.participation.to_state_dict() if ctx is not None else None
             ),
             "is_horizon_process": (ctx.is_horizon_process if ctx is not None else None),
             "horizon_process_state": (

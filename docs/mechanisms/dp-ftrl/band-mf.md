@@ -73,9 +73,10 @@ then optionally composed with subsampling amplification.
 
 ## Supported amplifications
 
-### Poisson subsampling (`opaque.dpftrl.accounting.poisson`)
+### Low-level cyclic Poisson (`opaque.dpftrl.accounting.poisson`)
 
-The primary amplification method for BandMF. The training run is decomposed
+This expert composition uses the fixed-universe participation model from the
+BandMF analysis. The training run is decomposed
 into $k = \lceil n / b \rceil$ independent **groups** of $b$ consecutive
 steps. Within each group, **cyclic Poisson** participation means each example
 in the active group is included independently with probability $q$ (this is
@@ -95,6 +96,16 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 
 This is computed efficiently with 2 FFTs (self-composition).
 
+!!! warning
+    Here $q$ is the inclusion probability **conditional on the record's group
+    being active**, not the global expected-batch fraction $B/N$. With equal
+    groups, targeting $B/N=p_0$ requires $q=b p_0\leq1$. The partition,
+    population, and rate must be fixed/public across neighboring inputs.
+    Opaque's equal-split implementation is scoped to a fixed-universe
+    zero-out analysis; independently constructing this sampler and accountant
+    does not establish the library's default variable-cardinality add/remove
+    guarantee. This path is not exposed by `DPTrainer`.
+
 ```python
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
@@ -102,7 +113,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
+    sample_rate=0.1,  # conditional active-group rate (global rate 0.01)
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -114,7 +125,7 @@ print(f"Epsilon (δ=1e-5): {eps:.2f}")
 |---------------|:---------:|-------|
 | `opaque.dpsgd.accounting.poisson` | No | DP-SGD per-step factory; different object |
 | `opaque.dpsgd.accounting.poisson` (truncated) | No | DP-SGD only |
-| `opaque.dpftrl.accounting.poisson` | Yes | Whole-process MF Poisson; $\lceil n/b \rceil$ groups for `BandMf` |
+| `opaque.dpftrl.accounting.poisson` | Conditional | Low-level fixed-universe cyclic composition; $\lceil n/b \rceil$ groups for `BandMf` |
 
 ### b-min-sep subsampling (`b_min_sep`)
 
@@ -198,11 +209,11 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(bands=10)
 
-# BandMF with Poisson amplification (recommended)
-proc = dpftrl_acc.poisson(
+# Trainer-supported BandMF participation contract
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
@@ -215,25 +226,36 @@ assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 ### End-to-end BandMF example
 
-BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with `bands` matching the
-strategy so participation lines up with the noise. The same class with
-`bands=1` gives plain Poisson on the full dataset each step for an identity MF
-baseline (`identity_mf` / `identity_strategy`):
+The supported Trainer contract uses `BMinSepSampler`. Its runtime inclusion
+probability comes from the same realized accounting process, so callers do not
+rederive privacy-owned parameters:
 
 ```python
-from opaque.dpftrl.sampling import CyclicPoissonSampler
+import opaque.dpftrl.accounting as dpftrl_acc
+from opaque.dpftrl.noise import band_mf_strategy
+from opaque.dpftrl.sampling import BMinSepSampler
 from opaque.random import key
 
-sampler = CyclicPoissonSampler(
+bands = 10
+p0 = batch_size / len(dataset)
+strategy = band_mf_strategy(bands=bands)
+process = dpftrl_acc.b_min_sep(
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    n_steps=1000,
+    p0=p0,
+)
+sampler = BMinSepSampler(
     dataset,
-    sample_rate=0.01,
-    bands=1,
+    bands=bands,
+    sampling_prob=process.sampling_prob,
     n_steps=1000,
     key=key(0),
 )
 ```
 
-BandMF training (`bands` matches `band_mf_strategy`):
+The low-level cyclic construction remains available only under the
+fixed-universe assumptions above. If used, `bands` must match the strategy and
+`sample_rate` must be the conditional active-group rate:
 
 ```python
 import torch
@@ -243,7 +265,8 @@ from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key, split
 
 n_steps, bands = 1000, 10
-sample_rate = 0.01
+global_rate = batch_size / len(dataset)
+conditional_rate = bands * global_rate
 
 # Setup
 key_samp, key_noise = split(key(42), num=2)
@@ -260,7 +283,7 @@ noise_fn, noise_state = mf_gaussian_noise(
 )
 sampler = CyclicPoissonSampler(
     dataset,
-    sample_rate=sample_rate,
+    sample_rate=conditional_rate,
     bands=bands,
     n_steps=n_steps,
     key=key_samp,
@@ -292,7 +315,8 @@ for batch in loader:
   better per-group amplification but more composition steps.
 - BandMF requires knowing `n_steps` before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.
-- Pair with `CyclicPoissonSampler` for consistent sampling and accounting.
+- Use `BMinSepSampler` / `b_min_sep` for stock Trainer runs. Treat cyclic
+  Poisson as a low-level fixed-universe composition, not a drop-in replacement.
 
 ## References
 

@@ -29,10 +29,10 @@ footing.
 DP-FTRL pairs the noise mechanism with one of three amplification
 factories — **all** parameterised by `n_steps`:
 
-- `opaque.dpftrl.accounting.poisson(...)` — Poisson subsampling
-  (cyclic-Poisson under banded MF).
+- `opaque.dpftrl.accounting.poisson(...)` — expert fixed-universe cyclic
+  Poisson under banded MF; the rate is conditional in the active group.
 - `opaque.dpftrl.accounting.b_min_sep(...)` — b-min-separation
-  participation pattern.
+  participation pattern (the stock Trainer BandMF contract).
 - `opaque.dpftrl.accounting.balls_in_bins(...)` — fixed-partition
   participation.
 

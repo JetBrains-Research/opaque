@@ -26,7 +26,16 @@ this once before tuning:
 - Internal microbatch chunking is only activated by
   `auto_find_microbatch_size=True` on OOM retry — it splits the
   per-rank logical batch into smaller vmap calls without changing the
-  logical batch or the sample rate (privacy-neutral). The same flag also
+  logical batch or the sample rate (privacy-neutral). The validated training
+  arguments are restored before every retry, and the participation contract
+  itself is immutable. Enabling this option therefore requires every
+  `TrainingArguments` field (including a custom scheduler recipe) to support
+  `deepcopy`; an incompatible value fails before training, while ordinary
+  no-retry training retains the callable unchanged. Automatic retry is allowed
+  only before noisy gradients
+  become callback-visible or reach the optimizer; a later OOM fails closed
+  because callbacks, logs, or checkpoints may already have exposed the
+  attempted prefix. The same flag also
   halves `per_device_eval_batch_size` on an eval/predict CUDA-OOM
   (eval has no grad-accumulation, so shrinking it is privacy-neutral).
 - When `per_device_eval_batch_size` is omitted, it defaults to an explicit
@@ -130,8 +139,8 @@ noise would yield infinite noise and `NaN` gradients.
 
 | Field | Use |
 |---|---|
-| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
-| `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for k-out-of-t allocation. |
+| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; Trainer modes are `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins"}` and are validated against the mechanism's allow-list. |
+| `sampling_kwargs` | `truncated_batch_size=N` caps single-process Poisson draws at `N` (rejected under DDP); k-out-of-t requires exactly `k` and `allocation`. Unknown or ignored keys are rejected. |
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
@@ -148,7 +157,7 @@ the strategy kwargs:
 
 | `privacy_noise_mechanism` | Auto-resolved sampler | Default kwargs |
 |---|---|---|
-| `mf_band` | `b_min_sep` (or explicit `poisson`) | `{"bands": 16}` |
+| `mf_band` | `b_min_sep` | `{"bands": 16}` |
 | `mf_blt` | `balls_in_bins` | `{"max_buffers": 16}` |
 | `mf_bisr` | `balls_in_bins` | `{"bandwidth": 4}` |
 | `mf_bsr` | `balls_in_bins` | `{"bandwidth": 8, "alpha": 1.0, "beta": 0.9}` |
@@ -164,6 +173,27 @@ conservative block bound.
 Identity MF explicitly accepts `sampling_mode="balls_in_bins"`. Horizon modes
 are accounted once for their declared `n_steps`; every privacy metric reported
 during the run is the conservative full-horizon epsilon.
+
+BandMF does not accept plain whole-dataset Poisson sampling: that sampler does
+not realize the participation process used by its accountant. Existing runs
+that explicitly selected `mf_band` with `sampling_mode="poisson"` must be
+recalibrated and restarted with `b_min_sep`; changing the sampler while
+resuming cannot repair the already executed prefix. Use `mf_identity` for a
+new whole-dataset Poisson run, including the one-band limiting case.
+Low-level cyclic BandMF construction is a separate expert API with explicit
+fixed-universe assumptions; it is not a `DPTrainer` sampling mode.
+
+Migration note: the invalid pairing shipped in earlier versions; in
+particular, v7 Transformer checkpoints written by `v0.15.4` and
+`v0.15.5.rc1` may contain `mf_band` plus plain Poisson. This contract removes
+the former Transformer-only
+`cyclic_poisson` and `sequential` spellings and rejects unknown or ignored
+sampler kwargs. Checkpoints from `mf_band` plus plain Poisson remain loadable
+for inspection but cannot be resumed; restart from the original public or
+pre-training initialization, never from already DP-trained weights as though
+they had zero privacy cost. Legacy b-min-separation checkpoints resume only
+when their saved sampler, MF horizon, probability, and cursor are mutually
+consistent.
 
 So the minimal DP-FTRL configuration is one field:
 
@@ -223,20 +253,34 @@ Standard HF save fields work as expected:
 Resume claims:
 
 - `train(resume_from_checkpoint=<path>)` restores model weights,
-  optimizer / clip / noise state, sampler cursor, RNG snapshots, and
-  the privacy accountant in one call.
+  optimizer / clip / noise state, an execution-aligned sampler cursor, RNG
+  snapshots, and the privacy accountant in one call. The saved cursor records
+  optimizer steps, not batches speculatively requested by DataLoader workers.
 - For independent DP-SGD, the saved accountant contains the executed
   composition and calibration covers the remaining steps against it.
   Horizon mechanisms retain their single declared full-horizon process.
 - `resume_from_checkpoint` requires a **complete DP checkpoint**
-  (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json`).  A
+  (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json` +
+  `trainer_state.json`). A
   weights-only export (`save_only_model=True`, an HF checkpoint, a
   pretrained model) is rejected — to start a fresh DP run from such
   weights, load them at construction (`model=...`); the run begins with
   a zero accountant, which is correct only when the prior training had
   no DP cost (e.g. public-data warmup).
 - `ignore_data_skip=True` skips sampler-state restore. Poisson resumes use a
-  distinct stream; participation samplers require the saved cursor.
+  distinct stream and persist its global-step origin, so their later
+  checkpoints support ordinary resume. Participation samplers require the
+  saved cursor.
+- Stateful participation resume assumes the same stable record-to-index
+  mapping. The saved plan validates population size and cursor, but cannot
+  prove dataset identity; reordering or replacing records at the same length
+  can change their Balls-in-Bins, k-out-of-t, or b-min-separation allocation.
+  Restart rather than resume when that mapping changes.
+- DDP checkpoints currently contain one shared sampler snapshot, so ordinary
+  distributed resume fails closed rather than restoring rank 0's stream on
+  every rank. Poisson runs may resume with `ignore_data_skip=True`, which
+  derives a fresh rank-separated stream; stateful DP-FTRL samplers require a
+  future per-rank sampler checkpoint format.
 - `restore_callback_states_from_checkpoint=True` reads saved callback
   state and copies attributes back onto the live callback instances
   (e.g. `EarlyStoppingCallback`'s patience counter).
@@ -314,7 +358,7 @@ these for you). For reference, the notable ones:
 | HF argument | Why it's unsupported | DPTrainer alternative |
 | --- | --- | --- |
 | `group_by_length`, `length_column_name` | Length-bucketed batching breaks the equal per-example inclusion probability Poisson amplification relies on | Leave examples unsorted; Poisson sampling handles variable lengths |
-| `dataloader_drop_last` | The Poisson / random samplers produce variable-size batches, so dropping a "last batch" is meaningless; the sequential batch sampler already enforces drop-last internally where it matters for correctness | n/a (handled by the sampler) |
+| `dataloader_drop_last` | Trainer participation samplers define the complete batch schedule, so dropping a separate "last batch" is not meaningful | n/a (handled by the sampler) |
 | `deepspeed`, `fsdp`, `fsdp_config`, `accelerator_config`, `parallelism_config` | Parameter/gradient sharding is incompatible with vmap per-example gradients | Use Opaque's built-in DDP (`torchrun` + sharded data) |
 | `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
 | `fp16`, `fp16_full_eval`, `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | fp16 dynamic loss scaling adds a per-example unscale-before-clip step for no benefit on bf16-capable hardware | `bf16=True` (native bf16 autocast; no loss scaler) |

@@ -97,6 +97,13 @@ from ._optim import (
 from ._optim import (
     supported_names as _supported_optimizer_names,
 )
+from ._participation import (
+    ALLOWED_SAMPLERS as _ALLOWED_SAMPLERS,
+)
+from ._participation import (
+    SAMPLING_MODES as _SAMPLING_MODES,
+)
+from ._participation import canonical_sampling_kwargs
 
 # Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
@@ -150,19 +157,6 @@ _MECHANISMS_DPFTRL: frozenset[str] = frozenset(
 )
 _MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 
-# Concrete sampling modes (resolved set; ``"auto"`` is the default field
-# value and is replaced by one of these in ``__post_init__``).
-_SAMPLING_MODES: frozenset[str] = frozenset(
-    {
-        "poisson",
-        "k_out_of_t",
-        "b_min_sep",
-        "balls_in_bins",
-        "cyclic_poisson",
-        "sequential",
-    }
-)
-
 # Canonical sampler pairing.  Each mechanism has a single "best" sampler;
 # users opting into a mechanism shouldn't have to remember to pair the
 # sampler too.  ``sampling_mode="auto"`` (the default) resolves via this
@@ -176,20 +170,6 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
     "mf_bisr": "balls_in_bins",
     "mf_bsr": "balls_in_bins",
     "mf_lambda_cgd": "balls_in_bins",
-}
-
-# Per-mechanism allow-list for explicit ``sampling_mode`` overrides.
-# ``mf_band`` accepts ``"poisson"`` as a looser-but-valid alternative to
-# its canonical ``"b_min_sep"`` participation pattern; everything else
-# pins a single sampler.
-_ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
-    "gaussian": frozenset({"poisson", "k_out_of_t"}),
-    "mf_identity": frozenset({"poisson", "balls_in_bins"}),
-    "mf_band": frozenset({"b_min_sep", "poisson"}),
-    "mf_blt": frozenset({"balls_in_bins"}),
-    "mf_bisr": frozenset({"balls_in_bins"}),
-    "mf_bsr": frozenset({"balls_in_bins"}),
-    "mf_lambda_cgd": frozenset({"balls_in_bins"}),
 }
 
 # Participation samplers require restoring their saved cursor.
@@ -1172,6 +1152,19 @@ class TrainingArguments:
                 )
             )
         elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
+            if (
+                self.privacy_noise_mechanism == "mf_band"
+                and self.sampling_mode == "poisson"
+            ):
+                raise ConfigurationError(
+                    *(
+                        "sampling_mode='poisson' is incompatible with "
+                        "privacy_noise_mechanism='mf_band': plain whole-dataset "
+                        "Poisson does not realize BandMF's participation process. "
+                        "Use sampling_mode='b_min_sep', or use "
+                        "privacy_noise_mechanism='mf_identity' for Poisson sampling.",
+                    )
+                )
             raise ConfigurationError(
                 *(
                     f"sampling_mode={self.sampling_mode!r} is not valid for "
@@ -1224,37 +1217,12 @@ class TrainingArguments:
                         f"and read off the built amplifier at runtime.",
                     )
                 )
-            if self.sampling_mode == "k_out_of_t":
-                missing = {"k", "allocation"} - self.sampling_kwargs.keys()
-                if missing:
-                    raise ConfigurationError(
-                        *(
-                            "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                            f"{sorted(missing)}.",
-                        )
-                    )
-                allocation = self.sampling_kwargs["allocation"]
-                if allocation not in ("block", "total"):
-                    raise ConfigurationError(
-                        *(
-                            "sampling_kwargs['allocation'] must be 'block' or "
-                            f"'total', got {allocation!r}.",
-                        )
-                    )
-            if (
-                self.sampling_mode == "k_out_of_t"
-                and {
-                    "truncated_batch_size",
-                    "max_batch_size",
-                }
-                & self.sampling_kwargs.keys()
-            ):
-                raise ConfigurationError(
-                    *(
-                        "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                        "supported with sampling_mode='poisson'.",
-                    )
+            self.sampling_kwargs = dict(
+                canonical_sampling_kwargs(
+                    self.sampling_mode,
+                    self.sampling_kwargs,
                 )
+            )
         elif self.sampling_mode == "k_out_of_t":
             raise ConfigurationError(
                 *(

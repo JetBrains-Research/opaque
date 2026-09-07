@@ -58,7 +58,7 @@ Need correlated noise across steps (DP-FTRL)?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
           ├─ Asymptotically optimal → BISR (generalizes λCGD)
           ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
-          ├─ n < 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)
+          ├─ n < 5000 → BandMF + b-min-separation (good Trainer default)
           └─ n > 5000, multi-epoch → BLT (memory-efficient)
 ```
 
@@ -72,15 +72,15 @@ advance.
 Subsampling amplification reduces per-step privacy cost. Not all
 mechanisms support all amplification types:
 
-| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.k_out_of_t` | `dpftrl_acc.poisson` | `dpftrl_acc.balls_in_bins` |
-|-----------|:-:|:-:|:-:|:-:|:-:|
-| Gaussian | Yes | Yes | Yes | — | — |
-| BandMF | — | — | — | Yes | — |
-| Identity MF | — | — | — | Yes | Yes |
-| BLT | — | — | — | — | Yes |
-| DP-λCGD | — | — | — | — | Yes |
-| BISR | — | — | — | — | Yes |
-| BSR | — | — | — | — | Yes |
+| Mechanism | `dpsgd_acc.poisson` | `dpsgd_acc.poisson` (truncated) | `dpsgd_acc.k_out_of_t` | `dpftrl_acc.poisson` | `dpftrl_acc.b_min_sep` | `dpftrl_acc.balls_in_bins` |
+|-----------|:-:|:-:|:-:|:-:|:-:|:-:|
+| Gaussian | Yes | Yes | Yes | — | — | — |
+| BandMF | — | — | — | Conditional fixed-universe use | Yes | — |
+| Identity MF | — | — | — | Yes | — | Yes |
+| BLT | — | — | — | — | — | Yes |
+| DP-λCGD | — | — | — | — | — | Yes |
+| BISR | — | — | — | — | — | Yes |
+| BSR | — | — | — | — | — | Yes |
 
 - **`opaque.dpsgd.accounting.poisson`**: DP-SGD per-step Poisson
   subsampling ($q$ per example).
@@ -94,7 +94,8 @@ mechanisms support all amplification types:
 - **`opaque.dpftrl.accounting.poisson`**: DP-FTRL whole-process Poisson
   amplification (`BandMf` / `IdentityMf` inner, `n_steps` required).
   For `BandMf` this is the cyclic-participation analysis
-  ($\lceil n/b\rceil$ independent groups).
+  ($\lceil n/b\rceil$ independent groups), scoped to a fixed universe and a
+  conditional active-group rate. Trainer BandMF uses b-min-separation.
 - **`opaque.dpftrl.accounting.balls_in_bins`**: Random-partition
   amplification with the assignment **fixed across epochs**. Used with
   BLT, DP-λCGD, BISR, BSR, and identity MF. Not interchangeable with
@@ -119,10 +120,10 @@ gauss = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 # --- Correlated noise ---
 # BandMF: strategy computes sensitivity and coefficients
 band_s = band_mf_strategy(bands=10)
-band = dpftrl_acc.poisson(
+band = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, band_s),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 
 # DP-λCGD: strategy.as_mechanism populates the accounting

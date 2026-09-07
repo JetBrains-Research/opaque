@@ -8,12 +8,17 @@ import numpy as np
 
 
 class PartitionType(enum.Enum):
-    """Specifies how examples should be assigned to groups."""
+    """Specifies how examples should be assigned to cyclic groups.
+
+    Partition selection is part of the privacy model. Neither option alone
+    establishes an adjacency guarantee; callers must keep public parameters and
+    common-record preprocessing consistent across neighboring inputs.
+    """
 
     INDEPENDENT = enum.auto()
-    """Each example assigned to a group independently at random."""
+    """Assign each example independently; candidate for audited add/remove use."""
     EQUAL_SPLIT = enum.auto()
-    """Examples shuffled and split into groups of equal size."""
+    """Equal-size fixed-universe partition for a zero-out analysis."""
 
 
 def _independent_partition(

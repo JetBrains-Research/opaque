@@ -164,7 +164,7 @@ class TestPushToHub:
 
     def test_save_model_called_with_internal_flag(self, tmp_path):
         _, mock_save, _, _, _ = self._run_push(tmp_path)
-        mock_save.assert_called_once_with(_internal_call=True)
+        mock_save.assert_called_once_with(_internal_call=True, _synchronize=False)
 
     def test_create_model_card_called(self, tmp_path):
         _, _, mock_card, _, _ = self._run_push(tmp_path)

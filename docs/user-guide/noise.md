@@ -263,7 +263,7 @@ Opaque provides five MF strategies, all used through the unified `mf_gaussian_no
 
 | Strategy factory | Memory | Best for |
 |----------|--------|----------|
-| `band_mf_strategy()` | O(bands) | General use with ``dpftrl_acc.poisson`` amplification |
+| `band_mf_strategy()` | O(bands) | General use with ``b_min_sep``; expert fixed-universe cyclic composition |
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
 | `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
@@ -355,7 +355,8 @@ identical noise. See [Distributed Training](distributed.md) and
 ### `band_mf_strategy`
 
 Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
-workload. Uses ``dpftrl_acc.poisson`` for privacy accounting.
+workload. Stock Trainer runs pair it with ``dpftrl_acc.b_min_sep``; the cyclic
+Poisson accountant is a separately scoped fixed-universe API.
 
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, band_mf_strategy
@@ -471,12 +472,12 @@ import opaque.accounting as acc  # cross-cutting calibration / composition
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
-# BandMF — strategy provides sensitivity and coefficients
+# BandMF — supported Trainer participation contract
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.poisson(
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 eps = proc.epsilon_at(1e-5)
 
@@ -551,7 +552,7 @@ For a linear regression with n=1000 steps, epsilon=1.0:
 
 Values are illustrative; actual results depend on problem specifics.
 
-### MF noise with Poisson sampling
+### Expert fixed-universe MF noise with cyclic Poisson sampling
 
 `CyclicPoissonSampler` splits the data into `bands` groups and, at step
 `i`, samples only group `i % bands` with per-example probability
@@ -560,14 +561,21 @@ so each step is plain Poisson on the full dataset; for BandMF, match `bands`
 to `band_mf_strategy`. That keeps the data schedule aligned with
 `mf_gaussian_noise` and `dpftrl_acc.poisson`:
 
+For BandMF this is a low-level fixed-universe construction:
+`sample_rate` is conditional in the active group, and the partition,
+population, and rate must remain fixed/public across neighbors. Stock
+`DPTrainer` uses b-min-separation instead.
+
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
+bands = 4
+conditional_rate = bands * batch_size / len(dataset)
 sampler = CyclicPoissonSampler(
     dataset,
-    sample_rate=sample_rate,
-    bands=4,
+    sample_rate=conditional_rate,
+    bands=bands,
     n_steps=num_steps,
     key=key(0),
 )

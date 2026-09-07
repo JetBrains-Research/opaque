@@ -1,0 +1,50 @@
+{
+  "_fixture": {
+    "source_commit": "ef1abc58eb180250d4a2f930abdcd156d363f4e9",
+    "source_release_shape": "v0.15.4 / v0.15.5.rc1",
+    "generation": "Serialize freshly constructed PoissonSampler and BMinSepSampler instances with opaque.serialization.state_dict on source_commit.",
+    "data_classification": "Synthetic fixture only. RNG seeds are public test values and contain no user or production data.",
+    "runtime_instance_fields": [
+      "version",
+      "clip_state",
+      "noise_state",
+      "sampler_state",
+      "sample_rate",
+      "target_delta",
+      "noise_multiplier",
+      "expected_steps_per_epoch",
+      "expected_batch_size",
+      "total_steps",
+      "mechanism_kind",
+      "is_horizon_process",
+      "calibration_source",
+      "target_epsilon",
+      "horizon_process_state",
+      "mf_n_steps",
+      "mf_min_sep",
+      "mf_max_participations",
+      "lr_scheduler",
+      "learning_rate",
+      "warmup_steps",
+      "lr_scheduler_kwargs"
+    ]
+  },
+  "plain_poisson": {
+    "consumed": 0,
+    "key_impl": "opaque_threefry_like",
+    "key_seed": 13305583693352931532,
+    "n_steps": 20,
+    "num_samples": 100,
+    "sample_rate": 0.1,
+    "truncated_batch_size": null
+  },
+  "b_min_sep": {
+    "bands": 4,
+    "consumed": 0,
+    "key_impl": "opaque_threefry_like",
+    "key_seed": 17545001773908138897,
+    "n_steps": 20,
+    "num_examples": 100,
+    "sampling_prob": 0.14285714285714285
+  }
+}

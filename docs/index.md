@@ -82,11 +82,11 @@ from opaque.dpftrl.noise import band_mf_strategy
 # DP-SGD: per-step Gaussian + Poisson, composed across N steps.
 dpsgd_proc = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 
-# DP-FTRL: whole-process MF + Poisson at calibration time.
+# DP-FTRL: whole-process BandMF + b-min-separation at calibration time.
 strategy = band_mf_strategy(bands=10)
-dpftrl_proc = dpftrl_acc.poisson(
+dpftrl_proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01, n_steps=1000,
+    p0=0.01, n_steps=1000,
 )
 
 print(f"DP-SGD ε    = {dpsgd_proc.epsilon_at(1e-5):.4f}")

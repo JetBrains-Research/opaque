@@ -35,7 +35,7 @@ The accounting API is split into three namespaces:
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
 | `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t` | `from opaque.dpsgd import accounting as dpsgd_acc` |
-| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `b_min_sep`, `balls_in_bins`, and low-level fixed-universe cyclic `poisson` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
 The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
 the algorithm-scoped namespaces — use the namespace that matches your training
@@ -51,10 +51,10 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 from opaque.dpftrl import accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.poisson(
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
     n_steps=1000,
+    p0=0.01,
 )
 
 # Cross-cutting composition and calibration always go via opaque.accounting
@@ -344,10 +344,10 @@ step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=batch_size / datas
 training = step * num_steps
 
 # DP-FTRL with BandMF: same chain as first-moment-only
-proc = dpftrl_acc.poisson(
+proc = dpftrl_acc.b_min_sep(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=batch_size / dataset_size,
     n_steps=num_steps,
+    p0=batch_size / dataset_size,
 )
 ```
 
@@ -452,21 +452,28 @@ proc = dpftrl_acc.balls_in_bins(
 
 ### `poisson(inner, sample_rate, *, n_steps) -> DpProcess`
 
-Poisson amplification for DP-FTRL. Whole-process accountant covering all
+Low-level cyclic Poisson amplification for DP-FTRL. Whole-process accountant covering all
 `n_steps` training rounds (do **not** compose with `* num_steps`
 externally). Cyclic when the inner is `BandMf` with `bands > 1` (decomposes
 into `ceil(n_steps / bands)` independent groups); plain Poisson per round
 when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 
+For BandMF, this API is conditional on a fixed/public universe, cyclic
+partition, and rate across neighboring inputs. `sample_rate` is the
+conditional inclusion probability in the active group, not the global `B/N`;
+with equal groups, a global rate `p0` requires `sample_rate = bands * p0 <= 1`.
+Independent construction does not establish Opaque's default add/remove
+guarantee. Stock `DPTrainer` uses `b_min_sep`.
+
 - `inner` (BandMf | IdentityMf): MF mechanism.
-- `sample_rate` (float): Poisson sampling probability per round.
+- `sample_rate` (float): Conditional Poisson probability in the active group for BandMF; whole-dataset probability for identity MF.
 - `n_steps` (int, keyword-only): Total number of training rounds.
 
 ```python
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
     dpftrl_acc.mf_gaussian(1.0, strategy),
-    sample_rate=0.01,
+    sample_rate=0.1,  # conditional rate; global rate is 0.01
     n_steps=1000,
 )
 ```

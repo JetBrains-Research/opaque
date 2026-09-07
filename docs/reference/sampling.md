@@ -29,7 +29,8 @@ Opaque provides these sampling strategies:
 3. **Cyclic Poisson (DP-FTRL)** (`opaque.dpftrl.sampling.CyclicPoissonSampler`):
    `bands` disjoint groups; step `i` samples only group `i % bands`, with
    independent inclusion at `sample_rate`. Use `bands=1` for identity MF
-   (full dataset each step); for BandMF, match `bands` to the MF strategy.
+   (full dataset each step). BandMF use is an expert fixed-universe
+   construction with a conditional active-group rate.
 
 4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): each example is
    independently assigned to a bin once at init; the assignment is **fixed
@@ -156,13 +157,21 @@ Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
 `mechanism` is `dpftrl_acc.mf_gaussian(nm, strategy)` for `lambda_cgd_strategy`,
 `bisr_strategy`, `blt_strategy`, `bsr_strategy`, or `dpftrl_acc.mf_gaussian(..., identity_strategy())`.
 
-## CyclicPoissonSampler (DP-FTRL)
+## CyclicPoissonSampler (expert DP-FTRL API)
 
 Partitions the dataset into `bands` groups and, at step `i`, draws only
 from group `i % bands`, with each eligible example included independently at
 `sample_rate` (Binomial batch size within the group). Identity MF uses
 `bands=1`; BandMF uses `bands` equal to the mechanism’s band count — both
 pair with `dpftrl_acc.poisson`.
+
+For BandMF, this is an expert fixed-universe API. `sample_rate` is conditional
+inside the active group, not the global `B/N`; with equal groups the latter
+requires a conditional rate `bands * B/N <= 1`. The equal-split partition,
+population, and rate must remain fixed/public across neighbors (for example,
+zero-out adjacency). Independent construction does not establish Opaque's
+default variable-cardinality add/remove guarantee, and this is not a
+`DPTrainer` mode.
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
@@ -181,10 +190,10 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
-| `sample_rate` | `float` | required | Probability of including each eligible example, in (0, 1] |
+| `sample_rate` | `float` | required | Conditional probability of including each example in the active group, in (0, 1] |
 | `bands` | `int` | `1` | Groups in the cycle. `1` = identity-style (full dataset each step). `>1` = cyclic BandMF-style (match strategy `bands`). |
 | `n_steps` | `int` | `1` | Total batches to yield |
-| `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` (only used when `bands > 1`) or `INDEPENDENT` |
+| `partition_type` | `PartitionType` | `EQUAL_SPLIT` | `EQUAL_SPLIT` is fixed-universe/zero-out; `INDEPENDENT` needs a separately audited add/remove contract |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 In distributed training, shard the dataset with `local_shard()` and pass
