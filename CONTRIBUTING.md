@@ -247,7 +247,7 @@ uv run ruff check --fix packages/
 <body>
 ```
 
-**Types**: `feat` / `add`, `fix`, `refactor` / `change` / `perf`,
+**Types**: `feat` / `add`, `fix`, `refactor` / `change` / `perf` / `deps`,
 `docs`, `test`, `ci` / `build`, `chore` / `style`, `delete`. Append `!`
 to mark a breaking change (e.g. `feat!:`). See [Changelog
 conventions](#release-note-conventions) for how each type maps to a

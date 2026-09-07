@@ -35,6 +35,7 @@ jobs:
             refactor
             change
             perf
+            deps
             docs
             test
             ci

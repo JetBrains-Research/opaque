@@ -70,7 +70,7 @@ the draft Release body from an exact tag-to-candidate range.
 
 - Types `git-cliff` categorizes (see [cliff.toml](cliff.toml)):
   `feat` / `add` → Added, `fix` → Fixed,
-  `refactor` / `change` / `perf` → Changed, `docs` → Documentation,
+  `refactor` / `change` / `perf` / `deps` → Changed, `docs` → Documentation,
   `test` → Tests, `ci` / `build` → CI/CD, `delete` → Removed,
   `chore` / `style` → skipped.
 - Scope is optional but encouraged — e.g., `fix(accounting): …`.
@@ -365,8 +365,8 @@ the canonical lint / test / Rust-test commands.
 
 The PR title **must** follow Conventional Commits: `<type>(scope): <imperative subject>`.
 The PR-gate workflow (`action-semantic-pull-request`) rejects titles that don't
-parse. Accepted types: `feat`/`add`, `fix`, `refactor`/`change`/`perf`, `docs`,
-`test`, `ci`/`build`, `delete`, `chore`/`style`. Append `!` for breaking changes.
+parse. Accepted types: `feat`/`add`, `fix`, `refactor`/`change`/`perf`/`deps`,
+`docs`, `test`, `ci`/`build`, `delete`, `chore`/`style`. Append `!` for breaking changes.
 Subject starts lowercase and reads as an imperative (`add`, `fix`, `remove`).
 See the **Pull requests** section above for full details.
 
