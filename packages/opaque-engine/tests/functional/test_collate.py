@@ -2,10 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the empty_collate wrapper."""
 
+import pickle
+
 import pytest
 import torch
 
 from opaque.api.engine.functional._collate import _empty_like, empty_collate
+
+
+def _stack_collate(examples):
+    """Module-level collator so pickle exercises the wrapper itself."""
+    return torch.stack(examples)
 
 
 class TestEmptyLike:
@@ -109,6 +116,16 @@ class TestPoissonCollate:
 
         wrapped = empty_collate(my_collate)
         assert wrapped.__name__ == "my_collate"
+
+    def test_pickles_after_learning_template(self):
+        """Spawned DataLoader workers can deserialize a primed wrapper."""
+        wrapped = empty_collate(_stack_collate)
+        wrapped([torch.tensor([1, 2]), torch.tensor([3, 4])])
+
+        restored = pickle.loads(pickle.dumps(wrapped))
+
+        assert restored.__name__ == "_stack_collate"
+        assert restored([]).shape == (0, 2)
 
     def test_template_captured_once(self):
         """Template is captured from the first non-empty call only."""

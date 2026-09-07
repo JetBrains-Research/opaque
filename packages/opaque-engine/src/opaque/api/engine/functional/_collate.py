@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 import functools
 from collections.abc import Callable, Mapping
-from typing import TypeVar
+from typing import Generic, TypeVar
 
 import torch
 
@@ -45,6 +45,34 @@ def _empty_like(template: T) -> T:
     if isinstance(template, list):
         return [_empty_like(v) for v in template]
     return template
+
+
+class _EmptyCollator(Generic[T]):
+    """Pickle-safe stateful wrapper used by :func:`empty_collate`.
+
+    ``DataLoader`` serializes its collator when workers use the ``spawn`` or
+    ``forkserver`` multiprocessing start methods.  Keeping this callable at
+    module scope makes the wrapper serializable whenever the wrapped collator
+    and learned template are serializable too.
+    """
+
+    def __init__(self, collate_fn: Callable[..., T]) -> None:
+        self._collate_fn = collate_fn
+        self._template: T | None = None
+        functools.update_wrapper(self, collate_fn)
+
+    def __call__(self, examples):
+        if not examples:
+            if self._template is None:
+                return self._collate_fn(examples)
+            return _empty_like(self._template)
+
+        result = self._collate_fn(examples)
+
+        if self._template is None:
+            self._template = copy.deepcopy(result)
+
+        return result
 
 
 def empty_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
@@ -82,20 +110,4 @@ def empty_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
         Wrapped function that returns empty-batch-dim outputs for empty
         example lists.
     """
-    template: list[T | None] = [None]  # mutable cell for closure
-
-    @functools.wraps(collate_fn)
-    def wrapper(examples):
-        if not examples:
-            if template[0] is None:
-                return collate_fn(examples)
-            return _empty_like(template[0])
-
-        result = collate_fn(examples)
-
-        if template[0] is None:
-            template[0] = copy.deepcopy(result)
-
-        return result
-
-    return wrapper
+    return _EmptyCollator(collate_fn)
