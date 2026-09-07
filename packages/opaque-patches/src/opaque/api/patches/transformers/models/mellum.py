@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Patches for the Mellum 2.0 MoE family (``JetBrains/Mellum2-12B-A2.5B``, tf v5.8+).
 
-Qwen3-MoE-derived: stacked ``MellumExperts``, SwiGLU, llama-style RMSNorm.
-``fused_add_rms_kind=None`` keeps the MoE decoder forward (router logits / aux
-loss) intact. The original dense Mellum (``model_type="llama"``) is served by the
-``llama`` family.
+Stacked ``MellumExperts``, SwiGLU, and route-sensitive RMSNorm. Mellum keeps the
+upstream Transformers vmap-safe RMSNorm because Triton reduction-order
+differences in BF16 can change expert selection. ``fused_add_rms_kind=None``
+keeps the MoE decoder forward (router logits / aux loss) intact. The original
+dense Mellum (``model_type="llama"``) is served by the ``llama`` family.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ apply_mellum_patches = make_apply_model_patches(
     },
     activation_kind="swiglu",
     moe_kind="swiglu",
-    rms_norm_kind="llama",
+    rms_norm_kind=None,
     fused_add_rms_kind=None,
     fused_linear_cross_entropy=False,
     chunked_linear_cross_entropy=2048,

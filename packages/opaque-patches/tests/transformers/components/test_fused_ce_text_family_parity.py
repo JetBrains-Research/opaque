@@ -137,6 +137,92 @@ def test_fused_ce_explicitly_preserves_logits_for_metrics():
     assert output.logits is not None
 
 
+def test_fused_ce_preserves_router_auxiliary_loss_contract():
+    sentinel = object()
+    calls = []
+
+    def original(_self, **kwargs):
+        calls.append(kwargs)
+        return sentinel
+
+    config = types.SimpleNamespace(output_router_logits=False)
+    model = types.SimpleNamespace(config=config)
+    forward = _make_fused_ce_causal_lm_forward(original)
+    labels = torch.ones(1, 3, dtype=torch.long)
+
+    output = forward(
+        model,
+        labels=labels,
+        output_router_logits=True,
+        opaque_fused_loss_only=True,
+    )
+
+    assert output is sentinel
+    assert calls == [
+        {
+            "input_ids": None,
+            "attention_mask": None,
+            "position_ids": None,
+            "past_key_values": None,
+            "inputs_embeds": None,
+            "labels": labels,
+            "use_cache": None,
+            "output_attentions": None,
+            "output_hidden_states": None,
+            "return_dict": None,
+            "cache_position": None,
+            "logits_to_keep": 0,
+            "output_router_logits": True,
+        }
+    ]
+
+
+def test_fused_ce_forwards_backbone_router_outputs():
+    """MoE backbone outputs keep router logits and any backbone aux loss."""
+    from transformers.modeling_outputs import MoeCausalLMOutputWithPast
+
+    class _BackboneOutput:
+        def __init__(self, hidden):
+            self.hidden = hidden
+            self.past_key_values = None
+            self.hidden_states = None
+            self.attentions = None
+            self.router_logits = (torch.zeros(3, 2),)
+            self.aux_loss = torch.tensor(0.25)
+
+        def __getitem__(self, index):
+            assert index == 0
+            return self.hidden
+
+    def backbone(**_kwargs):
+        return _BackboneOutput(torch.zeros(1, 3, 4))
+
+    def loss_function(logits, labels, vocab_size, **kwargs):
+        return logits.float().sum() * 0 + labels.float().sum()
+
+    model = types.SimpleNamespace(
+        config=types.SimpleNamespace(
+            output_router_logits=False,
+            output_attentions=False,
+            output_hidden_states=False,
+            use_return_dict=True,
+        ),
+        model=backbone,
+        lm_head=torch.nn.Linear(4, 5, bias=False),
+        loss_function=loss_function,
+        vocab_size=5,
+    )
+    forward = _make_fused_ce_causal_lm_forward(lambda *_a, **_k: None)
+    labels = torch.ones(1, 3, dtype=torch.long)
+
+    output = forward(model, labels=labels, opaque_fused_loss_only=False)
+
+    assert isinstance(output, MoeCausalLMOutputWithPast)
+    assert output.router_logits is not None
+    assert torch.equal(output.aux_loss, torch.tensor(0.25))
+    assert output.logits is not None
+
+
 @pytest.mark.parametrize("family", sorted(_FAMILY_SPECS))
 def test_fused_ce_wrapper_preserves_logits_to_keep(family):
     """T1: wrapper must preserve HF logits slicing semantics."""

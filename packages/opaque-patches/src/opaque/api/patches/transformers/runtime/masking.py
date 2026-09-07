@@ -192,9 +192,24 @@ def vmap_create_causal_mask(
     # @check_model_inputs resolves use_cache=None to config.use_cache=True),
     # so we check for actual cached data rather than just None.
     attn_impl = getattr(config, "_attn_implementation", None)
+    all_valid_attention = attention_mask is None
+    if (
+        not all_valid_attention
+        and attention_mask.ndim <= 2  # noqa: PLR2004 - padding masks are 1D/2D
+        and not torch.compiler.is_compiling()
+    ):
+        try:
+            functorch = torch._C._functorch
+            physical_mask = attention_mask
+            while functorch.is_functorch_wrapped_tensor(physical_mask):
+                physical_mask = functorch.get_unwrapped(physical_mask)
+            all_valid_attention = bool(physical_mask.all())
+        except (AttributeError, RuntimeError):
+            all_valid_attention = False
+
     if (
         allow_is_causal_skip
-        and attention_mask is None
+        and all_valid_attention
         and attn_impl != "eager"
         and _safe_seq_length(past_key_values) <= 0
     ):
