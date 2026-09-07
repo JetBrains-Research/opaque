@@ -1,0 +1,114 @@
+=== k1_sampler_resume
+
+=== PoissonSampler (sampling_mode='poisson') ===
+pre-ckpt: rank0 vs rank1 identical steps: 0 / 7  mean|B|: 54.142857142857146 53.857142857142854
+saved snapshot keys/seed from rank0: {'key_seed': 7692528677094032581, 'key_impl': 'opaque_threefry_like', 'consumed': 7}
+rank1 live stream key seed: 12442763432782722717  rank0: 7692528677094032581
+restored rank1 stream key seed: 7692528677094032581 == rank0's: True
+post-resume: identical inclusion masks on 20/20 steps; total identical entries 1.000000
+restored rank0 == continuous rank0 on all steps: True
+continuous rank1 vs restored rank1 identical steps: 0 / 20
+co-inclusion rate of same local index across ranks after resume: 0.0506  (q=0.05, q^2=0.0025)
+
+=== BMinSepSampler (sampling_mode='b_min_sep') ===
+pre-ckpt: rank0 vs rank1 identical steps: 0 / 7  mean|B|: 53.285714285714285 50.285714285714285
+saved snapshot keys/seed from rank0: {'key_seed': 3458620349621444162, 'key_impl': 'opaque_threefry_like', 'consumed': 7}
+rank1 live stream key seed: 4350963696868884131  rank0: 3458620349621444162
+restored rank1 stream key seed: 3458620349621444162 == rank0's: True
+post-resume: identical inclusion masks on 20/20 steps; total identical entries 1.000000
+restored rank0 == continuous rank0 on all steps: True
+continuous rank1 vs restored rank1 identical steps: 0 / 20
+co-inclusion rate of same local index across ranks after resume: 0.0503  (q=0.05, q^2=0.0025)
+
+RESULT poisson identical steps: 20 / 20  bmin identical steps: 20 / 20
+=== k1_hockey_stick
+(a) independent coins, eps=3.0: delta(add)=3.1597e-11  delta(remove)=0.0000e+00  max=3.1597e-11
+    unsubsampled Gaussian delta_G(eps=3, sigma=0.5622) analytic = 1.1227e-01;  q*delta_G = 5.7481e-05
+    grid delta_G = 1.1227e-01 (rel err 2.98e-11)
+(b) shared coin, u=0.0: delta(add)=3.1597e-11  delta(remove)=0.0000e+00  max=3.1597e-11   ratio to (a): 1.000e+00
+(b) shared coin, u=0.5: delta(add)=1.0164e-06  delta(remove)=0.0000e+00  max=1.0164e-06   ratio to (a): 3.217e+04
+(b) shared coin, u=1.0: delta(add)=2.7587e-05  delta(remove)=0.0000e+00  max=2.7587e-05   ratio to (a): 8.731e+05
+(b') shared coin, u=1 anti-aligned x=-1: max delta=3.1597e-11
+eps at which shared-coin (u=1) pair reaches delta=3.160e-11: eps=10.524  (independent coins: eps=3)
+
+ eps | delta indep | delta shared(u=1) | ratio
+ 0.5 | 1.499e-07 | 1.426e-04 | 9.51e+02
+ 1.0 | 1.850e-08 | 1.010e-04 | 5.46e+03
+ 2.0 | 7.087e-10 | 5.464e-05 | 7.71e+04
+ 3.0 | 3.160e-11 | 2.759e-05 | 8.73e+05
+ 4.0 | 1.207e-12 | 1.186e-05 | 9.83e+06
+ 6.0 | 8.089e-16 | 1.010e-06 | 1.25e+09
+
+union-bound over T=15625 steps at eps=3: indep 4.94e-07; shared(u=1) 4.31e-01
+=== k1_run_bounds
+ independent: single-step eps(delta=1e-6) = 0.210  -> whole-run eps(1e-6) >= 0.210 (rigorous lower bound); RDP upper bound over T=15625: eps <= 4.89 (alpha=4)
+              single-step delta(eps=3) = 3.160e-11  -> whole-run delta(eps=3) >= that
+  shared u=1: single-step eps(delta=1e-6) = 6.006  -> whole-run eps(1e-6) >= 6.006 (rigorous lower bound); RDP upper bound over T=15625: eps <= 44.31 (alpha=1.5)
+              single-step delta(eps=3) = 2.759e-05  -> whole-run delta(eps=3) >= that
+=== k2_accounting
+baseline poisson(gaussian(0.5622), 0.000512)*15625 @ delta=1e-06: eps = 3.0004  (0.3s)
+
+rho    sigma_g/(nm*C_g)  sqrt(1+rho)   sigma_h/(nm*C_h)  sqrt(1+1/rho)  Mahalanobis*nm^2
+0.5    1.224745          1.224745      1.732051          1.732051       1.000000
+0.2    1.095445          1.095445      2.449490          2.449490       1.000000
+0.1    1.048809          1.048809      3.316625          3.316625       1.000000
+0.05   1.024695          1.024695      4.582576          4.582576       1.000000
+0.02   1.009950          1.009950      7.141428          7.141428       1.000000
+0.01   1.004988          1.004988      10.049876          10.049876       1.000000
+
+rho    nm_h      nm_eff    eps[poisson(g(nm)|g(nm_h),q)*T]   eps[poisson(g(nm_eff),q)*T]   design
+0.5    0.9738   0.48688   5.4431                           5.3047                        5.443   (0.8s)
+0.2    1.3771   0.52050   4.2189                           4.1001                        4.219   (0.6s)
+0.1    1.8646   0.53827   3.7035                           3.5897                        3.703   (0.6s)
+0.05   2.5763   0.54927   3.4171                           3.3062                        3.417   (0.5s)
+0.02   4.0149   0.55677   3.2345                           3.1256                        3.234   (0.5s)
+0.01   5.6500   0.55944   3.1717                           3.0635                        3.172   (0.5s)
+
+shipped route: accountant call is poisson(gaussian(0.5622), q)*T regardless of PerGroup -> eps = 3.0004 (identical object)
+naive per-group sigma=nm*C_i (two groups) == gaussian(nm/sqrt2): eps = 11.8402
+=== k2_composed_inner_v2
+
+rho=0.1: nm_h=1.8646 nm_eff=0.53827
+ single-step UNsubsampled delta_at(eps):  composed(g|g_h)   joint g(nm_eff)   analytic Gaussian
+   eps=0.5: 5.549561e-01   5.549561e-01   5.549562e-01
+   eps=1.0: 4.585254e-01   4.585254e-01   4.585254e-01
+   eps=2.0: 2.753775e-01   2.753775e-01   2.753775e-01
+   eps=3.0: 1.362398e-01   1.362398e-01   1.362398e-01
+ single-step POISSON delta_at(eps):  poisson(composed)   poisson(joint)
+   eps=1.0: 4.822108e-08   4.820842e-08
+   eps=2.0: 2.521860e-09   2.504495e-09
+   eps=3.0: 1.666291e-10   1.489799e-10
+ T-fold eps@1e-6: poisson(composed)*T = 3.7035   poisson(joint)*T = 3.5897
+ separate-coin composition (poisson(g)|poisson(g_h))*T eps = 3.0033
+
+rho=0.02: nm_h=4.0149 nm_eff=0.55677
+ single-step UNsubsampled delta_at(eps):  composed(g|g_h)   joint g(nm_eff)   analytic Gaussian
+   eps=0.5: 5.348850e-01   5.348850e-01   5.348850e-01
+   eps=1.0: 4.354934e-01   4.354934e-01   4.354934e-01
+   eps=2.0: 2.511534e-01   2.511534e-01   2.511534e-01
+   eps=3.0: 1.173564e-01   1.173564e-01   1.173564e-01
+ single-step POISSON delta_at(eps):  poisson(composed)   poisson(joint)
+   eps=1.0: 2.308348e-08   2.306803e-08
+   eps=2.0: 9.659792e-10   9.480686e-10
+   eps=3.0: 6.320684e-11   4.517860e-11
+ T-fold eps@1e-6: poisson(composed)*T = 3.2345   poisson(joint)*T = 3.1256
+ separate-coin composition (poisson(g)|poisson(g_h))*T eps = 3.0010
+=== k3_structural_bound
+E   k  L  sqrt(kL(1-k/E))  max_rand   adv_same_k   T=1     exhaustive(E=8)  | replace-one: max_rand  adv_disjoint  adv_vs_empty  sqrt(2kL)  sqrt(2kL(1-k/E))  sqrt(2min(k,E-k)L)
+8   2  2  1.732051         1.732051   1.732051     1.7321  1.732051         | 0.407450              2.828427      1.732051      2.8284     2.4495            2.8284
+8   8  2  0.000000         0.000000   0.000000     0.0000  0.000000         | 0.000000              0.000000      0.000000      5.6569     0.0000            0.0000
+64  2  2  1.968502         1.968502   1.968502     1.9685  nan              | 0.375285              2.828427      1.968502      2.8284     2.7839            2.8284
+64  8  2  3.741657         3.741657   3.741657     3.7417  nan              | 0.716709              5.656854      3.741657      5.6569     5.2915            5.6569
+=== k4_value_neutral
+[torch.float32] grad : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 1.931e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=5.618e-04 (nonzero => the surrogate gradient is really there)
+[torch.float32] vmap : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 2.418e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=7.382e-04 (nonzero => the surrogate gradient is really there)
+      vmap vs per-example loop grad max|diff| = 0.000e+00
+[torch.float64] grad : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 1.931e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=5.618e-04 (nonzero => the surrogate gradient is really there)
+[torch.float64] vmap : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 2.417e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=7.382e-04 (nonzero => the surrogate gradient is really there)
+      vmap vs per-example loop grad max|diff| = 0.000e+00
+K4 RESULT: PASS
+DONE

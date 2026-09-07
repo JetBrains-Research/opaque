@@ -1,0 +1,13 @@
+metric                         prototype(p=q)   patched(paper p)
+batch_size_mean                       29.9400            31.9800
+delta_heldout_final                    0.1614             0.1697
+mean_cos                               0.5923             0.7327
+mean_cos_pop                           0.7187             0.7435
+dead_zone_rate                         0.0400             0.0400
+clip_rate_mean                         0.6033             0.5833
+probe_clip_events                      0.0000             0.0000
+s_inf_over_kE                          0.0492             0.0492
+pooled_noise_std_empirical             0.1160             0.1160
+pooled_noise_std_predicted             0.1123             0.1123
+latch_ok (explicit check): True | sigma relerr probe/fallback: 2.91e-16 3.38e-16 | probe noise emp/pred: 0.993
+delta_heldout: [0.317, 0.148, 0.17] | elapsed 11.5 s
