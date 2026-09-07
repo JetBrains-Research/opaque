@@ -377,6 +377,42 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
     patched[0][0][1](lambda *args, **kwargs: None)
     assert chunk_widths == [1024]
 
+    # ``True`` preserves an integer family default rather than falling back to
+    # the global chunk width.
+    _, FakeFamilyDefault, _, apply_family_default = _fresh_module(
+        "family_default_chunk",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=2048,
+    )
+    apply_family_default(
+        FakeFamilyDefault(),
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=True,
+    )
+    assert len(patched) == 2
+    patched[1][0][1](lambda *args, **kwargs: None)
+    assert chunk_widths == [1024, 2048]
+
+    # An explicit runtime setting can enable the portable path for a family
+    # whose default is disabled.
+    _, FakeOptIn, _, apply_opt_in = _fresh_module(
+        "opt_in_chunk",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=False,
+    )
+    apply_opt_in(
+        FakeOptIn(),
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=512,
+    )
+    assert len(patched) == 3
+    patched[2][0][1](lambda *args, **kwargs: None)
+    assert chunk_widths == [1024, 2048, 512]
+
     from opaque.exceptions import ConfigurationError
 
     _, FakeZero, _, apply_zero = _fresh_module(
@@ -390,7 +426,7 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
         compat=False,
         fused_linear_cross_entropy=True,
     )
-    assert len(patched) == 1
+    assert len(patched) == 3
 
     with pytest.raises(ConfigurationError, match="non-negative integer"):
         _fresh_module(

@@ -182,11 +182,18 @@ loss is the only consumer of the forward output;
 Families outside the fused CUDA kernel's numerical envelope can use the
 portable chunked backend. Its peak probability-tile memory scales with
 `microbatch_size * prediction_tokens * chunk_width` in FP32. Configure the
-loss-only path and vocabulary-column width through
-`performance_kernels_config={"fused_linear_cross_entropy": True,
-"chunked_linear_cross_entropy": 2048}`. The fused flag enables the
-logits-free path; for the chunk-width setting, `True` selects the family
-default, while `False` or `0` disables the portable backend.
+loss-only path and vocabulary-column width through:
+
+```python
+performance_kernels_config = {
+    "fused_linear_cross_entropy": True,
+    "chunked_linear_cross_entropy": 2048,
+}
+```
+
+The fused flag enables the logits-free path; for the chunk-width setting,
+`True` selects the family default, while `False` or `0` disables the portable
+backend.
 
 ## Profiling
 

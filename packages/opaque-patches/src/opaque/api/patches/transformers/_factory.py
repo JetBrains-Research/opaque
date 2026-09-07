@@ -362,10 +362,18 @@ def make_apply_model_patches(
             and causal_lm_obj is not None
         ):
             apply_causal_lm_loss_function_patch(model, causal_lm_obj)
-        chunked_linear_ce = chunked_linear_cross_entropy
-        if chunked_linear_ce:
+        chunked_linear_ce = kwargs.get(
+            "chunked_linear_cross_entropy", chunked_linear_cross_entropy
+        )
+        if (
+            chunked_linear_ce is True
+            and isinstance(chunked_linear_cross_entropy, int)
+            and not isinstance(chunked_linear_cross_entropy, bool)
+        ):
+            chunked_linear_ce = chunked_linear_cross_entropy
+        else:
             chunked_linear_ce = _normalize_chunked_linear_cross_entropy(
-                kwargs.get("chunked_linear_cross_entropy", chunked_linear_ce)
+                chunked_linear_ce
             )
         if (
             (fused_linear_cross_entropy or chunked_linear_ce)
