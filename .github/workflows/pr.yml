@@ -31,6 +31,7 @@ jobs:
           types: |
             feat
             add
+            deps
             fix
             refactor
             change
