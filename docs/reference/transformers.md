@@ -200,9 +200,9 @@ Dataclass surface.  Every field listed here exists on
 | `bf16` | `bool` | `False` | bf16 autocast on the loss closure. |
 | `bf16_full_eval` | `bool` | `False` | Cast model to bf16 for eval scope only. |
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
-| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.  Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` for vmap-safety. |
+| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit. Opaque automatically uses the vmap-safe non-reentrant path. Incompatible with `torch_compile`. |
 | `gradient_checkpointing_kwargs` | `dict \| str \| None` | `None` | Forwarded to `model.gradient_checkpointing_enable(...)`. |
-| `torch_compile` | `bool` | `False` | Wrap the per-example loss closure with `torch.compile`.  Tries `fullgraph=True` first; falls back with a warning. |
+| `torch_compile` | `bool` | `False` | Compile each tensor-only microbatch gradient/clipping kernel with `fullgraph=True`. |
 | `torch_compile_backend` | `str \| None` | `None` | Defaults to `"inductor"` when compile is on. |
 | `torch_compile_mode` | `str \| None` | `None` | One of `{"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}`. |
 

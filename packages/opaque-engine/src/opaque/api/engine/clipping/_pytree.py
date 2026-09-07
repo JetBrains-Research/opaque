@@ -331,7 +331,7 @@ def _auto_scale_per_group(
     group_ratios: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
         norm = torch.sqrt(sq_norm)
-        R = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
+        R = torch.as_tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
         R = torch.clamp(R, min=0.0)
         gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
         group_ratios[group_name] = R / (norm + gamma_tensor)
@@ -418,7 +418,7 @@ def auto_scale_pytree(
     orig_norm = norm.to(acc_dtype)
 
     R_tensor = torch.clamp(
-        torch.tensor(R, dtype=norm.dtype, device=norm.device), min=0.0
+        torch.as_tensor(R, dtype=norm.dtype, device=norm.device), min=0.0
     )
     gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
     ratio = R_tensor / (norm + gamma_tensor)
@@ -456,7 +456,9 @@ def _clip_pytree_per_group(
     group_ratios: dict[str, torch.Tensor] = {}
     for group_name, sq_norm in group_sq_norms.items():
         norm = torch.sqrt(sq_norm)
-        cn = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
+        cn = torch.as_tensor(
+            pg.values[group_name], dtype=norm.dtype, device=norm.device
+        )
         cn = torch.clamp(cn, min=0.0)
         group_ratios[group_name] = cn / norm
 
@@ -545,7 +547,7 @@ def clip_pytree(
     norm = torch.sqrt(sq_norm)
     orig_norm = norm.to(acc_dtype)
 
-    clipping_norm_tensor = torch.tensor(
+    clipping_norm_tensor = torch.as_tensor(
         clipping_norm, dtype=norm.dtype, device=norm.device
     )
     clipping_norm_tensor = torch.clamp(clipping_norm_tensor, min=0.0)

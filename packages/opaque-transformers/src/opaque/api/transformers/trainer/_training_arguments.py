@@ -859,6 +859,18 @@ class TrainingArguments:
                 )
             )
 
+        if self.torch_compile and self.gradient_checkpointing:
+            raise ConfigurationError(
+                *(
+                    "torch_compile=True is incompatible with "
+                    "gradient_checkpointing=True: Opaque's vmap-safe, "
+                    "non-reentrant checkpoint path uses saved-tensor hooks, "
+                    "which AOTAutograd cannot safely compose with "
+                    "torch.compile(vmap(grad(...))). Disable either "
+                    "gradient checkpointing or torch compilation.",
+                )
+            )
+
         self._validate_privacy_fields()
 
         # --- 12. metric_for_best_model must be eval-side -------------------

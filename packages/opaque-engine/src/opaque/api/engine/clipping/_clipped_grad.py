@@ -98,6 +98,7 @@ def clipped_grad(
     dtype: torch.dtype | None = None,
     compute_dtype: torch.dtype | None = None,
     _scale_fn: Callable | None = None,
+    _chunk_compiler: Callable | None = None,
 ) -> tuple[ClippedGradFn, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
@@ -310,6 +311,7 @@ def clipped_grad(
         dtype=dtype,
         compute_dtype=compute_dtype,
         _scale_fn=_scale_fn,
+        _chunk_compiler=_chunk_compiler,
     )
 
     if return_stats:

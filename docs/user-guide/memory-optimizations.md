@@ -126,13 +126,14 @@ with functorch). No special kwargs needed.
   The legacy reentrant path is not supported.
 - Supports first-order differentiation only; higher-order transforms still
   reject saved-tensor hooks.
-- `torch.compile` is not supported with checkpointed functional transforms.
+- Checkpointed functional transforms cannot be wrapped with `torch.compile`:
+  non-reentrant checkpointing relies on saved-tensor hooks that AOTAutograd
+  cannot safely compose with `vmap(grad(...))`.
 - Use `torch.no_grad()` for direct `vmap(grad(...))` calls. `clipped_grad` does
   this automatically unless an outer transform differentiates its result.
-- Opt out at the API layer (no env-var kill switches): pass
+- Opt out at the patch API layer (no environment-variable kill switches): pass
   `vmap_checkpointing=False` to `apply_runtime_patches(...)` or
-  `apply_model_patches(...)`, or `performance_kernels_config={"vmap_checkpointing": False}`
-  to `TrainingArguments`.
+  `apply_model_patches(...)`.
 
 ### CPU offloading of saved tensors
 

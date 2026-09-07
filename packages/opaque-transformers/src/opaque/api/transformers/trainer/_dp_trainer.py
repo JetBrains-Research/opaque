@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-import torch._dynamo.exc
 import torchopt
 from datasets import Dataset
 from torch import Tensor
@@ -195,44 +194,9 @@ def _resolve_drift_disposition(
     return drift
 
 
-def _compile_with_fullgraph_fallback(
-    fn: Callable, *, backend: str, mode: str
-) -> Callable:
-    """Compile ``fn`` with ``fullgraph=True``; on first-call failure,
-    log a warning and lazily recompile with ``fullgraph=False``.
-
-    ``torch.compile`` is lazy — the compile failure (graph break under
-    ``fullgraph=True``) surfaces only when the compiled function is
-    actually executed.  This wrapper catches that first-execution
-    Dynamo failure, records the fallback, and forwards subsequent calls
-    to the more permissive variant.  Non-Dynamo exceptions
-    (``torch.OutOfMemoryError`` and friends) are runtime failures of
-    the step, not compile failures: they propagate untouched so the
-    trainer's OOM handling sees them first-hand.  ``fullgraph=True``
-    first catches silent eager-fallback regressions the user explicitly
-    opted into compiling against.
-    """
-    full = torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
-    fallback: Callable | None = None
-
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        nonlocal fallback
-        if fallback is not None:
-            return fallback(*args, **kwargs)
-        try:
-            return full(*args, **kwargs)
-        except torch._dynamo.exc.TorchDynamoException as e:
-            log.warning(
-                "torch.compile fullgraph=True failed (%s: %s); "
-                "falling back to fullgraph=False for subsequent steps.",
-                type(e).__name__,
-                e,
-            )
-            fallback = torch.compile(fn, backend=backend, mode=mode, fullgraph=False)
-            return fallback(*args, **kwargs)
-
-    return wrapper
+def _compile_strict_chunk(fn: Callable, *, backend: str, mode: str) -> Callable:
+    """Compile one tensor-only gradient chunk without graph-break fallback."""
+    return torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
 
 
 @dataclasses.dataclass
@@ -478,6 +442,18 @@ class DPTrainer:
         # which doesn't change after construction.
         self._is_peft: bool = _is_peft_model(model)
         self.args = args
+        if args.torch_compile and bool(
+            getattr(model, "is_gradient_checkpointing", False)
+        ):
+            raise ConfigurationError(
+                *(
+                    "torch_compile=True is incompatible with a model that already "
+                    "has gradient checkpointing enabled: checkpointed functional "
+                    "transforms use saved-tensor hooks that AOTAutograd cannot safely "
+                    "compose with torch.compile(vmap(grad(...))). Disable gradient "
+                    "checkpointing on the model or disable torch compilation.",
+                )
+            )
         self._processing_class = processing_class
         self._base_callbacks: list[Any] = list(callbacks) if callbacks else []
         self.is_in_train = False
@@ -1267,6 +1243,34 @@ class DPTrainer:
         """
         return isinstance(err, torch.OutOfMemoryError)
 
+    def _synchronize_grad_failure(self, error: Exception | None) -> None:
+        """Raise rank-symmetrically before gradient collectives after a failure."""
+        if not self._ddp.is_distributed:
+            if error is not None:
+                raise error
+            return
+
+        local_oom = isinstance(error, RuntimeError) and self._is_retryable_oom(error)
+        flags = torch.tensor(
+            [
+                1.0 if local_oom else 0.0,
+                1.0 if error is not None and not local_oom else 0.0,
+            ],
+            device=self._device,
+        )
+        torch.distributed.all_reduce(flags, op=torch.distributed.ReduceOp.MAX)
+        if flags[1].item() > 0.0:
+            if error is not None and not local_oom:
+                raise error
+            raise RuntimeError(  # noqa: TRY003 - preserve rank symmetry
+                "collective gradient computation failed on a sibling rank"
+            )
+        if flags[0].item() > 0.0:
+            raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
+                "collective microbatch retry (a rank OOM'd in grad_fn; "
+                "whole cluster steps down to a smaller microbatch)."
+            )
+
     def _cluster_needs_step_down(self, local_oom: bool) -> bool:
         """Whether any rank OOM'd this attempt (cluster-wide MAX all-reduce).
 
@@ -1374,8 +1378,8 @@ class DPTrainer:
         # ``LOSS_MAPPING`` dispatch (causal-LM gets ``ForCausalLMLoss``,
         # classification gets ``ForSequenceClassificationLoss``, …).
         # Subclasses override :meth:`compute_per_example_loss` for
-        # domain-specific losses; ``_build_per_example_loss`` here just
-        # wraps it with autocast / torch.compile.
+        # domain-specific losses; ``_build_per_example_loss`` adapts that
+        # method to the functional per-example calling convention.
         # Subclasses that override ``compute_per_example_loss_and_metrics`` emit
         # per-example telemetry; the loss closure then returns ``(loss, aux)`` and
         # the grad fn is built with ``has_aux=True``. Detected by override (no
@@ -2107,17 +2111,12 @@ class DPTrainer:
         # post-step metric bookkeeping below stays outside the scope.
         # ``sp.mark`` records the elapsed time since the previous mark.
         with self._perf_tracker.train(batch_size=step_batch_size) as sp:
-            # Clipped gradients (with optional CPU offload).  Under DDP an OOM
-            # here must become a *collective* event: if it propagated as a
-            # plain per-rank exception, the OOM'ing rank would skip the
-            # ``sum_gradients_`` AllReduce below while its siblings issued it,
-            # deadlocking the process group (or, worse, meeting a later
-            # mismatched collective). So we catch a retryable OOM, all-reduce a
-            # MAX flag across ranks, and if ANY rank OOM'd raise a uniform
-            # retryable OOM on EVERY rank — the cluster bails this attempt at
-            # the same step and ``_train_dispatch`` steps the whole cluster
-            # down to a smaller microbatch in lockstep.
-            local_oom_step = False
+            # Clipped gradients (with optional CPU offload). Any rank-local
+            # failure must become a collective event before the gradient
+            # AllReduce below. This includes lazy strict-compilation failures:
+            # a rank with an empty Poisson draw skips the compiled kernel while
+            # a non-empty sibling may fail during its first compilation.
+            local_grad_error: Exception | None = None
             grads = aux = None
             try:
                 # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
@@ -2128,30 +2127,9 @@ class DPTrainer:
                         *batch_args,
                         state=ctx.clip_state,
                     )
-            except RuntimeError as _grad_err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(_grad_err)):
-                    raise
-                local_oom_step = True
-
-            if self._ddp.is_distributed:
-                _oom_flag = torch.tensor(
-                    [1.0 if local_oom_step else 0.0], device=self._device
-                )
-                torch.distributed.all_reduce(
-                    _oom_flag, op=torch.distributed.ReduceOp.MAX
-                )
-                if _oom_flag.item() > 0.0:
-                    # Free any partial grads this rank did materialise, then
-                    # raise an identical retryable OOM on every rank so
-                    # ``_train_dispatch`` halves the microbatch cluster-wide.
-                    # Must be ``torch.OutOfMemoryError`` (not a plain
-                    # ``RuntimeError``) so ``_is_retryable_oom`` classifies it
-                    # as retryable on the non-OOM ranks too.
-                    grads = aux = None
-                    raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
-                        "collective microbatch retry (a rank OOM'd in grad_fn; "
-                        "whole cluster steps down to a smaller microbatch)."
-                    )
+            except Exception as grad_error:
+                local_grad_error = grad_error
+            self._synchronize_grad_failure(local_grad_error)
 
             # DDP collectives between clipping and noise.
             # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
@@ -3535,8 +3513,8 @@ class DPTrainer:
         when ``with_metrics``, the richer ``compute_per_example_loss_and_metrics``)
         to ``clipped_grad``'s positional contract
         ``(trainable_params, *batch_args) -> scalar_loss``. The training-loop
-        concerns — bf16 autocast and ``torch.compile`` — wrap around the user's
-        per-example loss math here so subclasses don't have to reimplement them.
+        concerns — bf16 autocast and chunk-level ``torch.compile`` — wrap around
+        the resulting gradient transform so subclasses need not implement them.
 
         Args:
             fmodel: Functional model from
@@ -3579,9 +3557,9 @@ class DPTrainer:
             inputs = dict(zip(keys, batch_args, strict=True))
             return _call(merged, inputs)
 
-        # ``torch.compile`` is applied to the DP *grad transform* in
-        # ``_create_grad_fn`` (``torch.compile`` wrapping ``vmap(grad(loss))`` +
-        # clip), NOT to this inner loss.  Compiling the loss and then applying
+        # ``torch.compile`` is injected into the tensor-only microbatch kernel
+        # in ``_create_grad_fn`` (``vmap(grad(loss))`` + clip + reduction), NOT
+        # applied to this inner loss. Compiling the loss and then applying
         # ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)`` pattern
         # — dynamo raises "Unsupported functorch tracing attempt" and silently
         # falls back to eager, so it bought nothing (verified: 1.05x vs 2.0x).
@@ -4188,20 +4166,14 @@ class DPTrainer:
             return contextlib.nullcontext()
         return torch.autocast(device_type=self._device.type, dtype=self._amp_dtype)
 
-    def _grad_compiler(self) -> Callable[[Callable], Callable] | None:
-        """Return a ``fn -> compiled_fn`` transform for the DP grad step, or None.
+    def _grad_compiler(self) -> Callable | None:
+        """Return a strict compiler for the tensor-only gradient chunk.
 
-        Applied by :meth:`_create_grad_fn` to the ``grad_fn`` (the
-        ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
-        (functorch *inside* ``torch.compile``) is the supported, fusing pattern
-        (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
-        applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
-        pattern that silently no-ops to eager.
-
-        The returned compiler tries ``fullgraph=True`` first (graph breaks
-        surface as a warning, then lazily downgrade to ``fullgraph=False``).
-        The stateful ``adaptive`` / ``auto`` clip updates may graph-break; the
-        fallback keeps them correct, fusing the model fwd/bwd around the glue.
+        The clipping factories keep variable-size microbatch orchestration,
+        diagnostics, and state updates eager.  The injected compiler sees only
+        ``vmap(grad_and_value)`` plus per-example clipping and reduction. Each
+        encountered chunk size gets a complete graph, bounding variants by the
+        configured microbatch size instead of realized Poisson batch sizes.
         """
         a = self.args
         if not a.torch_compile:
@@ -4217,14 +4189,16 @@ class DPTrainer:
         backend = a.torch_compile_backend or caps.recommended_compile_backend
         mode = a.torch_compile_mode or "default"
         log.info(
-            "torch.compile enabled on the DP grad transform: backend=%s mode=%s "
+            "torch.compile enabled on strict DP gradient chunks: backend=%s mode=%s "
             "device=%s (inductor → Triton on CUDA, Metal on MPS).",
             backend,
             mode,
             self._device.type,
         )
-        return lambda fn: _compile_with_fullgraph_fallback(
-            fn, backend=backend, mode=mode
+        return lambda fn: _compile_strict_chunk(
+            fn,
+            backend=backend,
+            mode=mode,
         )
 
     def _create_grad_fn(
@@ -4241,8 +4215,9 @@ class DPTrainer:
     ) -> tuple[Callable[..., Any], Any]:
         """Create the clipped gradient function based on clipping mode.
 
-        ``loss_fn`` stays eager; the resulting ``vmap(grad)+clip`` transform is
-        what gets ``torch.compile``'d (see :meth:`_grad_compiler`).
+        ``loss_fn`` stays eager as a Python callable.  When compilation is
+        enabled, the clipping factory compiles its tensor-only per-microbatch
+        ``vmap(grad)+clip+reduce`` kernel and keeps orchestration/state eager.
 
         When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
@@ -4251,6 +4226,7 @@ class DPTrainer:
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
         auto_gamma = float(ca.get("gamma", 0.01))
+        compiler = self._grad_compiler()
 
         if a.clipping_mode == "adaptive":
             grad_fn, state = adaptive_clipped_grad(
@@ -4265,6 +4241,7 @@ class DPTrainer:
                 return_aux=True,
                 key=quantile_noise_key,
                 normalize_by=expected_batch_size,
+                _chunk_compiler=compiler,
             )
         elif a.clipping_mode == "auto":
             grad_fn, state = auto_clipped_grad(
@@ -4277,6 +4254,7 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
+                _chunk_compiler=compiler,
             )
         else:
             grad_fn, state = clipped_grad(
@@ -4288,14 +4266,8 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
+                _chunk_compiler=compiler,
             )
-        # ``torch.compile`` the transform (vmap(grad)+clip) *outside* the
-        # constructor — the caller's job, like autocast.  Compiling the inner
-        # loss instead and applying vmap(grad) outside is the unsupported
-        # ``grad(compiled_fn)`` pattern that silently no-ops to eager.
-        compiler = self._grad_compiler()
-        if compiler is not None:
-            grad_fn = compiler(grad_fn)
         return grad_fn, state
 
     def _build_mechanism(
