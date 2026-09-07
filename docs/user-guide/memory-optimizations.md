@@ -179,6 +179,22 @@ incompatible with callers that read `outputs.logits` — `compute_metrics`,
 loss is the only consumer of the forward output;
 `examples/train_dpsgd.py` and `examples/train_dpftrl.py` do.
 
+Families outside the fused CUDA kernel's numerical envelope can use the
+portable chunked backend. Its peak probability-tile memory scales with
+`microbatch_size * prediction_tokens * chunk_width` in FP32. Configure the
+loss-only path and vocabulary-column width through:
+
+```python
+performance_kernels_config = {
+    "fused_linear_cross_entropy": True,
+    "chunked_linear_cross_entropy": 2048,
+}
+```
+
+The fused flag enables the logits-free path; for the chunk-width setting,
+`True` selects the family default, while `False` or `0` disables the portable
+backend.
+
 ## Profiling
 
 ### step_perf + PerfState

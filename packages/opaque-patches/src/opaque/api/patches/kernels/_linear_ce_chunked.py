@@ -28,14 +28,14 @@ from __future__ import annotations
 
 import torch
 
-# Vocab columns materialized per chunk. The memory win scales as vocab/this;
-# the compute overhead is the extra recompute pass. ~16k keeps a (tokens, 16k)
-# fp32 tile small while bounding Python-loop overhead.
+# Vocab columns materialized per chunk by default. Callers can lower this for
+# large DP-vmap microbatches, where the physical tile also includes examples.
 _CHUNK_VOCAB = 16384
 
 
-def _num_chunks(vocab: int) -> int:
-    return max(1, (vocab + _CHUNK_VOCAB - 1) // _CHUNK_VOCAB)
+def _num_chunks(vocab: int, chunk_vocab: int | None = None) -> int:
+    width = _CHUNK_VOCAB if chunk_vocab is None else chunk_vocab
+    return max(1, (vocab + width - 1) // width)
 
 
 def _softcap(logits: torch.Tensor, softcap: float | None) -> torch.Tensor:
@@ -132,6 +132,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
         logit_softcapping=0,
         label_smoothing=0.0,
         use_token_scaling=False,
+        chunk_vocab=None,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
         lse, logit_target, sum_logits = _stream_lse(
@@ -139,7 +140,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
             weight,
             targets,
             softcap,
-            _num_chunks(weight.shape[0]),
+            _num_chunks(weight.shape[0], chunk_vocab),
             need_sum_logits=float(label_smoothing) != 0.0,
         )
         loss = _per_token_loss(
@@ -152,13 +153,20 @@ class _ChunkedLinearCE(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        e, weight, targets, logit_softcapping, label_smoothing, use_token_scaling = (
-            inputs
-        )
+        (
+            e,
+            weight,
+            targets,
+            logit_softcapping,
+            label_smoothing,
+            use_token_scaling,
+            chunk_vocab,
+        ) = inputs
         ctx.save_for_backward(e, weight, targets)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.label_smoothing = float(label_smoothing)
         ctx.use_token_scaling = bool(use_token_scaling)
+        ctx.chunk_vocab = chunk_vocab
 
     @staticmethod
     def backward(ctx, grad_loss):
@@ -167,7 +175,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
         eps = ctx.label_smoothing
         compute_dc = ctx.needs_input_grad[1]
         V = weight.shape[0]
-        chunks = _num_chunks(V)
+        chunks = _num_chunks(V, ctx.chunk_vocab)
         Vc = (V + chunks - 1) // chunks
 
         lse, logit_target, _ = _stream_lse(
@@ -200,19 +208,21 @@ class _ChunkedLinearCE(torch.autograd.Function):
             p = torch.exp(lc - lse[:, None])  # softmax chunk
             sel = (targets >= lo) & (targets < hi)
             idx = (targets - lo).clamp(0, hi - lo - 1)
-            onehot = torch.zeros_like(p).scatter(1, idx[:, None], 1.0)
-            onehot = onehot * sel[:, None].to(p.dtype)
             # q_v = (1-eps)*onehot + eps/V ; dloss/dlogit = p - q
-            gl = p - ((1.0 - eps) * onehot + eps / V) if eps else p - onehot
+            if eps:
+                p.sub_(eps / V)
+            target_mass = sel[:, None].to(p.dtype) * (1.0 - eps)
+            p.scatter_add_(1, idx[:, None], -target_mass)
+            gl = p
             if softcap is not None:
-                gl = gl * (1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
-            gl = gl * row[:, None]
+                gl.mul_(1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
+            gl.mul_(row[:, None])
             grad_e = grad_e + gl @ wc
             if compute_dc:
                 w_chunks.append(gl.t() @ ef)
         grad_e = grad_e.to(e.dtype)
         grad_w = torch.cat(w_chunks, dim=0).to(weight.dtype) if compute_dc else None
-        return grad_e, grad_w, None, None, None, None
+        return grad_e, grad_w, None, None, None, None, None
 
 
 def linear_nll_sum_chunked(
@@ -223,6 +233,7 @@ def linear_nll_sum_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    chunk_vocab=None,
 ):
     """Unreduced NLL sum over non-ignored tokens.
 
@@ -233,7 +244,13 @@ def linear_nll_sum_chunked(
     e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
     targets = labels[..., 1:].contiguous().flatten()  # (N,)
     nll = _ChunkedLinearCE.apply(
-        e, weight, targets, logit_softcapping, label_smoothing, use_token_scaling
+        e,
+        weight,
+        targets,
+        logit_softcapping,
+        label_smoothing,
+        use_token_scaling,
+        chunk_vocab,
     )
     valid = targets != ignore_index
     return torch.where(valid, nll, nll.new_zeros(())).sum()
@@ -247,6 +264,7 @@ def linear_cross_entropy_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    chunk_vocab=None,
 ):
     """Mean-reduced chunked linear CE — matches ``opaque_linear_cross_entropy_loss``.
 
@@ -260,6 +278,7 @@ def linear_cross_entropy_chunked(
         logit_softcapping,
         label_smoothing,
         use_token_scaling,
+        chunk_vocab,
     )
     targets = labels[..., 1:].contiguous().flatten()
     n_valid = (targets != ignore_index).sum().clamp(min=1).to(nll_sum.dtype)

@@ -168,6 +168,20 @@ def _resolve(
     )
 
 
+def _normalize_chunked_linear_cross_entropy(value: object) -> bool | int:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value < 0:
+            ConfigurationError.raise_(
+                "chunked_linear_cross_entropy must be a boolean or non-negative integer"
+            )
+        return False if value == 0 else value
+    ConfigurationError.raise_(
+        "chunked_linear_cross_entropy must be a boolean or non-negative integer"
+    )
+
+
 def make_apply_model_patches(
     *,
     family: str,
@@ -178,6 +192,8 @@ def make_apply_model_patches(
     rms_norm_kind: str | ForwardFactory | None = None,
     fused_add_rms_kind: str | ForwardFactory | None = None,
     moe_kind: str | ForwardFactory | None = None,
+    fused_linear_cross_entropy: bool = True,
+    chunked_linear_cross_entropy: bool | int = False,
 ) -> ModelPatchFn:
     """Build an ``apply_X_patches`` function for a given family.
 
@@ -212,6 +228,12 @@ def make_apply_model_patches(
             DP-SGD, not a CUDA kernel). ``opaque_moe`` transparently uses the
             sparse grouped-GEMM Triton kernel on CUDA bf16/fp16. ``None`` for
             dense models.
+        fused_linear_cross_entropy: Whether the family supports the fused
+            LM-head loss within the required backward-error envelope.
+        chunked_linear_cross_entropy: Whether the family uses the portable
+            chunked LM-head loss instead of the fused CUDA kernel. ``True``
+            selects its default tile width, a positive integer sets the width,
+            and ``False`` or ``0`` disables it.
 
     Returns:
         Callable with signature
@@ -235,6 +257,9 @@ def make_apply_model_patches(
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
     fused_add_rms_factory = _resolve(fused_add_rms_kind, _FUSED_ADD_RMS_FACTORIES)
     moe_factory = _resolve(moe_kind, _MOE_FACTORIES)
+    chunked_linear_cross_entropy = _normalize_chunked_linear_cross_entropy(
+        chunked_linear_cross_entropy
+    )
 
     def apply(
         model: object | None = None,
@@ -337,13 +362,34 @@ def make_apply_model_patches(
             and causal_lm_obj is not None
         ):
             apply_causal_lm_loss_function_patch(model, causal_lm_obj)
+        chunked_linear_ce = kwargs.get(
+            "chunked_linear_cross_entropy", chunked_linear_cross_entropy
+        )
         if (
-            kwargs.get("fused_linear_cross_entropy", False)
+            chunked_linear_ce is True
+            and isinstance(chunked_linear_cross_entropy, int)
+            and not isinstance(chunked_linear_cross_entropy, bool)
+        ):
+            chunked_linear_ce = chunked_linear_cross_entropy
+        else:
+            chunked_linear_ce = _normalize_chunked_linear_cross_entropy(
+                chunked_linear_ce
+            )
+        if (
+            (fused_linear_cross_entropy or chunked_linear_ce)
+            and kwargs.get("fused_linear_cross_entropy", False)
             and causal_lm_obj is not None
         ):
+            linear_ce_factory = _make_fused_ce_causal_lm_forward
+            if chunked_linear_ce:
+                linear_ce_factory = functools.partial(
+                    _make_fused_ce_causal_lm_forward,
+                    force_chunked=chunked_linear_ce,
+                )
+
             _patch_forward(
                 causal_lm_obj,
-                _make_fused_ce_causal_lm_forward,
+                linear_ce_factory,
                 model,
             )
 

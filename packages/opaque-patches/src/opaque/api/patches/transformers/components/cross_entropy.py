@@ -163,7 +163,7 @@ def _fused_linear_ce_loss_is_supported(
     return not torch.is_tensor(ii)
 
 
-def _make_fused_ce_causal_lm_forward(original):
+def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = False):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
     When a loss-only caller sets ``opaque_fused_loss_only=True`` and labels are
@@ -259,7 +259,8 @@ def _make_fused_ce_causal_lm_forward(original):
         )
 
         if use_fused_ce:
-            if hidden_states.is_cuda:
+            use_chunked_ce = not hidden_states.is_cuda or bool(force_chunked)
+            if not use_chunked_ce:
                 from opaque.api.patches.kernels.linear_cross_entropy import (
                     Opaque_LinearCrossEntropyLoss,
                 )
@@ -290,7 +291,7 @@ def _make_fused_ce_causal_lm_forward(original):
             ignore_index = int(kwargs.get("ignore_index", -100))
             label_smoothing = float(kwargs.get("label_smoothing") or 0.0)
 
-            nll_sum = ce_loss_fn(
+            ce_args = (
                 hidden_states,
                 weight,
                 labels,
@@ -299,6 +300,16 @@ def _make_fused_ce_causal_lm_forward(original):
                 label_smoothing,
                 False,  # use_token_scaling: plain CE for the LM-head loss
             )
+            if use_chunked_ce:
+                chunk_vocab = (
+                    force_chunked
+                    if isinstance(force_chunked, int)
+                    and not isinstance(force_chunked, bool)
+                    else None
+                )
+                nll_sum = ce_loss_fn(*ce_args, chunk_vocab=chunk_vocab)
+            else:
+                nll_sum = ce_loss_fn(*ce_args)
 
             # Always reduce with mean-over-non-ignored-tokens; per-batch
             # reductions would break DP-SGD per-example sensitivity.

@@ -266,7 +266,12 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
         "opaque.api.engine.device.fused_kernels_available", lambda: True
     )
 
-    def _fresh_module(suffix):
+    def _fresh_module(
+        suffix,
+        *,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=False,
+    ):
         module_name = f"public_api_fake_fused_ce_module_{suffix}"
         mod = types.ModuleType(module_name)
 
@@ -293,6 +298,8 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
             family_apply=fam,
             module_path=module_name,
             classes={"causal_lm": "FakeForCausalLM"},
+            fused_linear_cross_entropy=fused_linear_cross_entropy,
+            chunked_linear_cross_entropy=chunked_linear_cross_entropy,
         )
         return mod, FakeForCausalLM, original_loss, apply
 
@@ -323,6 +330,110 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
     apply_c(instance_c, performance=True, compat=False, cross_entropy=False)
     assert instance_c.loss_function is original_loss_c
     assert not hasattr(FakeC.forward, "__opaque_patched__")
+
+    # Families outside the measured backward-error envelope keep the original
+    # forward even when a caller requests the fused loss.
+    _, FakeD, _, apply_d = _fresh_module("d", fused_linear_cross_entropy=False)
+    instance_d = FakeD()
+    apply_d(
+        instance_d,
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+    )
+    assert not hasattr(FakeD.forward, "__opaque_patched__")
+
+    # A family can reject the CUDA kernel while retaining the portable chunked
+    # loss-only forward.
+    chunk_widths = []
+
+    def record_chunk_width(original, *, force_chunked=False):
+        chunk_widths.append(force_chunked)
+        return original
+
+    monkeypatch.setattr(
+        "opaque.api.patches.transformers._factory._make_fused_ce_causal_lm_forward",
+        record_chunk_width,
+    )
+    patched = []
+    monkeypatch.setattr(
+        "opaque.api.patches.transformers._factory._patch_forward",
+        lambda *args, **kwargs: patched.append((args, kwargs)),
+    )
+    _, FakeE, _, apply_e = _fresh_module(
+        "e",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=True,
+    )
+    instance_e = FakeE()
+    apply_e(
+        instance_e,
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=1024,
+    )
+    assert len(patched) == 1
+    patched[0][0][1](lambda *args, **kwargs: None)
+    assert chunk_widths == [1024]
+
+    # ``True`` preserves an integer family default rather than falling back to
+    # the global chunk width.
+    _, FakeFamilyDefault, _, apply_family_default = _fresh_module(
+        "family_default_chunk",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=2048,
+    )
+    apply_family_default(
+        FakeFamilyDefault(),
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=True,
+    )
+    assert len(patched) == 2
+    patched[1][0][1](lambda *args, **kwargs: None)
+    assert chunk_widths == [1024, 2048]
+
+    # An explicit runtime setting can enable the portable path for a family
+    # whose default is disabled.
+    _, FakeOptIn, _, apply_opt_in = _fresh_module(
+        "opt_in_chunk",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=False,
+    )
+    apply_opt_in(
+        FakeOptIn(),
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+        chunked_linear_cross_entropy=512,
+    )
+    assert len(patched) == 3
+    patched[2][0][1](lambda *args, **kwargs: None)
+    assert chunk_widths == [1024, 2048, 512]
+
+    from opaque.exceptions import ConfigurationError
+
+    _, FakeZero, _, apply_zero = _fresh_module(
+        "zero_chunk",
+        fused_linear_cross_entropy=False,
+        chunked_linear_cross_entropy=0,
+    )
+    apply_zero(
+        FakeZero(),
+        performance=True,
+        compat=False,
+        fused_linear_cross_entropy=True,
+    )
+    assert len(patched) == 3
+
+    with pytest.raises(ConfigurationError, match="non-negative integer"):
+        _fresh_module(
+            "invalid_chunk",
+            fused_linear_cross_entropy=False,
+            chunked_linear_cross_entropy=-1,
+        )
 
 
 # ----------------------------------------------------------------------------

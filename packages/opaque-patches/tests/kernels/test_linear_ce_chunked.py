@@ -123,6 +123,51 @@ def test_chunked_linear_ce_parity_cpu():
     _check_parity("cpu")
 
 
+def test_chunked_linear_ce_backward_does_not_allocate_dense_onehot(monkeypatch):
+    torch.manual_seed(0)
+    h = torch.randn(2, 8, 16, requires_grad=True)
+    w = torch.randn(256, 16, requires_grad=True)
+    labels = torch.randint(0, 256, (2, 8))
+    allocated_shapes = []
+    original_zeros_like = torch.zeros_like
+
+    def record_zeros_like(tensor, *args, **kwargs):
+        allocated_shapes.append(tuple(tensor.shape))
+        return original_zeros_like(tensor, *args, **kwargs)
+
+    old = mod._CHUNK_VOCAB
+    mod._CHUNK_VOCAB = 64
+    try:
+        loss = linear_cross_entropy_chunked(h, w, labels)
+        monkeypatch.setattr(torch, "zeros_like", record_zeros_like)
+        torch.autograd.grad(loss, (h, w))
+    finally:
+        mod._CHUNK_VOCAB = old
+
+    assert (14, 64) not in allocated_shapes
+
+
+def test_chunked_linear_ce_bounds_probability_tile_width(monkeypatch):
+    torch.manual_seed(0)
+    h = torch.randn(1, 3, 4, requires_grad=True)
+    w = torch.randn(20_000, 4)
+    labels = torch.randint(0, w.shape[0], (1, 3))
+    exp_widths = []
+    original_exp = torch.exp
+
+    def record_exp(tensor, *args, **kwargs):
+        if tensor.ndim == 2:
+            exp_widths.append(tensor.shape[-1])
+        return original_exp(tensor, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "exp", record_exp)
+    loss = linear_cross_entropy_chunked(h, w, labels, chunk_vocab=2048)
+    torch.autograd.grad(loss, h)
+
+    assert exp_widths
+    assert max(exp_widths) <= 2048
+
+
 @pytest.mark.mps
 def test_chunked_linear_ce_parity_mps():
     _check_parity("mps")

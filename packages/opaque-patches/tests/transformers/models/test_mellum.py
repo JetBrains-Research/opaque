@@ -2,12 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the Mellum 2.0 family (MoE), plus the original dense Mellum."""
 
+import inspect
 import sys
 from pathlib import Path
 
 import pytest
 
 pytest.importorskip("transformers")
+
+from opaque.api.patches.transformers.models.mellum import (
+    apply_mellum_family_patches,
+    apply_mellum_patches,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _test_utils import (
@@ -19,6 +25,11 @@ from _test_utils import (
     experts_forward_patched,
     get_tiny_config_kwargs,
 )
+
+
+@pytest.fixture
+def mellum_modeling():
+    return pytest.importorskip("transformers.models.mellum.modeling_mellum")
 
 
 @pytest.fixture
@@ -62,3 +73,30 @@ def test_original_mellum_routes_via_llama(device):
     assert family_name(model) == "llama"
     apply_model_patches(model, eager_attention=True)
     assert_forward_backward(model, device)
+
+
+def test_mellum_keeps_transformers_rotary_embedding(mellum_modeling):
+    original = mellum_modeling.apply_rotary_pos_emb
+
+    apply_mellum_family_patches(performance=True, rope=True)
+
+    assert mellum_modeling.apply_rotary_pos_emb is original
+
+
+def test_mellum_installs_chunked_linear_cross_entropy(monkeypatch, mellum_modeling):
+    patched = []
+    monkeypatch.setattr(
+        "opaque.api.patches.transformers._factory._patch_forward",
+        lambda *args, **kwargs: patched.append((args, kwargs)),
+    )
+    apply_mellum_patches(
+        object(),
+        performance=False,
+        compat=False,
+        fused_linear_cross_entropy=True,
+    )
+
+    assert len(patched) == 1
+    factory = patched[0][0][1]
+    forward = factory(lambda *args, **kwargs: None)
+    assert inspect.getclosurevars(forward).nonlocals["force_chunked"] == 2048
