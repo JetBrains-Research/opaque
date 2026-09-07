@@ -361,7 +361,7 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
             return MoeCausalLMOutputWithPast(
                 loss=loss,
-                aux_loss=None,
+                aux_loss=getattr(outputs, "aux_loss", None),
                 logits=logits,
                 past_key_values=outputs.past_key_values,
                 hidden_states=outputs.hidden_states,
