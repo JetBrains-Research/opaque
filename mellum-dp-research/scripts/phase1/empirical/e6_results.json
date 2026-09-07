@@ -1,0 +1,66 @@
+{
+  "E8k2_T64_random": {
+    "max_l2_fx": 0.8860904574394226,
+    "bound_sqrt_k": 1.4142135623730951,
+    "max_l2_fx_minus_fB": 0.4968760311603546,
+    "l2_fB_minus_uniform_over_kE": 0.40802085399627686,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.04419417382415922,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.005524271728019903
+  },
+  "E8k2_T64_structured": {
+    "max_l2_fx": 1.287522792816162,
+    "bound_sqrt_k": 1.4142135623730951,
+    "max_l2_fx_minus_fB": 1.0569713115692139,
+    "l2_fB_minus_uniform_over_kE": 0.3724072277545929,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.04419417382415922,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.005524271728019903
+  },
+  "E8k2_T512_random": {
+    "max_l2_fx": 0.7777019143104553,
+    "bound_sqrt_k": 1.4142135623730951,
+    "max_l2_fx_minus_fB": 0.2406320720911026,
+    "l2_fB_minus_uniform_over_kE": 0.41145220398902893,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.04419417382415922,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.005524271728019903
+  },
+  "E8k2_T512_structured": {
+    "max_l2_fx": 1.1993523836135864,
+    "bound_sqrt_k": 1.4142135623730951,
+    "max_l2_fx_minus_fB": 1.0043621063232422,
+    "l2_fB_minus_uniform_over_kE": 0.7871918082237244,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.04419417382415922,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.005524271728019903
+  },
+  "E64k8_T64_random": {
+    "max_l2_fx": 1.4271023273468018,
+    "bound_sqrt_k": 2.8284271247461903,
+    "max_l2_fx_minus_fB": 0.8269475102424622,
+    "l2_fB_minus_uniform_over_kE": 3.3785111904144287,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.1767766952966369,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.02209708691207961
+  },
+  "E64k8_T64_structured": {
+    "max_l2_fx": 2.087794780731201,
+    "bound_sqrt_k": 2.8284271247461903,
+    "max_l2_fx_minus_fB": 1.7862831354141235,
+    "l2_fB_minus_uniform_over_kE": 3.201676607131958,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.1767766952966369,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.02209708691207961
+  },
+  "E64k8_T512_random": {
+    "max_l2_fx": 1.2445652484893799,
+    "bound_sqrt_k": 2.8284271247461903,
+    "max_l2_fx_minus_fB": 0.468668669462204,
+    "l2_fB_minus_uniform_over_kE": 4.08397102355957,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.1767766952966369,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.02209708691207961
+  },
+  "E64k8_T512_structured": {
+    "max_l2_fx": 2.2546441555023193,
+    "bound_sqrt_k": 2.8284271247461903,
+    "max_l2_fx_minus_fB": 1.901092529296875,
+    "l2_fB_minus_uniform_over_kE": 3.6248700618743896,
+    "noise_std_per_coord_over_kE_at_B128_sigma1": 0.1767766952966369,
+    "noise_std_per_coord_over_kE_at_B1024_sigma1": 0.02209708691207961
+  }
+}

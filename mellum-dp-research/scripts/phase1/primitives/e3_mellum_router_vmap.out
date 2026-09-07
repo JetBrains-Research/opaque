@@ -1,0 +1,13 @@
+/home/user/opaque/.venv/lib/python3.11/site-packages/transformers/integrations/sdpa_attention.py:158: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+(i) HF output_router_logits=True under vmap(grad): FAILED -> RuntimeError vmap: scatter_add_(self, *extra_args) is not possible because there exists a Tensor `other` in extra_args that has more elements than `self`. This happened due to `other` being vmapped over but `self`
+/home/user/opaque/.venv/lib/python3.11/site-packages/torch/autograd/graph.py:1072: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu_backward. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+(ii) hook route under vmap(grad): OK
+    per-example f (batch x E): tensor([[0.5417, 0.6250, 0.2500, 0.5833],
+        [0.5417, 0.4583, 0.7500, 0.2500],
+        [0.7083, 0.2917, 0.4167, 0.5833]])
+    probe leaf (= mean clipped f): tensor([0.2841, 0.2182, 0.2238, 0.2252])  max_norm: {'router_load_probe': 0.16666666666666666, 'fallback': 0.3333333333333333}
+    eager f for example 0 matches vmapped: True
+    batch f == mean_x f_x (equal-length, unpadded): True
+(iii) surrogate per-example aux under vmap(grad): OK; per-example grad norms tensor([0.9732, 1.1044, 1.3085])

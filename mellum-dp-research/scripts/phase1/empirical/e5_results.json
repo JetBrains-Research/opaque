@@ -1,0 +1,162 @@
+{
+  "E8k2_scale1.0_T64_random": {
+    "mean_abs_dev_over_kE": 0.4055023193359375,
+    "iid_null_dev_over_kE": 0.1698577880859375,
+    "ratio_dev_to_null": 2.387304838390916,
+    "max_abs_dev_over_kE": 1.54296875,
+    "batch_to_batch_dev_over_kE": 0.123046875,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 1.20703125,
+    "fB_min_over_kE": 0.7890625
+  },
+  "E8k2_scale1.0_T64_structured": {
+    "mean_abs_dev_over_kE": 0.8128204345703125,
+    "iid_null_dev_over_kE": 0.164520263671875,
+    "ratio_dev_to_null": 4.940549063253571,
+    "max_abs_dev_over_kE": 2.939453125,
+    "batch_to_batch_dev_over_kE": 0.193359375,
+    "frac_expert_unused_per_example": 0.1640625,
+    "fB_max_over_kE": 1.189453125,
+    "fB_min_over_kE": 0.76953125
+  },
+  "E8k2_scale1.0_T512_random": {
+    "mean_abs_dev_over_kE": 0.17038917541503906,
+    "iid_null_dev_over_kE": 0.060495758056640626,
+    "ratio_dev_to_null": 2.816547488428991,
+    "max_abs_dev_over_kE": 0.653076171875,
+    "batch_to_batch_dev_over_kE": 0.029541015625,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 1.27392578125,
+    "fB_min_over_kE": 0.78173828125
+  },
+  "E8k2_scale1.0_T512_structured": {
+    "mean_abs_dev_over_kE": 0.7630176544189453,
+    "iid_null_dev_over_kE": 0.057117462158203125,
+    "ratio_dev_to_null": 13.358745742336206,
+    "max_abs_dev_over_kE": 3.04150390625,
+    "batch_to_batch_dev_over_kE": 0.150146484375,
+    "frac_expert_unused_per_example": 0.15625,
+    "fB_max_over_kE": 1.6357421875,
+    "fB_min_over_kE": 0.75048828125
+  },
+  "E8k2_scale5.0_T64_random": {
+    "mean_abs_dev_over_kE": 0.4055023193359375,
+    "iid_null_dev_over_kE": 0.1698577880859375,
+    "ratio_dev_to_null": 2.387304838390916,
+    "max_abs_dev_over_kE": 1.54296875,
+    "batch_to_batch_dev_over_kE": 0.123046875,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 1.20703125,
+    "fB_min_over_kE": 0.7890625
+  },
+  "E8k2_scale5.0_T64_structured": {
+    "mean_abs_dev_over_kE": 0.8128204345703125,
+    "iid_null_dev_over_kE": 0.164520263671875,
+    "ratio_dev_to_null": 4.940549063253571,
+    "max_abs_dev_over_kE": 2.939453125,
+    "batch_to_batch_dev_over_kE": 0.193359375,
+    "frac_expert_unused_per_example": 0.1640625,
+    "fB_max_over_kE": 1.189453125,
+    "fB_min_over_kE": 0.76953125
+  },
+  "E8k2_scale5.0_T512_random": {
+    "mean_abs_dev_over_kE": 0.17038917541503906,
+    "iid_null_dev_over_kE": 0.060495758056640626,
+    "ratio_dev_to_null": 2.816547488428991,
+    "max_abs_dev_over_kE": 0.653076171875,
+    "batch_to_batch_dev_over_kE": 0.029541015625,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 1.27392578125,
+    "fB_min_over_kE": 0.78173828125
+  },
+  "E8k2_scale5.0_T512_structured": {
+    "mean_abs_dev_over_kE": 0.7630176544189453,
+    "iid_null_dev_over_kE": 0.057117462158203125,
+    "ratio_dev_to_null": 13.358745742336206,
+    "max_abs_dev_over_kE": 3.04150390625,
+    "batch_to_batch_dev_over_kE": 0.150146484375,
+    "frac_expert_unused_per_example": 0.15625,
+    "fB_max_over_kE": 1.6357421875,
+    "fB_min_over_kE": 0.75048828125
+  },
+  "E64k8_scale1.0_T64_random": {
+    "mean_abs_dev_over_kE": 0.5296592712402344,
+    "iid_null_dev_over_kE": 0.250921630859375,
+    "ratio_dev_to_null": 2.1108553671766677,
+    "max_abs_dev_over_kE": 2.8671875,
+    "batch_to_batch_dev_over_kE": 0.166015625,
+    "frac_expert_unused_per_example": 0.0517578125,
+    "fB_max_over_kE": 2.14453125,
+    "fB_min_over_kE": 0.26953125
+  },
+  "E64k8_scale1.0_T64_structured": {
+    "mean_abs_dev_over_kE": 1.0890388488769531,
+    "iid_null_dev_over_kE": 0.2502174377441406,
+    "ratio_dev_to_null": 4.352369917521687,
+    "max_abs_dev_over_kE": 6.79296875,
+    "batch_to_batch_dev_over_kE": 0.312744140625,
+    "frac_expert_unused_per_example": 0.42724609375,
+    "fB_max_over_kE": 2.31640625,
+    "fB_min_over_kE": 0.31640625
+  },
+  "E64k8_scale1.0_T512_random": {
+    "mean_abs_dev_over_kE": 0.24336719512939453,
+    "iid_null_dev_over_kE": 0.08798055648803711,
+    "ratio_dev_to_null": 2.7661474858082493,
+    "max_abs_dev_over_kE": 1.57568359375,
+    "batch_to_batch_dev_over_kE": 0.054412841796875,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 2.24072265625,
+    "fB_min_over_kE": 0.28857421875
+  },
+  "E64k8_scale1.0_T512_structured": {
+    "mean_abs_dev_over_kE": 1.145136833190918,
+    "iid_null_dev_over_kE": 0.0888895034790039,
+    "ratio_dev_to_null": 12.88270030061991,
+    "max_abs_dev_over_kE": 6.85498046875,
+    "batch_to_batch_dev_over_kE": 0.2338409423828125,
+    "frac_expert_unused_per_example": 0.40087890625,
+    "fB_max_over_kE": 2.02880859375,
+    "fB_min_over_kE": 0.27734375
+  },
+  "E64k8_scale5.0_T64_random": {
+    "mean_abs_dev_over_kE": 0.5296592712402344,
+    "iid_null_dev_over_kE": 0.250921630859375,
+    "ratio_dev_to_null": 2.1108553671766677,
+    "max_abs_dev_over_kE": 2.8671875,
+    "batch_to_batch_dev_over_kE": 0.166015625,
+    "frac_expert_unused_per_example": 0.0517578125,
+    "fB_max_over_kE": 2.14453125,
+    "fB_min_over_kE": 0.26953125
+  },
+  "E64k8_scale5.0_T64_structured": {
+    "mean_abs_dev_over_kE": 1.0890388488769531,
+    "iid_null_dev_over_kE": 0.2502174377441406,
+    "ratio_dev_to_null": 4.352369917521687,
+    "max_abs_dev_over_kE": 6.79296875,
+    "batch_to_batch_dev_over_kE": 0.312744140625,
+    "frac_expert_unused_per_example": 0.42724609375,
+    "fB_max_over_kE": 2.31640625,
+    "fB_min_over_kE": 0.31640625
+  },
+  "E64k8_scale5.0_T512_random": {
+    "mean_abs_dev_over_kE": 0.24336719512939453,
+    "iid_null_dev_over_kE": 0.08798055648803711,
+    "ratio_dev_to_null": 2.7661474858082493,
+    "max_abs_dev_over_kE": 1.57568359375,
+    "batch_to_batch_dev_over_kE": 0.054412841796875,
+    "frac_expert_unused_per_example": 0.0,
+    "fB_max_over_kE": 2.24072265625,
+    "fB_min_over_kE": 0.28857421875
+  },
+  "E64k8_scale5.0_T512_structured": {
+    "mean_abs_dev_over_kE": 1.145136833190918,
+    "iid_null_dev_over_kE": 0.0888895034790039,
+    "ratio_dev_to_null": 12.88270030061991,
+    "max_abs_dev_over_kE": 6.85498046875,
+    "batch_to_batch_dev_over_kE": 0.2338409423828125,
+    "frac_expert_unused_per_example": 0.40087890625,
+    "fB_max_over_kE": 2.02880859375,
+    "fB_min_over_kE": 0.27734375
+  }
+}

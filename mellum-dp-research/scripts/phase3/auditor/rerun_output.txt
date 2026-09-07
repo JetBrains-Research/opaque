@@ -1,0 +1,37 @@
+====================================================================================================
+PROTOTYPE: v2 router-load release on tiny Mellum (E=8,k=2,L=2,hidden=64), CPU
+====================================================================================================
+experts forward patched: True; experts impl: grouped_mm; trainable leaves: 11 (197648 params); probe in trainable: True
+lengths: T_max=32, held-out mean length T_bar_true=24.01 (T_bar used = T_max -> release scale factor 0.750)
+calibration (held-out, alpha=0): per-example grad norm p10/p50/p90/max = 4.868/5.720/6.920/9.318 -> C_g=5.7195
+  per-example norm with alpha=1.0 (f_tilde=f_heldout): median 7.073 (x1.237); aux.loss_values == CE exactly (value-neutral surrogate): True
+induced imbalance (router rows 0,1 x3.0): f_heldout=[0.405, 0.336, 0.227, 0.164, 0.194, 0.284, 0.211, 0.178] delta_0=0.317 D_0=0.620
+accountant: poisson(gaussian(nm), q=0.03125) * 300 at eps=3.0, delta=1e-05 -> nm=1.0820 (1.8s)
+rho*: smallest rho with smoothed noise / released imbalance < 30%: rho*=0.34 (smoothed noise 0.0706 k/E units vs released imbalance 0.2378; ratio 0.297; gradient-noise inflation sqrt(1+rho)=1.1576). At rho=0.02: smoothed noise 0.2541 -> ratio 1.068, single-release r1=1.184
+
+--- V1: surrogate identity on the PATCHED model with ragged lengths
+  lengths: [25, 21, 24, 25, 30, 28, 17, 25, 23, 18, 20, 19, 25, 31, 22, 30]
+  HF aux value (own fn) 2.049564 vs out-of-place 2.049564; grad rel-L2 oop vs own 0.00e+00
+  cos(batch-mean surrogate grad, grad HF aux) = 1.000010251999; norm ratio 0.748046 vs T_tot/(B*T_bar) = 0.748047 (rel diff 9.56e-07)
+
+--- V2: probe leaf == (lam/B_bar) sum_x w_x d^{(L,E)}(x); group norm <= C_h for every example incl. adversarial
+  max|probe leaf - expected| = 3.73e-09; sum_e leaf = -1.49e-08
+  adversarial all-same-token example: h per layer = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]]; ||d^(L,E)|| = 1.732051 vs Delta_L = 1.732051
+  probe group norms: max = 1.944646 (adversarial 1.944646) vs C_h = 1.946591; lam*Delta_L = 1.944646; examples with norm > C_h: 0; max_norm stored: {'fallback': 0.1787358820438385, 'router_load_probe': 0.06083097009479999}
+
+--- V3: Mahalanobis identity with the real per_group_noise_stddev
+  sigma_g=0.223903 (closed form 0.223903), sigma_h=0.130622 (closed form 0.130622)
+  (C_g/B)^2/sigma_g^2 + (C_h/B)^2/sigma_h^2 = 0.8541229522 vs 1/nm^2 = 0.8541229522; ratio 1.000000000000
+  gradient-noise inflation sigma_g/(nm*C_g/B) = 1.157731 = sqrt(1+rho) = 1.157731
+
+--- V4: accountant invariance (the mechanism object never sees the pytree / PerGroup)
+  dpsgd.gaussian(noise_multiplier: 'float') -> 'Gaussian'
+  dpsgd.poisson(inner: '_Inner', sample_rate: 'float', *, truncated_batch_size: 'int | None' = None, dataset_size: 'int | None' = None) -> 'Poisson'
+  dpftrl.mf_gaussian(noise_multiplier: 'float', strategy: 'MfStrategy', *, n_steps: 'int' = 1, min_sep: 'int' = 1, max_participations: 'int | None' = None) -> 'MfGaussian'
+  DP-SGD: eps without probe 2.998599 == with probe 2.998599: True; type Repeated; built from (nm, q, T) only
+  band-MF(4, .95) n_steps=50: mf_gaussian(nm, strategy) eps without 3.996299 == with 3.996299: True (sensitivity 1.0000, 0.1s, un-amplified)
+
+--- V7: gradient checkpointing on/off equality of the probe leaf and all grads
+  checkpointing flags per layer: [True, True]; probe leaf rel-L2 ckpt vs no-ckpt 0.00e+00; max over all leaves 0.00e+00; vs the earlier non-ckpt run: 0.00e+00
+
+--- V5/V6: training arms (B_bar=32, N=1024, Poisson; alpha lab=1.0; lr=0.005)

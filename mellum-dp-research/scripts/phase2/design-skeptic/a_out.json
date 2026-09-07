@@ -1,0 +1,27 @@
+{
+ "random": {
+  "L0": {
+   "stock_bf16_flips": 46,
+   "fp32_logit_flips": 51,
+   "rows": 1024
+  },
+  "L1": {
+   "stock_bf16_flips": 54,
+   "fp32_logit_flips": 56,
+   "rows": 1024
+  }
+ },
+ "structured": {
+  "L0": {
+   "stock_bf16_flips": 46,
+   "fp32_logit_flips": 39,
+   "rows": 1024
+  },
+  "L1": {
+   "stock_bf16_flips": 47,
+   "fp32_logit_flips": 43,
+   "rows": 1024
+  }
+ },
+ "vmap_finite": true
+}

@@ -1,0 +1,18 @@
+            E8k2_scale1.0_T64_random: dev 0.406 k/E (iid-null 0.170, ratio 2.39) max 1.54 | batch-to-batch 0.123 | unused/ex 0.000 | fB range [0.79,1.21]
+        E8k2_scale1.0_T64_structured: dev 0.813 k/E (iid-null 0.165, ratio 4.94) max 2.94 | batch-to-batch 0.193 | unused/ex 0.164 | fB range [0.77,1.19]
+           E8k2_scale1.0_T512_random: dev 0.170 k/E (iid-null 0.060, ratio 2.82) max 0.65 | batch-to-batch 0.030 | unused/ex 0.000 | fB range [0.78,1.27]
+       E8k2_scale1.0_T512_structured: dev 0.763 k/E (iid-null 0.057, ratio 13.36) max 3.04 | batch-to-batch 0.150 | unused/ex 0.156 | fB range [0.75,1.64]
+            E8k2_scale5.0_T64_random: dev 0.406 k/E (iid-null 0.170, ratio 2.39) max 1.54 | batch-to-batch 0.123 | unused/ex 0.000 | fB range [0.79,1.21]
+        E8k2_scale5.0_T64_structured: dev 0.813 k/E (iid-null 0.165, ratio 4.94) max 2.94 | batch-to-batch 0.193 | unused/ex 0.164 | fB range [0.77,1.19]
+           E8k2_scale5.0_T512_random: dev 0.170 k/E (iid-null 0.060, ratio 2.82) max 0.65 | batch-to-batch 0.030 | unused/ex 0.000 | fB range [0.78,1.27]
+       E8k2_scale5.0_T512_structured: dev 0.763 k/E (iid-null 0.057, ratio 13.36) max 3.04 | batch-to-batch 0.150 | unused/ex 0.156 | fB range [0.75,1.64]
+           E64k8_scale1.0_T64_random: dev 0.530 k/E (iid-null 0.251, ratio 2.11) max 2.87 | batch-to-batch 0.166 | unused/ex 0.052 | fB range [0.27,2.14]
+       E64k8_scale1.0_T64_structured: dev 1.089 k/E (iid-null 0.250, ratio 4.35) max 6.79 | batch-to-batch 0.313 | unused/ex 0.427 | fB range [0.32,2.32]
+          E64k8_scale1.0_T512_random: dev 0.243 k/E (iid-null 0.088, ratio 2.77) max 1.58 | batch-to-batch 0.054 | unused/ex 0.000 | fB range [0.29,2.24]
+      E64k8_scale1.0_T512_structured: dev 1.145 k/E (iid-null 0.089, ratio 12.88) max 6.85 | batch-to-batch 0.234 | unused/ex 0.401 | fB range [0.28,2.03]
+           E64k8_scale5.0_T64_random: dev 0.530 k/E (iid-null 0.251, ratio 2.11) max 2.87 | batch-to-batch 0.166 | unused/ex 0.052 | fB range [0.27,2.14]
+       E64k8_scale5.0_T64_structured: dev 1.089 k/E (iid-null 0.250, ratio 4.35) max 6.79 | batch-to-batch 0.313 | unused/ex 0.427 | fB range [0.32,2.32]
+          E64k8_scale5.0_T512_random: dev 0.243 k/E (iid-null 0.088, ratio 2.77) max 1.58 | batch-to-batch 0.054 | unused/ex 0.000 | fB range [0.29,2.24]
+      E64k8_scale5.0_T512_structured: dev 1.145 k/E (iid-null 0.089, ratio 12.88) max 6.85 | batch-to-batch 0.234 | unused/ex 0.401 | fB range [0.28,2.03]
+wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e5_results.json
+done 8.5s

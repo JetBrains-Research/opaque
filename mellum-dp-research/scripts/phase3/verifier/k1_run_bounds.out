@@ -1,0 +1,12 @@
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/verifier/k1_run_bounds.py:26: RuntimeWarning: overflow encountered in power
+  d1 = math.log((q_[m]**alpha * p[m]**(1-alpha)).sum()*w)/(alpha-1)
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/verifier/k1_run_bounds.py:26: RuntimeWarning: invalid value encountered in multiply
+  d1 = math.log((q_[m]**alpha * p[m]**(1-alpha)).sum()*w)/(alpha-1)
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/verifier/k1_run_bounds.py:27: RuntimeWarning: overflow encountered in power
+  d2 = math.log((p[m]**alpha * q_[m]**(1-alpha)).sum()*w)/(alpha-1)
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/verifier/k1_run_bounds.py:27: RuntimeWarning: invalid value encountered in multiply
+  d2 = math.log((p[m]**alpha * q_[m]**(1-alpha)).sum()*w)/(alpha-1)
+ independent: single-step eps(delta=1e-6) = 0.210  -> whole-run eps(1e-6) >= 0.210 (rigorous lower bound); RDP upper bound over T=15625: eps <= 4.89 (alpha=4)
+              single-step delta(eps=3) = 3.160e-11  -> whole-run delta(eps=3) >= that
+  shared u=1: single-step eps(delta=1e-6) = 6.006  -> whole-run eps(1e-6) >= 6.006 (rigorous lower bound); RDP upper bound over T=15625: eps <= 44.31 (alpha=1.5)
+              single-step delta(eps=3) = 2.759e-05  -> whole-run delta(eps=3) >= that

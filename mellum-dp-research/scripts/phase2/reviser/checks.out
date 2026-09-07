@@ -1,0 +1,10 @@
+c=1.0: P(pure-noise passes dead zone)=4.763e-01; over 15625 steps expected passes=7.44e+03
+c=1.5: P(pure-noise passes dead zone)=6.250e-03; over 15625 steps expected passes=97.7
+c=2.0: P(pure-noise passes dead zone)=4.247e-06; over 15625 steps expected passes=0.0664
+pooled-release per-entry noise std 0.04150; per-layer carrier pooled std 0.04152; closed forms 0.04149 / 0.04149; per-layer entry std 0.21957 (x5.29)
+token-weighted: cos(HF, DP)=1.000000000000; scale DP/HF=0.979524 vs T_tot/(B*Tbar)=0.979524
+equal-weight: cos(HF, equal)=0.9963 (not 1 under ragged lengths)
+t=100: uncorrected gain 0.634; phi=0.0655; corrected phi/(1-beta^t)=0.1032
+t=200: uncorrected gain 0.866; phi=0.0697; corrected phi/(1-beta^t)=0.0805
+t=300: uncorrected gain 0.951; phi=0.0702; corrected phi/(1-beta^t)=0.0739
+t=460: uncorrected gain 0.990; phi=0.0703; corrected phi/(1-beta^t)=0.0710

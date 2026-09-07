@@ -1,0 +1,83 @@
+{
+ "hf_eager_vs_grouped_mm_fp32": 7.939251931540396e-08,
+ "hf_eager_vs_batched_mm_fp32": 5.941061845153917e-07,
+ "batched_vs_token_weighted": 7.472190093297438e-07,
+ "batched_vs_plain_mean": 0.40125981226054275,
+ "aux_batch": 2.010356903076172,
+ "aux_per_example": [
+  2.1283509731292725,
+  2.042635202407837,
+  2.0880439281463623,
+  2.0275368690490723
+ ],
+ "h2_surrogate_grad_err": 0.0,
+ "aux_over_ce_grad_ratio": 0.00024326016939401192,
+ "aux_over_ce_attn_ratio": 0.00023718888986040774,
+ "hf_bf16_vs_fp32_loop": 0.011168783639582349,
+ "fp32_opaque": {
+  "opaque dense fp32": {
+   "vs_eager": 3.470653092712071e-07,
+   "worst": 5.879594083185209e-07,
+   "vs_grouped": 3.470657626638161e-07,
+   "loss_err": 4.850919127901759e-08
+  },
+  "opaque grouped(auto) fp32": {
+   "vs_eager": 3.470653092712071e-07,
+   "worst": 5.879594083185209e-07,
+   "vs_grouped": 3.470657626638161e-07,
+   "loss_err": 4.850919127901759e-08
+  }
+ },
+ "fp32_grouped16": {
+  "overall": 0.0,
+  "worst": 0.0,
+  "dispatch": {
+   "dense": 2,
+   "grouped": 0
+  }
+ },
+ "frozen_experts_flags": [
+  [
+   "dense",
+   false,
+   false
+  ],
+  [
+   "dense",
+   false,
+   false
+  ],
+  [
+   "dense",
+   true,
+   true
+  ],
+  [
+   "dense",
+   true,
+   true
+  ],
+  [
+   "dense",
+   true,
+   true
+  ],
+  [
+   "dense",
+   true,
+   true
+  ]
+ ],
+ "attention_only_err": 3.177951870697056e-07,
+ "vmap_aux_error": "RuntimeError: vmap: scatter_add_(self, *extra_args) is not possible because there exists a Tensor `other` in extra_args that has more elements than `self`. This happened due to `other` being vmapped over but `self` not being vmapped over in a vmap. Please try to use out-of-place operators instead of scatter_add_.",
+ "vmap_aux_nomask": "ok",
+ "bf16_opaque_vs_hf_bf16_loop": 0.004983416953530589,
+ "bf16_opaque_vs_hf_bf16_eager_loop": 0.004983416953530589,
+ "bf16_opaque_vs_hf_fp32": 0.011027098977784557,
+ "route_flips_bf16_vmap_vs_hf_bf16": [
+  0,
+  128
+ ],
+ "sdpa_vmap_vs_batched_float32": 0.0,
+ "sdpa_vmap_vs_batched_bfloat16": 0.0
+}

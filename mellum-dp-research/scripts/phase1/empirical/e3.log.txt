@@ -1,0 +1,24 @@
+/home/user/opaque/.venv/lib/python3.11/site-packages/transformers/integrations/sdpa_attention.py:158: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+/home/user/opaque/.venv/lib/python3.11/site-packages/torch/autograd/graph.py:1072: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu_backward. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+                          attn|ce|random: n_tr  196608 median 1.9409 p95 2.2617 max 2.5059 min 1.6801 max/med 1.29 loss 4.8698  [0s]
+                      attn|ce|structured: n_tr  196608 median 5.6672 p95 7.0921 max 7.5341 min 3.9872 max/med 1.33 loss 4.8583  [0s]
+                 attn|ce+0.001aux|random: n_tr  196608 median 1.9413 p95 2.2617 max 2.5055 min 1.6804 max/med 1.29 loss 4.8718  [1s]
+             attn|ce+0.001aux|structured: n_tr  196608 median 5.6676 p95 7.0933 max 7.5339 min 3.9874 max/med 1.33 loss 4.8604  [1s]
+                    attn|aux_only|random: n_tr  196608 median 2.6026 p95 3.7162 max 4.1107 min 1.1137 max/med 1.58 loss 2.0664  [1s]
+                attn|aux_only|structured: n_tr  196608 median 4.0854 p95 6.4601 max 7.5646 min 1.9124 max/med 1.85 loss 2.1122  [1s]
+                   attn+router|ce|random: n_tr  197632 median 1.9409 p95 2.2617 max 2.5059 min 1.6801 max/med 1.29 loss 4.8698  [1s]
+               attn+router|ce|structured: n_tr  197632 median 5.6672 p95 7.0921 max 7.5341 min 3.9872 max/med 1.33 loss 4.8583  [1s]
+          attn+router|ce+0.001aux|random: n_tr  197632 median 1.9413 p95 2.2617 max 2.5055 min 1.6804 max/med 1.29 loss 4.8718  [1s]
+      attn+router|ce+0.001aux|structured: n_tr  197632 median 5.6676 p95 7.0933 max 7.5339 min 3.9874 max/med 1.33 loss 4.8604  [1s]
+             attn+router|aux_only|random: n_tr  197632 median 2.8687 p95 4.2640 max 4.5246 min 1.2817 max/med 1.58 loss 2.0664  [2s]
+         attn+router|aux_only|structured: n_tr  197632 median 4.9586 p95 7.8020 max 8.5795 min 2.1597 max/med 1.73 loss 2.1122  [2s]
+                  attn+experts|ce|random: n_tr  294912 median 1.9419 p95 2.2626 max 2.5068 min 1.6808 max/med 1.29 loss 4.8698  [2s]
+              attn+experts|ce|structured: n_tr  294912 median 5.6681 p95 7.0930 max 7.5349 min 3.9879 max/med 1.33 loss 4.8583  [2s]
+         attn+experts|ce+0.001aux|random: n_tr  294912 median 1.9423 p95 2.2627 max 2.5063 min 1.6811 max/med 1.29 loss 4.8718  [2s]
+     attn+experts|ce+0.001aux|structured: n_tr  294912 median 5.6685 p95 7.0943 max 7.5347 min 3.9881 max/med 1.33 loss 4.8604  [2s]
+            attn+experts|aux_only|random: n_tr  294912 median 2.6027 p95 3.7165 max 4.1110 min 1.1137 max/med 1.58 loss 2.0664  [3s]
+        attn+experts|aux_only|structured: n_tr  294912 median 4.0857 p95 6.4605 max 7.5652 min 1.9125 max/med 1.85 loss 2.1122  [3s]
+wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e3_results.json
+done 2.7s

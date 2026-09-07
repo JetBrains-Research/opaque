@@ -1,0 +1,33 @@
+{
+ "nm3": 0.5622310638427734,
+ "rows3": [
+  {
+   "mult": 1.0,
+   "sigma_h": 0.5622310638427734,
+   "eps_with_extra": 12.193591712987857,
+   "nm_matched": NaN,
+   "grad_noise_increase": null
+  },
+  {
+   "mult": 2.0,
+   "sigma_h": 1.1244621276855469,
+   "eps_with_extra": 4.811541896755039,
+   "nm_matched": 0.6547744750976561,
+   "grad_noise_increase": 1.1646003168561354
+  },
+  {
+   "mult": 4.0,
+   "sigma_h": 2.2489242553710938,
+   "eps_with_extra": 3.513971382455355,
+   "nm_matched": 0.5854863822460175,
+   "grad_noise_increase": 1.0413625640751634
+  },
+  {
+   "mult": 8.0,
+   "sigma_h": 4.4978485107421875,
+   "eps_with_extra": 3.2078069990014098,
+   "nm_matched": 0.5713736176490786,
+   "grad_noise_increase": 1.016261203612296
+  }
+ ]
+}

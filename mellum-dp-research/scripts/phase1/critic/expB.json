@@ -1,0 +1,26 @@
+{
+ "0.5": {
+  "frac_tokens_topk_set_differs": 0.016785025596618652,
+  "frac_bf16_softmax_tie_at_boundary": 0.06667499989271164,
+  "max_abs_f_diff_over_kE": 0.0010399818420410156,
+  "median_top1_prob": 0.04355363920331001
+ },
+ "1.0": {
+  "frac_tokens_topk_set_differs": 0.0026199817657470703,
+  "frac_bf16_softmax_tie_at_boundary": 0.04530499875545502,
+  "max_abs_f_diff_over_kE": 0.0004400014877319336,
+  "median_top1_prob": 0.0959162637591362
+ },
+ "2.0": {
+  "frac_tokens_topk_set_differs": 0.00028502941131591797,
+  "frac_bf16_softmax_tie_at_boundary": 0.04269000142812729,
+  "max_abs_f_diff_over_kE": 0.00016003847122192383,
+  "median_top1_prob": 0.26091137528419495
+ },
+ "4.0": {
+  "frac_tokens_topk_set_differs": 9.500980377197266e-05,
+  "frac_bf16_softmax_tie_at_boundary": 0.0426350012421608,
+  "max_abs_f_diff_over_kE": 8.0108642578125e-05,
+  "median_top1_prob": 0.5695084929466248
+ }
+}

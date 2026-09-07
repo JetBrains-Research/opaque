@@ -1,0 +1,11 @@
+[torch.float32] grad : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 1.931e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=5.618e-04 (nonzero => the surrogate gradient is really there)
+[torch.float32] vmap : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 2.418e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=7.382e-04 (nonzero => the surrogate gradient is really there)
+      vmap vs per-example loop grad max|diff| = 0.000e+00
+[torch.float64] grad : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 1.931e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=5.618e-04 (nonzero => the surrogate gradient is really there)
+[torch.float64] vmap : value(neutral)==value(CE) bit-identical: True; value(full)-value(CE) = 2.417e-04
+      grad(neutral) vs grad(full): bit-identical=True, max|diff|=0.000e+00 (max|grad|=1.465e-01); alpha*grad S contribution max=7.382e-04 (nonzero => the surrogate gradient is really there)
+      vmap vs per-example loop grad max|diff| = 0.000e+00
+K4 RESULT: PASS

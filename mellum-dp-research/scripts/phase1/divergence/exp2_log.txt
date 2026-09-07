@@ -1,0 +1,28 @@
+ref grad norm (sanity): 5.44210423308075
+HF bf16 batched determinism (same call twice) max rel-L2: 0.0
+HF bf16 batched(B=4) vs mean of HF bf16 loop(B=1): max rel-L2 2.69e-03
+HF fp32 batched(B=4) vs mean of HF fp32 loop(B=1): max rel-L2 6.17e-07
+MoE kernel torch.float32: fwd hf-vs-opaque 4.47e-08 | hf-vs-fp64 2.67e-07 opaque-vs-fp64 2.68e-07 batched_mm-vs-fp64 2.67e-07
+   grads dx: hf-vs-op 1.07e-07 (hf/op vs fp64 2.98e-07/3.01e-07); dW1: 1.07e-07 (2.37e-07/2.38e-07); dW2: 1.04e-07 (2.37e-07/2.37e-07); dtw: 1.24e-07 (2.75e-07/2.86e-07)
+MoE kernel torch.bfloat16: fwd hf-vs-opaque 0.00e+00 | hf-vs-fp64 4.46e-03 opaque-vs-fp64 4.46e-03 batched_mm-vs-fp64 4.46e-03
+   grads dx: hf-vs-op 4.05e-03 (hf/op vs fp64 4.87e-03/4.72e-03); dW1: 2.34e-03 (4.29e-03/4.44e-03); dW2: 6.91e-08 (4.16e-03/4.16e-03); dtw: 2.27e-03 (4.95e-03/4.37e-03)
+torch._grouped_mm available: True  F.grouped_mm: True
+/home/user/opaque/.venv/lib/python3.11/site-packages/transformers/integrations/sdpa_attention.py:158: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+/home/user/opaque/.venv/lib/python3.11/site-packages/torch/autograd/graph.py:1072: UserWarning: There is a performance drop because we have not yet implemented the batching rule for aten::_scaled_dot_product_flash_attention_for_cpu_backward. Please file us an issue on GitHub so that we can prioritize its implementation. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/functorch/BatchedFallback.cpp:82.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+dispatch counts after grouped run: {'dense': 0, 'grouped': 2}
+[opaque GROUPED (torch._grouped_mm) fp32 vmap vs HF eager loop] overall rel-L2 3.487e-07; worst model.layers.1.mlp.gate.weight[2]=5.89e-07
+padded losses vmap: [4.849404335021973, 4.7675347328186035, 4.915565013885498, 4.825522422790527]  loop: [4.849405288696289, 4.767534255981445, 4.9354329109191895, 4.825522422790527]
+[opaque fp32 vmap vs HF loop with right+left padding (sliding+full layers)] overall rel-L2 1.017e+01; worst model.layers.0.self_attn.q_proj.weight[2]=4.55e+01
+[opaque fp32 vmap vs HF loop with attention_mask=None (Boolean SDPA band path)] overall rel-L2 3.487e-07; worst model.layers.1.mlp.gate.weight[2]=5.89e-07
+[opaque fp32 vmap + HF gradient checkpointing vs HF loop] overall rel-L2 3.487e-07; worst model.layers.1.mlp.gate.weight[2]=5.89e-07
+[transformers] `use_return_dict` is deprecated! Use `return_dict` instead!
+chunked-CE losses vmap: [4.849404335021973, 4.776901721954346, 4.857313632965088, 4.8255228996276855]  loop: [4.849405288696289, 4.776902198791504, 4.857313632965088, 4.825522422790527]
+[opaque fp32 vmap + chunked linear CE vs HF loop] overall rel-L2 3.692e-07; worst model.layers.0.self_attn.q_norm.weight[0]=6.35e-07
+[opaque GROUPED bf16 vmap vs HF grouped_mm bf16 loop] overall rel-L2 4.632e-03; worst model.layers.0.input_layernorm.weight[2]=8.50e-03
+[opaque GROUPED bf16 vmap + chunked CE vs HF grouped_mm bf16 loop] overall rel-L2 4.632e-03; worst model.layers.0.input_layernorm.weight[2]=8.50e-03
+[opaque GROUPED bf16 vmap vs HF fp32 loop] overall rel-L2 1.104e-02; worst model.layers.1.mlp.gate.weight[2]=5.63e-01
+[HF bf16 loop vs HF fp32 loop (floor)] overall rel-L2 1.105e-02; worst model.layers.1.mlp.gate.weight[2]=5.65e-01
+dispatch counts total: {'dense': 0, 'grouped': 14}
+DONE

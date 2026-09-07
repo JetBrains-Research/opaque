@@ -1,0 +1,9 @@
+tokens flipped (bf16 vs fp32, any layer): 41/2048; examples with >=1 flip: 22/32
+bf16 vs fp32 per-example rel L2: flip-examples mean 0.0134 max 0.0158 | no-flip mean 0.0113 max 0.0122
+bf16 PINNED-to-fp32-routes vs fp32: flip-examples mean 0.0117 max 0.0129 | no-flip mean 0.0113
+            attn(qkvo): flip-ex bf16 err mean 0.0131 max 0.0155 | no-flip mean 0.0112 | pinned flip-ex mean 0.0116
+                router: flip-ex bf16 err mean 0.1286 max 0.2351 | no-flip mean 0.0173 | pinned flip-ex mean 0.0166
+               experts: flip-ex bf16 err mean 0.1107 max 0.1529 | no-flip mean 0.0144 | pinned flip-ex mean 0.0147
+   embed/lm_head/norms: flip-ex bf16 err mean 0.0134 max 0.0158 | no-flip mean 0.0113 | pinned flip-ex mean 0.0117
+wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e1b_results.json
+done 2.0s

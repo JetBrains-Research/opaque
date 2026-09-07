@@ -1,0 +1,4 @@
+[random] aux_hf 2.0159 mean per-ex aux 2.1062 | ||i|| 1.711e+00 | err(ii) 9.752e-01 cos 0.785 | err(iii) 2.507e-07 | noisy: rel0.05:0.098, rel0.1:0.197, rel0.3:0.591, rel1.0:1.970 | lagged 0.226 (f dev 0.082 k/E) | uniform 1.000 (norm 5.5e-08)
+[structured] aux_hf 2.0513 mean per-ex aux 2.1848 | ||i|| 2.343e+00 | err(ii) 1.095e+00 cos 0.759 | err(iii) 2.658e-07 | noisy: rel0.05:0.069, rel0.1:0.139, rel0.3:0.416, rel1.0:1.386 | lagged 0.546 (f dev 0.299 k/E) | uniform 1.000 (norm 5.5e-08)
+wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e4b_imbalanced_results.json
+done 5.9s

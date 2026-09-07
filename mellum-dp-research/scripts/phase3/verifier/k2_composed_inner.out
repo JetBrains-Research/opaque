@@ -1,0 +1,27 @@
+nm_h 4.0149110625267905 nm_eff 0.5567679885526134
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/verifier/k2_composed_inner.py", line 8, in <module>
+    e1 = ((A.gaussian(NM) | A.gaussian(nm_h)) * T).epsilon_at(DELTA)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_base.py", line 219, in epsilon_at
+    return self.pld(
+           ^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_pld_cache.py", line 187, in wrapper
+    return cache.get_or_compute(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_pld_cache.py", line 100, in get_or_compute
+    result = compute()
+             ^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_pld_cache.py", line 190, in <lambda>
+    lambda: _compute_pld(method, self, config),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_pld_cache.py", line 206, in _compute_pld
+    return method(process)
+           ^^^^^^^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/composition/_repeated.py", line 71, in pld
+    return self.inner.repeated_pld(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/opaque/packages/opaque-accounting/src/opaque/api/accounting/core/_base.py", line 452, in repeated_pld
+    ).self_compose(count)
+      ^^^^^^^^^^^^^^^^^^^
+RuntimeError: Exact self-composition requires an FFT buffer of 8589934592 elements, exceeding the 33554432-element limit; configure a positive tail-mass truncation budget or use a coarser grid

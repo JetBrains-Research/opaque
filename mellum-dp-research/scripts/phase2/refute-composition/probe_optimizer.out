@@ -1,0 +1,5 @@
+sigma per group: {'fallback': '1.996e-03', 'router_load_probe': '2.823e-04'}
+probe-noise vs w-noise[:64] equal? False
+adamw-BC: probe update after 3 steps max|.| = 0.000e+00, probe param max|.| = 0.000e+00, finite: True; w update finite: True
+adamw: probe update after 3 steps max|.| = 0.000e+00, probe param max|.| = 0.000e+00, finite: True; w update finite: True
+sgd-momentum: probe update after 3 steps max|.| = 0.000e+00, probe param max|.| = 0.000e+00, finite: True; w update finite: True

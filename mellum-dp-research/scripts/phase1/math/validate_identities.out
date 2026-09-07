@@ -1,0 +1,171 @@
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/math/validate_identities.py:161: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+  "aux_batch_value": float(aux_batch), "aux_own_value_mean": float(aux_own),
+/tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/math/validate_identities.py:222: UserWarning: Using torch.cross without specifying the dim arg is deprecated.
+Please either pass the dim explicitly or simply use torch.linalg.cross.
+The default value of dim will change to agree with that of linalg.cross in a future release. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/Cross.cpp:63.)
+  Wr[2] = Wr[1] + torch.cross(x, torch.randn(Hp)) * 0  # copy row
+{
+  "full": {
+    "sum_e f_e(B) == k": 2.0,
+    "aux_HF - E*sum f(B) P(B)": 8.881784197001252e-16,
+    "max|grad aux_HF - grad sum_x S(x;f(B))|": 1.0408340855860843e-17,
+    "|grad aux_HF|": 0.07885929744510836,
+    "max|grad aux_HF - (1/B) sum grad ell_x (equal weights)|": 8.239936510889834e-18,
+    "max|grad aux_HF - (1/B) sum grad B(T_x/T_tot) ell_x|": 8.239936510889834e-18,
+    "max|f(B) - mean_x f(x)|": 5.551115123125783e-17,
+    "max|(grad own - grad sur) - E sum_e (f_e(x)-f_e(B)) grad P_e(x)|": 7.632783294297951e-17,
+    "rel |grad own-aux mean - grad aux_HF| / |grad aux_HF|": 0.7686915092607716
+  },
+  "ragged": {
+    "sum_e f_e(B) == k": 1.9999999999999998,
+    "aux_HF - E*sum f(B) P(B)": 0.0,
+    "max|grad aux_HF - grad sum_x S(x;f(B))|": 2.2551405187698492e-17,
+    "|grad aux_HF|": 0.05035014548953164,
+    "max|grad aux_HF - (1/B) sum grad ell_x (equal weights)|": 0.007271486691088654,
+    "max|grad aux_HF - (1/B) sum grad B(T_x/T_tot) ell_x|": 2.2551405187698492e-17,
+    "max|f(B) - mean_x f(x)|": 0.04201518288474809,
+    "max|(grad own - grad sur) - E sum_e (f_e(x)-f_e(B)) grad P_e(x)|": 9.71445146547012e-17,
+    "rel |grad own-aux mean - grad aux_HF| / |grad aux_HF|": 2.19164085806153
+  },
+  "token_logit_grad_identity_maxdiff": 0.0,
+  "specialization_toy": {
+    "f(B)": [
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
+    "f(x=0)": [
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "aux_batch_value": 2.0,
+    "aux_own_value_mean": 7.937514110730506,
+    "|grad aux_batch|": 1.455749117249085e-16,
+    "|grad aux_own_mean|": 0.3354375894566027,
+    "token closed-form check max|.| (requires f(x)=1 on S_x exactly)": 0.0,
+    "f(x=0) is exactly {1 on S,0 off}": true
+  },
+  "hist_norms(L=4,E=6,k=2)": {
+    "max random ||h||_2": 1.8285923547909742,
+    "sqrt(kL)": 2.8284271247461903,
+    "||h||_1": 8.0,
+    "kL": 8,
+    "adversarial ||h||_2": 2.8284271247461903,
+    "adversarial pooled ||h_pool||_2": 1.4142135623730951,
+    "sqrt(k)": 1.4142135623730951
+  },
+  "per_group_allocation": {
+    "opaque sigma": "{'grad': 1.9382982226685346, 'hist': 1.0616496597277276}",
+    "formula nm*sqrt(C_g*S)": {
+      "grad": 1.9382982226685346,
+      "hist": 1.0616496597277276
+    },
+    "sum C_g^2/sigma_g^2 (opaque)": 0.3460207612456747,
+    "1/nm^2": 0.34602076124567477,
+    "sum C_g^2/sigma_g^2 (naive sigma_g = nm*C_g)": 0.6920415224913494,
+    "K/nm^2": 0.6920415224913495,
+    "sum C_g^2/sigma_g^2 (isotropic nm*||C||_2)": 0.34602076124567477
+  },
+  "routing_pinning": {
+    "recomputed topk: |grad(theta+eps) - grad(theta-eps)|": 1.2661481870847309,
+    "pinned topk:     |grad(theta+eps) - grad(theta-eps)|": 4.0678954024207194e-17,
+    "eps": 1e-09
+  },
+  "mellum2_numbers": {
+    "pooled Delta2 = sqrt(k)": 2.8284271247461903,
+    "pooled centered Delta2 = sqrt(k(1-k/E))": 2.6457513110645907,
+    "pooled Delta1 = k": 8,
+    "per-layer Delta2 = sqrt(kL)": 14.966629547095765,
+    "per-layer Delta1 = kL": 224,
+    "token-count pooled Delta2 = T sqrt(k)": 2896.309375740099,
+    "separate release sigma_h=1.0: pooled per-entry std, rel err": [
+      0.011048543456039806,
+      0.08838834764831845
+    ],
+    "separate release sigma_h=1.0: per-layer per-entry std, rel err": [
+      0.05846339666834283,
+      0.46770717334674267
+    ],
+    "nm_eff = (1/nm^2 + 1/sigma_h^2)^-1/2 at nm=1, sigma_h=1.0": 0.7071067811865476,
+    "separate release sigma_h=2.0: pooled per-entry std, rel err": [
+      0.02209708691207961,
+      0.1767766952966369
+    ],
+    "separate release sigma_h=2.0: per-layer per-entry std, rel err": [
+      0.11692679333668567,
+      0.9354143466934853
+    ],
+    "nm_eff = (1/nm^2 + 1/sigma_h^2)^-1/2 at nm=1, sigma_h=2.0": 0.8944271909999159,
+    "separate release sigma_h=5.0: pooled per-entry std, rel err": [
+      0.05524271728019903,
+      0.4419417382415922
+    ],
+    "separate release sigma_h=5.0: per-layer per-entry std, rel err": [
+      0.2923169833417142,
+      2.3385358667337135
+    ],
+    "nm_eff = (1/nm^2 + 1/sigma_h^2)^-1/2 at nm=1, sigma_h=5.0": 0.9805806756909201,
+    "EMA beta=0.9: std shrink sqrt((1-b)/(1+b)), lag 1/(1-b)": [
+      0.22941573387056174,
+      10.000000000000002
+    ],
+    "EMA beta=0.95: std shrink sqrt((1-b)/(1+b)), lag 1/(1-b)": [
+      0.16012815380508721,
+      19.999999999999982
+    ],
+    "EMA beta=0.99: std shrink sqrt((1-b)/(1+b)), lag 1/(1-b)": [
+      0.07088812050083362,
+      99.99999999999991
+    ],
+    "joint clip rho=0.1: rel err sigma E/(rho B sqrt k), grad budget sqrt(1-rho^2)": [
+      0.8838834764831842,
+      0.99498743710662
+    ],
+    "per-group optimal rho=0.1: rel err sigma E sqrt((1+rho)/rho)/(B sqrt k), grad noise x sqrt(1+rho)": [
+      0.2931509849889643,
+      1.0488088481701516
+    ],
+    "per-group isotropic rho=0.1: rel err sigma E sqrt(1+rho^2)/(rho B sqrt k), grad noise x sqrt(1+rho^2)": [
+      0.8882919002219932,
+      1.004987562112089
+    ],
+    "joint clip rho=0.3: rel err sigma E/(rho B sqrt k), grad budget sqrt(1-rho^2)": [
+      0.2946278254943948,
+      0.9539392014169457
+    ],
+    "per-group optimal rho=0.3: rel err sigma E sqrt((1+rho)/rho)/(B sqrt k), grad noise x sqrt(1+rho)": [
+      0.18399501804849683,
+      1.140175425099138
+    ],
+    "per-group isotropic rho=0.3: rel err sigma E sqrt(1+rho^2)/(rho B sqrt k), grad noise x sqrt(1+rho^2)": [
+      0.3076004804215292,
+      1.044030650891055
+    ],
+    "joint clip rho=0.5: rel err sigma E/(rho B sqrt k), grad budget sqrt(1-rho^2)": [
+      0.17677669529663687,
+      0.8660254037844386
+    ],
+    "per-group optimal rho=0.5: rel err sigma E sqrt((1+rho)/rho)/(B sqrt k), grad noise x sqrt(1+rho)": [
+      0.15309310892394862,
+      1.224744871391589
+    ],
+    "per-group isotropic rho=0.5: rel err sigma E sqrt(1+rho^2)/(rho B sqrt k), grad noise x sqrt(1+rho^2)": [
+      0.1976423537605237,
+      1.118033988749895
+    ],
+    "aux value at balance = k": 8,
+    "alpha*aux at balance": 0.008
+  }
+}
