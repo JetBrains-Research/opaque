@@ -194,7 +194,7 @@ Mechanism constraints (validated at construction):
 | `bf16` | `False` | bf16 autocast on the per-example loss closure. |
 | `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
 | `gradient_checkpointing` | `False` | Opaque automatically uses the vmap-safe non-reentrant path; no checkpointing kwargs are required. Incompatible with `torch_compile`. |
-| `torch_compile` | `False` | Compiles the tensor-only per-microbatch `vmap(grad)+clip+reduce` kernel with `fullgraph=True` and a dynamic leading dimension, avoiding specialization for each realized Poisson batch size except for a possible dedicated size-one graph. |
+| `torch_compile` | `False` | Compiles the tensor-only per-microbatch `vmap(grad)+clip+reduce` kernel with `fullgraph=True`. |
 
 ## Patches and kernels
 
