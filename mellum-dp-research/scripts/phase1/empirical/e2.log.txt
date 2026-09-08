@@ -1,8 +1,0 @@
-router x 1.0     random: L0 flip 0.010 pmargin med 6.09e-03 <1e-3:0.102 <1e-2:0.686 top1 0.153 | L1 flip 0.008 pmargin med 5.88e-03 <1e-3:0.099 <1e-2:0.711 top1 0.152
-router x 1.0 structured: L0 flip 0.008 pmargin med 5.95e-03 <1e-3:0.098 <1e-2:0.723 top1 0.152 | L1 flip 0.011 pmargin med 5.38e-03 <1e-3:0.121 <1e-2:0.717 top1 0.152
-router x 5.0     random: L0 flip 0.008 pmargin med 3.66e-02 <1e-3:0.020 <1e-2:0.162 top1 0.284 | L1 flip 0.011 pmargin med 3.57e-02 <1e-3:0.014 <1e-2:0.171 top1 0.275
-router x 5.0 structured: L0 flip 0.009 pmargin med 3.57e-02 <1e-3:0.020 <1e-2:0.161 top1 0.280 | L1 flip 0.009 pmargin med 3.20e-02 <1e-3:0.021 <1e-2:0.190 top1 0.280
-router x20.0     random: L0 flip 0.008 pmargin med 7.49e-02 <1e-3:0.029 <1e-2:0.142 top1 0.694 | L1 flip 0.014 pmargin med 7.60e-02 <1e-3:0.026 <1e-2:0.149 top1 0.673
-router x20.0 structured: L0 flip 0.009 pmargin med 7.47e-02 <1e-3:0.037 <1e-2:0.158 top1 0.696 | L1 flip 0.012 pmargin med 6.73e-02 <1e-3:0.033 <1e-2:0.165 top1 0.694
-wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e2_results.json
-done 4.3s

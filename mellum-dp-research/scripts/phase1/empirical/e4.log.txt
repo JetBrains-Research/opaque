@@ -1,5 +1,0 @@
-[random] aux_hf 2.0051 mean per-ex aux 2.0599 | ||i|| 3.297e-01 | err(ii) 2.544e+00 cos 0.387 | err(iii) 2.369e-07 | noisy: rel0.05:0.323, rel0.1:0.647, rel0.3:1.941, rel1.0:6.469 | lagged 0.652 (f dev 0.083 k/E) | uniform 1.000 (norm 2.8e-08)
-[structured] aux_hf 2.0078 mean per-ex aux 2.1146 | ||i|| 4.062e-01 | err(ii) 3.802e+00 cos 0.280 | err(iii) 2.648e-07 | noisy: rel0.05:0.240, rel0.1:0.481, rel0.3:1.443, rel1.0:4.809 | lagged 1.661 (f dev 0.324 k/E) | uniform 1.000 (norm 3.0e-08)
-[random_padded] aux_hf 2.0049 mean per-ex aux 2.1023 | ||i|| 3.369e-01 | err(ii) 3.851e+00 cos 0.261 | err(iii) 3.305e-07 | noisy: rel0.05:0.317, rel0.1:0.634, rel0.3:1.903, rel1.0:6.344 | lagged 0.833 (f dev 0.117 k/E) | uniform 1.000 (norm 3.6e-08)
-wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e4_results.json
-done 10.0s

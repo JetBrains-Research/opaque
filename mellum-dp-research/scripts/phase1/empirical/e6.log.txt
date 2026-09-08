@@ -1,9 +1,0 @@
-E8k2 T 64     random: max||f(x)||2 0.886 (bound 1.414) max||f(x)-f(B)||2 0.497 | ||f(B)-k/E||2/(k/E) 0.408 | release noise/coord in k/E units: B128 0.044, B1024 0.006
-E8k2 T 64 structured: max||f(x)||2 1.288 (bound 1.414) max||f(x)-f(B)||2 1.057 | ||f(B)-k/E||2/(k/E) 0.372 | release noise/coord in k/E units: B128 0.044, B1024 0.006
-E8k2 T512     random: max||f(x)||2 0.778 (bound 1.414) max||f(x)-f(B)||2 0.241 | ||f(B)-k/E||2/(k/E) 0.411 | release noise/coord in k/E units: B128 0.044, B1024 0.006
-E8k2 T512 structured: max||f(x)||2 1.199 (bound 1.414) max||f(x)-f(B)||2 1.004 | ||f(B)-k/E||2/(k/E) 0.787 | release noise/coord in k/E units: B128 0.044, B1024 0.006
-E64k8 T 64     random: max||f(x)||2 1.427 (bound 2.828) max||f(x)-f(B)||2 0.827 | ||f(B)-k/E||2/(k/E) 3.379 | release noise/coord in k/E units: B128 0.177, B1024 0.022
-E64k8 T 64 structured: max||f(x)||2 2.088 (bound 2.828) max||f(x)-f(B)||2 1.786 | ||f(B)-k/E||2/(k/E) 3.202 | release noise/coord in k/E units: B128 0.177, B1024 0.022
-E64k8 T512     random: max||f(x)||2 1.245 (bound 2.828) max||f(x)-f(B)||2 0.469 | ||f(B)-k/E||2/(k/E) 4.084 | release noise/coord in k/E units: B128 0.177, B1024 0.022
-E64k8 T512 structured: max||f(x)||2 2.255 (bound 2.828) max||f(x)-f(B)||2 1.901 | ||f(B)-k/E||2/(k/E) 3.625 | release noise/coord in k/E units: B128 0.177, B1024 0.022
-wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e6_results.json

@@ -1,4 +1,0 @@
-vmap(grad) bf16 B=32,T=64: 0.2s
-vmap-bf16 vs loop-bf16: tokens flipped 0/2048, examples 0/32; err flip-ex mean nan max nan | no-flip mean 0.0047 max 0.0051
-vmap-bf16 vs fp32-loop: tokens flipped 41/2048, examples 22/32; err flip-ex mean 0.0134 | no-flip mean 0.0113
-wrote /tmp/claude-0/-home-user-opaque/a97cca5e-900f-5617-b2df-d73b55081cac/scratchpad/research/empirical/e1b_vmap_results.json
