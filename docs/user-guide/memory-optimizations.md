@@ -181,17 +181,18 @@ Cohere and Granite logit scaling is applied inside each tile, avoiding a
 transformed copy of the full `lm_head` weight.
 
 Families outside the fused CUDA kernel's numerical envelope can use the
-portable chunked backend. Its peak probability-tile memory scales with
-`microbatch_size * prediction_tokens * chunk_width` in FP32. Configure the
-loss-only path and vocabulary-column width through:
+portable chunked backend. It tiles both prediction tokens and vocabulary under
+an internal CPU/MPS-aware workspace bound. Configure the loss-only path and an
+optional maximum vocabulary-column tile width through:
 
 ```python
 apply_model_patches(model, chunked_linear_cross_entropy=2048)
 ```
 
 The fused flag enables the logits-free path; for the chunk-width setting,
-`True` selects the family default, while `False` or `0` disables the portable
-backend.
+`True` selects automatic two-dimensional tiling, a positive integer caps the
+vocabulary width while token tiling remains automatic, and `False` or `0`
+disables the portable backend.
 
 ## Profiling
 

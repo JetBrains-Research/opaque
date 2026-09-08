@@ -8,9 +8,9 @@ match eager ``matmul + cross_entropy`` precision staging within streaming
 roundoff for every feature, on the direct call and under ``vmap(grad)`` (the
 DP-SGD path), with frozen and trainable lm-head weight.
 
-Tensors are deliberately tiny — this is a correctness contract, not a memory
-benchmark (the streaming memory win is measured out of band; asserting it in CI
-would risk OOMing the small MPS runner).
+Tensors are deliberately tiny: allocation-shape checks prove the workspace is
+bounded without OOM-risking peak-memory assertions on the small MPS runner.
+Timing and realistic peak-memory measurements remain out-of-band benchmarks.
 """
 
 from __future__ import annotations
@@ -71,6 +71,72 @@ _FEATURES = [
 ]
 
 
+def test_workspace_budget_is_fixed_on_cpu_and_bounded_on_mps(monkeypatch):
+    assert mod._workspace_budget_bytes(torch.device("cpu")) == 512 * 1024**2
+
+    monkeypatch.setattr(mod, "_MPS_MAX_WORKSPACE_BYTES", 8000)
+    monkeypatch.setattr(torch.mps, "recommended_max_memory", lambda: 100_000)
+    monkeypatch.setattr(torch.mps, "driver_allocated_memory", lambda: 20_000)
+    assert mod._workspace_budget_bytes(torch.device("mps")) == 8000
+
+    def unavailable():
+        raise RuntimeError("unavailable")
+
+    monkeypatch.setattr(torch.mps, "recommended_max_memory", unavailable)
+    assert mod._workspace_budget_bytes(torch.device("mps")) == 512 * 1024**2
+
+
+def test_tile_plan_bounds_large_token_and_vocabulary_axes():
+    hidden = torch.empty(8192, 3072, dtype=torch.bfloat16, device="meta")
+    weight = torch.empty(128_000, 3072, dtype=torch.bfloat16, device="meta")
+    plan = mod._tile_plan(hidden, weight)
+
+    assert 1 <= plan.tokens < hidden.shape[0]
+    assert 1 <= plan.vocab < weight.shape[0]
+    assert plan.estimated_bytes <= plan.budget_bytes
+
+
+def test_tile_plan_honors_vocab_cap_and_minimum_tile():
+    hidden = torch.empty(257, 4)
+    weight = torch.empty(200, 4)
+    plan = mod._tile_plan(hidden, weight, chunk_vocab=64, budget_bytes=4096)
+    assert plan.vocab == 64
+    assert 1 <= plan.tokens < hidden.shape[0]
+    assert plan.estimated_bytes <= plan.budget_bytes
+
+    minimum = mod._tile_plan(hidden, weight, chunk_vocab=64, budget_bytes=1)
+    assert (minimum.tokens, minimum.vocab) == (1, 1)
+    with pytest.raises(ValueError, match="chunk_vocab must be positive"):
+        mod._tile_plan(hidden, weight, chunk_vocab=0)
+
+
+def test_tile_plan_includes_hidden_vmap_batch_dimension(monkeypatch):
+    torch.manual_seed(4)
+    hidden = torch.randn(4, 9, 4)
+    weight = torch.randn(64, 4)
+    labels = torch.randint(0, 64, (4, 9))
+    vmapped_plans = []
+    original_plan = mod._tile_plan
+
+    def recording_plan(*args, **kwargs):
+        plan = original_plan(*args, **kwargs)
+        if plan.batch_factor > 1:
+            vmapped_plans.append(plan)
+        return plan
+
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", lambda _device: 4096)
+    monkeypatch.setattr(mod, "_tile_plan", recording_plan)
+
+    def loss(h, w, lab):
+        return linear_cross_entropy_chunked(h, w, lab, chunk_vocab=32)
+
+    vmap(grad(loss), in_dims=(0, None, 0))(hidden, weight, labels)
+
+    assert vmapped_plans
+    assert all(plan.batch_factor == hidden.shape[0] for plan in vmapped_plans)
+    assert all(plan.estimated_bytes <= plan.budget_bytes for plan in vmapped_plans)
+
+
 def _check_parity(device: str) -> None:
     torch.manual_seed(0)
     b, t, d = 3, 7, 16
@@ -79,8 +145,10 @@ def _check_parity(device: str) -> None:
         ignore = feat.pop("_ignore", False)
         # vocab 50 -> single chunk; 256 with _CHUNK_VOCAB=64 -> 4 chunks
         for vocab, chunk_vocab in ((50, 16384), (256, 64)):
-            old = mod._CHUNK_VOCAB
+            old_vocab = mod._CHUNK_VOCAB
+            old_budget = mod._workspace_budget_bytes
             mod._CHUNK_VOCAB = chunk_vocab
+            mod._workspace_budget_bytes = lambda _device: 4096
             try:
                 h = (torch.randn(b, t, d, device=device)).requires_grad_(True)
                 w = (torch.randn(vocab, d, device=device) * 0.1).requires_grad_(True)
@@ -118,7 +186,8 @@ def _check_parity(device: str) -> None:
                     f"vmap d_weight {feat}"
                 )
             finally:
-                mod._CHUNK_VOCAB = old
+                mod._CHUNK_VOCAB = old_vocab
+                mod._workspace_budget_bytes = old_budget
 
 
 def test_chunked_linear_ce_parity_cpu():
@@ -149,25 +218,28 @@ def test_chunked_linear_ce_backward_does_not_allocate_dense_onehot(monkeypatch):
     assert (14, 64) not in allocated_shapes
 
 
-def test_chunked_linear_ce_bounds_probability_tile_width(monkeypatch):
+def test_chunked_linear_ce_bounds_both_probability_tile_dimensions(monkeypatch):
     torch.manual_seed(0)
-    h = torch.randn(1, 3, 4, requires_grad=True)
-    w = torch.randn(20_000, 4)
-    labels = torch.randint(0, w.shape[0], (1, 3))
-    exp_widths = []
+    h = torch.randn(1, 258, 4, requires_grad=True)
+    w = torch.randn(200, 4)
+    labels = torch.randint(0, w.shape[0], (1, 258))
+    exp_shapes = []
     original_exp = torch.exp
 
     def record_exp(tensor, *args, **kwargs):
         if tensor.ndim == 2:
-            exp_widths.append(tensor.shape[-1])
+            exp_shapes.append(tuple(tensor.shape))
         return original_exp(tensor, *args, **kwargs)
 
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", lambda _device: 4096)
     monkeypatch.setattr(torch, "exp", record_exp)
-    loss = linear_cross_entropy_chunked(h, w, labels, chunk_vocab=2048)
+    plan = mod._tile_plan(h[..., :-1, :].flatten(0, -2), w, chunk_vocab=64)
+    loss = linear_cross_entropy_chunked(h, w, labels, chunk_vocab=64)
     torch.autograd.grad(loss, h)
 
-    assert exp_widths
-    assert max(exp_widths) <= 2048
+    assert exp_shapes
+    assert max(rows for rows, _ in exp_shapes) <= plan.tokens < 257
+    assert max(cols for _, cols in exp_shapes) <= plan.vocab == 64
 
 
 @pytest.mark.parametrize("vmapped", [False, True], ids=["direct", "vmap"])
@@ -207,6 +279,107 @@ def test_chunked_backward_reuses_forward_statistics(
         torch.autograd.grad(loss(hidden, weight, labels), (hidden, weight))
 
     assert calls == 1
+
+
+def test_chunked_backward_reuses_exact_forward_tile_plan(monkeypatch):
+    hidden = torch.randn(1, 9, 8, requires_grad=True)
+    weight = torch.randn(32, 8)
+    labels = torch.randint(0, 32, (1, 9))
+    calls = 0
+
+    def shrinking_budget(_device):
+        nonlocal calls
+        calls += 1
+        return 4096 if calls == 1 else 1
+
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", shrinking_budget)
+    loss = linear_cross_entropy_chunked(hidden, weight, labels, chunk_vocab=8)
+    torch.autograd.grad(loss, hidden)
+
+    assert calls == 1
+
+
+@pytest.mark.parametrize("vmapped", [False, True], ids=["direct", "vmap"])
+def test_chunked_backward_fuses_fp32_hidden_accumulation(monkeypatch, vmapped):
+    torch.manual_seed(2)
+    hidden = torch.randn(2, 9, 8)
+    weight = torch.randn(32, 8)
+    labels = torch.randint(0, 32, (2, 9))
+    calls = 0
+    original_addmm = torch.addmm
+
+    def recording_addmm(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_addmm(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", lambda _device: 1024)
+    monkeypatch.setattr(torch, "addmm", recording_addmm)
+
+    def loss(h, w, lab):
+        return linear_cross_entropy_chunked(h, w, lab, chunk_vocab=8)
+
+    if vmapped:
+        vmap(grad(loss, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    else:
+        hidden.requires_grad_(True)
+        weight.requires_grad_(True)
+        torch.autograd.grad(loss(hidden, weight, labels), (hidden, weight))
+
+    assert calls > 0
+
+
+def test_chunked_bf16_projection_staging_matches_forward_and_backward(monkeypatch):
+    hidden = torch.randn(1, 9, 8, dtype=torch.bfloat16, requires_grad=True)
+    weight = torch.randn(32, 8, dtype=torch.bfloat16)
+    labels = torch.randint(0, 32, (1, 9))
+    operand_dtypes = []
+    original_linear_chunk = mod._linear_chunk
+
+    def recording_linear_chunk(e, w):
+        operand_dtypes.append((e.dtype, w.dtype))
+        return original_linear_chunk(e, w)
+
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", lambda _device: 1024)
+    monkeypatch.setattr(mod, "_linear_chunk", recording_linear_chunk)
+    loss = linear_cross_entropy_chunked(hidden, weight, labels, chunk_vocab=8)
+    torch.autograd.grad(loss, hidden)
+
+    assert operand_dtypes
+    assert set(operand_dtypes) == {(torch.bfloat16, torch.bfloat16)}
+
+
+def test_chunked_bf16_backward_is_transform_safe_with_two_dimensional_tiles(
+    monkeypatch,
+):
+    torch.manual_seed(3)
+    hidden = torch.randn(2, 9, 8, dtype=torch.bfloat16)
+    weight = torch.randn(32, 8, dtype=torch.bfloat16)
+    labels = torch.randint(0, 32, (2, 9))
+    monkeypatch.setattr(mod, "_workspace_budget_bytes", lambda _device: 1024)
+
+    def kernel(h, w, lab):
+        return linear_cross_entropy_chunked(h, w, lab, chunk_vocab=8)
+
+    actual = vmap(grad(kernel, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    expected = vmap(grad(_eager_mean, (0, 1)), in_dims=(0, None, 0))(
+        hidden, weight, labels
+    )
+    torch.testing.assert_close(actual[0], expected[0], rtol=2e-2, atol=2e-2)
+    torch.testing.assert_close(actual[1], expected[1], rtol=2e-2, atol=2e-2)
+
+
+def test_chunked_linear_ce_handles_no_prediction_tokens():
+    hidden = torch.randn(2, 1, 4)
+    weight = torch.randn(8, 4)
+    labels = torch.randint(0, 8, (2, 1))
+
+    def loss(h, w, lab):
+        return linear_cross_entropy_chunked(h, w, lab, chunk_vocab=4)
+
+    actual = vmap(grad(loss, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    assert torch.count_nonzero(actual[0]) == 0
+    assert torch.count_nonzero(actual[1]) == 0
 
 
 @pytest.mark.mps

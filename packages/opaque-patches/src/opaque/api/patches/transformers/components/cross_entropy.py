@@ -276,8 +276,8 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
         # CUDA + half precision routes to the Triton kernel; any other host
         # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
-        # log-sum-exp over vocab chunks (no full-logit materialization). The
-        # The wrapper is installed with the performance patch bucket, but only
+        # log-sum-exp over bounded token/vocabulary tiles. The wrapper is
+        # installed with the performance patch bucket, but only
         # an explicit loss-only call may return ``logits=None``.
         use_fused_ce = (
             loss_only

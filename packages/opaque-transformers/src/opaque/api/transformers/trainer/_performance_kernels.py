@@ -22,7 +22,8 @@ without key translation. Supported keys mirror the opaque-patches surface:
 ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
 ``fused_linear_cross_entropy``, ``chunked_linear_cross_entropy``, ``kv_cache``,
 ``eager_attention``, ``batchify``. The chunked setting accepts a positive
-vocabulary tile width; ``False`` or ``0`` disables it.
+maximum vocabulary tile width while token tiling remains automatic; ``False``
+or ``0`` disables it.
 """
 
 from __future__ import annotations

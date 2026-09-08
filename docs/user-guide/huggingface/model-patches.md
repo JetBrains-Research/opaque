@@ -443,7 +443,7 @@ the patch APIs directly:
 |---|---|---|
 | `use_compat_patches` | `True` | Routed to `compat`.  Set `False` for custom models that don't need vmap-safety shims. |
 | `use_performance_kernels` | `False` | Routed to `kernels`.  Auto-`False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `None` | Flat configuration forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs. Per-concern values are normally booleans; `chunked_linear_cross_entropy` also accepts a positive integer tile width. |
+| `performance_kernels_config` | `None` | Flat configuration forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs. Per-concern values are normally booleans; `chunked_linear_cross_entropy` also accepts a positive maximum vocabulary tile width while token tiling remains automatic. |
 
 The trainer always passes `performance=True` (so `kv_cache` is on
 regardless), and `peft=True` so LoRA fusion engages when adapters
