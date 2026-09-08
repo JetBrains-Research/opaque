@@ -4,6 +4,7 @@ import math
 
 import pytest
 import torch
+from torch._dynamo.testing import CompileCounterWithBackend
 
 from opaque.api.dpsgd.clipping._adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.api.engine.clipping import _clipped_fun as clipped_fun_module
@@ -411,14 +412,16 @@ class TestAdaptivePerGroupMicrobatch:
 
     def test_no_aux_microbatch_per_group_streams_stats(self, monkeypatch):
         """Per-group no-aux adaptive microbatching should not concatenate aux."""
-        original = clipped_fun_module._microbatch_accumulate
+        original = clipped_fun_module._microbatch_accumulate_reduced
 
         def wrapped(*args, **kwargs):
             if kwargs.get("return_aux"):
                 raise AssertionError("unexpected per-example aux materialization")
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(clipped_fun_module, "_microbatch_accumulate", wrapped)
+        monkeypatch.setattr(
+            clipped_fun_module, "_microbatch_accumulate_reduced", wrapped
+        )
 
         loss_fn = _make_per_group_loss_fn()
         params = {"a": torch.randn(10), "b": torch.randn(5)}
@@ -441,6 +444,32 @@ class TestAdaptivePerGroupMicrobatch:
 
         assert isinstance(grads, dict)
         assert clip_state._step == 1
+
+    def test_threshold_updates_reuse_one_strict_chunk_graph(self):
+        params = {"a": torch.randn(10), "b": torch.randn(5)}
+        pg = _make_per_group(params)
+        backend = CompileCounterWithBackend("aot_eager")
+
+        def compiler(fn):
+            return torch.compile(fn, backend=backend, fullgraph=True)
+
+        grad_fn, state = adaptive_clipped_grad(
+            _make_per_group_loss_fn(),
+            initial_clipping_norm=pg,
+            key=key(0),
+            batch_argnums=(1, 2),
+            microbatch_size=4,
+            return_aux=True,
+            _chunk_compiler=compiler,
+        )
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+
+        for _ in range(3):
+            (_grads, _aux), state = grad_fn(params, batch_x, batch_y, state=state)
+
+        assert backend.frame_count == 1
+        assert state._step == 3
 
 
 class TestAdaptivePerGroupAccounting:

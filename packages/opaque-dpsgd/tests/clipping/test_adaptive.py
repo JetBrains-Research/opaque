@@ -546,14 +546,16 @@ class TestAdaptiveClippedGrad:
     ):
         """No-aux adaptive microbatching should stream stats instead of concatenating aux."""
 
-        original = clipped_fun_module._microbatch_accumulate
+        original = clipped_fun_module._microbatch_accumulate_reduced
 
         def wrapped(*args, **kwargs):
             if kwargs.get("return_aux"):
                 raise AssertionError("unexpected per-example aux materialization")
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(clipped_fun_module, "_microbatch_accumulate", wrapped)
+        monkeypatch.setattr(
+            clipped_fun_module, "_microbatch_accumulate_reduced", wrapped
+        )
 
         def loss_fn(params, x, y):
             pred = x @ params

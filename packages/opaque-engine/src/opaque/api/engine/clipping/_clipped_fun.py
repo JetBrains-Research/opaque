@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 import torch
 from torch.func import vmap as _vmap
 
-from opaque.api.engine.clipping._helpers import normalize_to_tuple
+from opaque.api.engine.clipping._helpers import batch_size_from_args, normalize_to_tuple
 from opaque.api.engine.clipping._pytree import clip_pytree
-from opaque.api.engine.pytree import global_norm, tree_map
+from opaque.api.engine.pytree import global_norm, tree_leaves, tree_map
 from opaque.api.engine.types import (
     ClippedPytree,
     PerGroup,
@@ -32,6 +32,13 @@ class FixedClipState(_ClipState):
     Carries no fields; the configured clipping threshold flows through
     the ``ClippedPytree.max_norm`` metadata, not through the state.
     """
+
+
+@dataclass(frozen=True)
+class _RuntimeClipState(FixedClipState):
+    """Internal state carrying a changing threshold into a reusable kernel."""
+
+    clipping_norm: float | PerGroup
 
 
 @dataclass(frozen=True)
@@ -116,6 +123,20 @@ def _sum_clipped_tensor(
     return summed
 
 
+def _accumulation_dtype(
+    tensor: torch.Tensor,
+    output_dtype: torch.dtype | None,
+    compute_dtype: torch.dtype | None,
+) -> torch.dtype | None:
+    """Choose the chunk reduction dtype without losing output precision."""
+    resolved = _resolve_compute_dtype(tensor, compute_dtype)
+    if output_dtype is None:
+        return resolved
+    if resolved is None:
+        resolved = tensor.dtype
+    return torch.promote_types(resolved, output_dtype)
+
+
 class _MicrobatchAccumulator:
     """Running sum over microbatches, held at the accumulation precision.
 
@@ -123,43 +144,32 @@ class _MicrobatchAccumulator:
     cast to the output dtype once, at the end.
     """
 
-    __slots__ = ("_compute_dtype", "_output_dtype", "_targets", "_total")
+    __slots__ = ("_output_dtype", "_targets", "_total")
 
-    def __init__(
-        self,
-        *,
-        output_dtype: torch.dtype | None,
-        compute_dtype: torch.dtype | None,
-    ) -> None:
+    def __init__(self, *, output_dtype: torch.dtype | None) -> None:
         self._output_dtype = output_dtype
-        self._compute_dtype = compute_dtype
         self._total: Any | None = None
         self._targets: Any | None = None
 
-    def _accum_dtype(self, x: torch.Tensor) -> torch.dtype | None:
-        """Never below the requested output precision, or the sum loses it."""
-        resolved = _resolve_compute_dtype(x, self._compute_dtype)
-        if self._output_dtype is None:
-            return resolved
-        if resolved is None:
-            resolved = x.dtype
-        return torch.promote_types(resolved, self._output_dtype)
+    def add_reduced(self, values: Any, dtype_markers: Any) -> None:
+        """Add one already-reduced chunk without materializing example gradients.
 
-    def add(self, values: Any) -> None:
-        """Add one microbatch, summed over its batch dimension."""
+        ``dtype_markers`` are scalar tensors carrying the dtypes of the
+        per-example leaves.  The chunk kernel may reduce in a wider dtype, so
+        those markers preserve the caller-visible dtype without returning the
+        microbatch-sized unclipped or clipped values.
+        """
         if self._targets is None:
             self._targets = tree_map(
-                lambda x: x.dtype if self._output_dtype is None else self._output_dtype,
-                values,
+                lambda marker: (
+                    marker.dtype if self._output_dtype is None else self._output_dtype
+                ),
+                dtype_markers,
             )
-        partial = tree_map(
-            lambda x: torch.sum(x, dim=0, dtype=self._accum_dtype(x)),
-            values,
-        )
         self._total = (
-            partial
+            values
             if self._total is None
-            else tree_map(lambda acc, new: acc + new, self._total, partial)
+            else tree_map(lambda acc, new: acc + new, self._total, values)
         )
 
     def result(self) -> Any:
@@ -190,201 +200,49 @@ def _validate_clipping_norm(clipping_norm: float | PerGroup) -> None:
         )
 
 
-def _microbatch_accumulate(
-    per_example_fn,
-    args,
-    batch_argnums,
-    in_dims,
-    microbatch_size,
-    return_aux,
-    dtype,
-    compute_dtype,
-    second_moment: bool = False,
-):
-    """Process batch in microbatches, accumulating results without materializing full batch.
-
-    This implementation processes the batch in chunks of `microbatch_size`, accumulating
-    results according to their type:
-    - Clipped values: SUM (into a running accumulator in `compute_dtype`)
-    - Auxiliary outputs: CONCAT (keep per-example for privacy analysis)
-
-    Args:
-        per_example_fn: Function to vmap over each example
-        args: Full batch arguments
-        batch_argnums: Which arguments contain batch dimension
-        in_dims: Input dimensions for vmap
-        microbatch_size: Size of each microbatch
-        return_aux: Whether function returns auxiliary outputs
-        dtype: Optional output dtype for the accumulated pytree.  ``None``
-            keeps the output in the input dtype (type-stable).
-        compute_dtype: Optional internal accumulation dtype for the
-            across-microbatch sum.  ``None`` (the default) auto-promotes
-            bf16/fp16 inputs to float32 for numerical stability while
-            still returning the result in the ``dtype`` (or input dtype).
-            Independent of ``dtype``: ``compute_dtype=fp32`` with
-            ``dtype=None`` accumulates in fp32 internally and casts back
-            to input dtype at the boundary.
-        second_moment: Whether to accumulate per-example gradient second
-            moments alongside the clipped sum.
-
-    Returns:
-        Tuple of (accumulated_values, concatenated_aux)
-    """
-    # Get batch size from first batch argument
-    first_batch_idx = batch_argnums[0]
-    first_batch_arg = args[first_batch_idx]
-    if isinstance(first_batch_arg, torch.Tensor):
-        batch_size = first_batch_arg.shape[0]
-    else:
-        # Handle PyTree case - get batch size from first tensor
-        def get_first_tensor(pytree):
-            if isinstance(pytree, torch.Tensor):
-                return pytree
-            elif isinstance(pytree, dict):
-                for v in pytree.values():
-                    result = get_first_tensor(v)
-                    if result is not None:
-                        return result
-            elif isinstance(pytree, (list, tuple)):
-                for v in pytree:
-                    result = get_first_tensor(v)
-                    if result is not None:
-                        return result
-            return None
-
-        first_tensor = get_first_tensor(first_batch_arg)
-        if first_tensor is None:
-            raise ConfigurationError(
-                *(
-                    "Could not determine batch size: no torch.Tensor found in the "
-                    f"batch argument PyTree at index {first_batch_idx}.",
-                )
-            )
-        batch_size = first_tensor.shape[0]
-
-    # Initialize accumulators
-    grad_acc = _MicrobatchAccumulator(output_dtype=dtype, compute_dtype=compute_dtype)
-    squared_acc = _MicrobatchAccumulator(
-        output_dtype=dtype, compute_dtype=compute_dtype
-    )
-    aux_list = []
-
-    # Process each microbatch
-    for start_idx in range(0, batch_size, microbatch_size):
-        end_idx = min(start_idx + microbatch_size, batch_size)
-
-        # Slice batch arguments for this microbatch
-        microbatch_args = list(args)
-        for i in batch_argnums:
-            microbatch_args[i] = tree_map(
-                lambda x, s=start_idx, e=end_idx: (
-                    x[s:e] if isinstance(x, torch.Tensor) else x
-                ),
-                args[i],
-            )
-
-        # vmap over microbatch.  Output shape depends on the orthogonal
-        # ``second_moment`` and ``return_aux`` flags:
-        #   (False, False) → clipped_values (which may itself be a pytree)
-        #   (True,  False) → (clipped_values, squared_values)
-        #   (False, True ) → (clipped_values, aux)
-        #   (True,  True ) → (clipped_values, squared_values, aux)
-        n_outputs = 1 + int(bool(second_moment)) + int(return_aux)
-        out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
-        vmapped = _vmap(
-            per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
-            randomness="same",
-        )
-        outputs = vmapped(*microbatch_args)
-        if n_outputs == 1:
-            clipped_values = outputs
-            squared_values = None
-            aux = ()
-        else:
-            idx = 0
-            clipped_values = outputs[idx]
-            idx += 1
-            squared_values = outputs[idx] if second_moment else None
-            if second_moment:
-                idx += 1
-            aux = outputs[idx] if return_aux else ()
-
-        grad_acc.add(clipped_values)
-        if second_moment:
-            squared_acc.add(squared_values)
-
-        # Collect aux outputs (CONCAT) - keep per-example
-        if return_aux:
-            aux_list.append(aux)
-
-    # Concatenate aux across all microbatches
-    if return_aux:
-        # Concatenate aux outputs along batch dimension
-        # Need to handle the list structure properly - transpose list of pytrees into pytree of lists
-        def concat_leaves(*leaf_values):
-            """Concatenate corresponding leaf values across microbatches."""
-            if all(isinstance(v, torch.Tensor) for v in leaf_values):
-                return torch.cat(leaf_values, dim=0)
-            # Non-tensor leaves are assumed to be identical across microbatches;
-            # return a single representative value to preserve the original structure.
-            return leaf_values[0]
-
-        aux = tree_map(concat_leaves, *aux_list)
-    else:
-        aux = ()
-
-    return grad_acc.result(), squared_acc.result(), aux
-
-
-def _microbatch_accumulate_stats_only(
-    per_example_fn,
-    args,
-    batch_argnums,
-    in_dims,
-    microbatch_size,
-    dtype,
-    compute_dtype,
+def _tensor_clipping_norm(
     clipping_norm: float | PerGroup,
-    second_moment: bool = False,
-):
-    """Process microbatches while accumulating only summed outputs and aggregate stats."""
-    first_batch_idx = batch_argnums[0]
-    first_batch_arg = args[first_batch_idx]
-    if isinstance(first_batch_arg, torch.Tensor):
-        batch_size = first_batch_arg.shape[0]
-    else:
-
-        def get_first_tensor(pytree):
-            if isinstance(pytree, torch.Tensor):
-                return pytree
-            if isinstance(pytree, dict):
-                for v in pytree.values():
-                    result = get_first_tensor(v)
-                    if result is not None:
-                        return result
-            elif isinstance(pytree, (list, tuple)):
-                for v in pytree:
-                    result = get_first_tensor(v)
-                    if result is not None:
-                        return result
-            return None
-
-        first_tensor = get_first_tensor(first_batch_arg)
-        if first_tensor is None:
-            raise ConfigurationError(
-                *(
-                    "Could not determine batch size: no torch.Tensor found in the "
-                    f"batch argument PyTree at index {first_batch_idx}.",
-                )
-            )
-        batch_size = first_tensor.shape[0]
-
-    grad_acc = _MicrobatchAccumulator(output_dtype=dtype, compute_dtype=compute_dtype)
-    squared_acc = _MicrobatchAccumulator(
-        output_dtype=dtype, compute_dtype=compute_dtype
+    args: tuple[Any, ...],
+    batch_argnums: tuple[int, ...],
+) -> torch.Tensor | PerGroup:
+    """Copy a runtime threshold to the batch device without specializing its value."""
+    batch_leaves = tree_leaves(args[batch_argnums[0]])
+    tensor = next(
+        (leaf for leaf in batch_leaves if isinstance(leaf, torch.Tensor)), None
     )
+    if tensor is None:
+        raise ConfigurationError(
+            *("Could not determine the device for the runtime clipping norm",)
+        )
+    if isinstance(clipping_norm, PerGroup):
+        return PerGroup(
+            clipping_norm.groups,
+            {
+                name: torch.as_tensor(value, device=tensor.device)
+                for name, value in clipping_norm.values.items()
+            },
+        )
+    return torch.as_tensor(clipping_norm, device=tensor.device)
+
+
+def _microbatch_accumulate_reduced(
+    chunk_fn: Callable,
+    kernel_clipping_norm: torch.Tensor | PerGroup,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    batch_argnums: tuple[int, ...],
+    microbatch_size: int,
+    return_aux: bool,
+    return_stats: bool,
+    dtype: torch.dtype | None,
+    clipping_norm: float | PerGroup,
+    second_moment: bool,
+) -> tuple[Any, Any, Any, ClippingStats | None]:
+    """Run the tensor-only chunk kernel and combine its compact reductions eagerly."""
+    batch_size = batch_size_from_args(args, batch_argnums)
+    grad_acc = _MicrobatchAccumulator(output_dtype=dtype)
+    squared_acc = _MicrobatchAccumulator(output_dtype=dtype)
+    aux_list: list[Any] = []
     total_batch_size = 0
     if isinstance(clipping_norm, PerGroup):
         total_num_clipped: float | dict[str, float] = dict.fromkeys(
@@ -392,6 +250,7 @@ def _microbatch_accumulate_stats_only(
         )
     else:
         total_num_clipped = 0.0
+
     for start_idx in range(0, batch_size, microbatch_size):
         end_idx = min(start_idx + microbatch_size, batch_size)
         microbatch_args = list(args)
@@ -403,55 +262,58 @@ def _microbatch_accumulate_stats_only(
                 args[i],
             )
 
-        n_outputs = 2 + int(bool(second_moment))
-        out_dims = (0,) * n_outputs
-        vmapped = _vmap(
-            per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
-            randomness="same",
+        reduced, markers, squared_reduced, squared_markers, diagnostics = chunk_fn(
+            kernel_clipping_norm, *microbatch_args, **kwargs
         )
-        outputs = vmapped(*microbatch_args)
-        clipped_values = outputs[0]
-        squared_values = outputs[1] if second_moment else None
-        stats_aux = outputs[-1]
-
-        grad_acc.add(clipped_values)
+        grad_acc.add_reduced(reduced, markers)
         if second_moment:
-            squared_acc.add(squared_values)
+            squared_acc.add_reduced(squared_reduced, squared_markers)
 
-        stats = _compute_clipping_stats(
-            stats_aux["norms"],
-            clipping_norm=clipping_norm,
-            group_norms_dict=stats_aux.get("group_norms"),
-        )
-        total_batch_size += stats.batch_size
-        if isinstance(total_num_clipped, dict):
-            assert isinstance(stats.num_clipped, dict)
-            for name, count in stats.num_clipped.items():
-                total_num_clipped[name] += count
-        else:
-            assert isinstance(stats.num_clipped, float)
-            total_num_clipped += stats.num_clipped
+        if return_aux:
+            aux_list.append(diagnostics)
+        elif return_stats:
+            chunk_stats = _compute_clipping_stats(
+                diagnostics["norms"],
+                clipping_norm=clipping_norm,
+                group_norms_dict=diagnostics.get("group_norms"),
+            )
+            total_batch_size += chunk_stats.batch_size
+            if isinstance(total_num_clipped, dict):
+                assert isinstance(chunk_stats.num_clipped, dict)
+                for name, count in chunk_stats.num_clipped.items():
+                    total_num_clipped[name] += count
+            else:
+                assert isinstance(chunk_stats.num_clipped, float)
+                total_num_clipped += chunk_stats.num_clipped
 
-    if isinstance(total_num_clipped, dict):
-        clipping_rate: float | dict[str, float]
-        clipping_rate = {
-            name: count / max(1.0, float(total_batch_size))
-            for name, count in total_num_clipped.items()
-        }
+    if return_aux:
+
+        def concat_leaves(*leaf_values):
+            if all(isinstance(v, torch.Tensor) for v in leaf_values):
+                return torch.cat(leaf_values, dim=0)
+            return leaf_values[0]
+
+        aux = tree_map(concat_leaves, *aux_list)
     else:
-        clipping_rate = total_num_clipped / max(1.0, float(total_batch_size))
+        aux = ()
 
-    return (
-        grad_acc.result(),
-        squared_acc.result(),
-        ClippingStats(
+    stats = None
+    if return_stats:
+        clipping_rate: float | dict[str, float]
+        if isinstance(total_num_clipped, dict):
+            clipping_rate = {
+                name: count / max(1.0, float(total_batch_size))
+                for name, count in total_num_clipped.items()
+            }
+        else:
+            clipping_rate = total_num_clipped / max(1.0, float(total_batch_size))
+        stats = ClippingStats(
             num_clipped=total_num_clipped,
             clipping_rate=clipping_rate,
             batch_size=total_batch_size,
-        ),
-    )
+        )
+
+    return grad_acc.result(), squared_acc.result(), aux, stats
 
 
 def _compute_clipping_stats(
@@ -505,6 +367,33 @@ def _compute_clipping_stats(
     )
 
 
+def _prepare_clipped_fun(
+    batch_argnums: int | tuple[int, ...],
+    clipping_norm: float | PerGroup,
+    return_aux: bool,
+    return_stats: bool,
+) -> tuple[int, ...]:
+    if return_aux and return_stats:
+        raise ConfigurationError(
+            *("return_stats cannot be combined with return_aux=True",)
+        )
+    normalized_batch_argnums = normalize_to_tuple(batch_argnums)
+    _validate_clipping_norm(clipping_norm)
+    return normalized_batch_argnums
+
+
+def _resolve_runtime_clipping_norm(
+    configured: float | PerGroup,
+    runtime: float | PerGroup | None,
+    normalize_by: float,
+    second_moment: bool,
+) -> tuple[float | PerGroup, float | PerGroup, float | PerGroup | None]:
+    current = configured if runtime is None else runtime
+    output_bound = current / normalize_by
+    squared_bound = (current * current) / normalize_by if second_moment else None
+    return current, output_bound, squared_bound
+
+
 def clipped_fun(
     fun: Callable[..., Any],
     has_aux: bool = False,
@@ -519,6 +408,7 @@ def clipped_fun(
     dtype: torch.dtype | None = None,
     compute_dtype: torch.dtype | None = None,
     _scale_fn: Callable | None = None,
+    _chunk_compiler: Callable | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -612,13 +502,9 @@ def clipped_fun(
         With ``return_stats=True`` and ``return_aux=False``, the clipped value
         is paired with :class:`ClippingStats`.
     """
-    if return_aux and return_stats:
-        raise ConfigurationError(
-            *("return_stats cannot be combined with return_aux=True",)
-        )
-
-    # Normalize batch_argnums to tuple
-    batch_argnums = normalize_to_tuple(batch_argnums)
+    batch_argnums = _prepare_clipped_fun(
+        batch_argnums, clipping_norm, return_aux, return_stats
+    )
 
     # Wrap function to handle has_aux - use empty tuple () not None!
     if not has_aux:
@@ -629,99 +515,154 @@ def clipped_fun(
     else:
         fun_with_aux = fun
 
-    _validate_clipping_norm(clipping_norm)
-    output_max_norm = clipping_norm / normalize_by
-    output_squared_max_norm = (
-        (clipping_norm * clipping_norm) / normalize_by if second_moment else None
-    )
     clip_state = FixedClipState()
 
-    def clipped_fn(*args, **kwargs):
-        # Determine in_dims for vmap
-        in_dims = tuple(0 if i in batch_argnums else None for i in range(len(args)))
-
-        # Resolve scale function: default is fixed-norm clipping.
-        # _scale_fn enables alternate bounding schemes (e.g. AUTO-S) while
-        # reusing the vmap / microbatching / aux machinery below.
-        scale_fn = (
-            _scale_fn
-            if _scale_fn is not None
-            else (
-                lambda v: clip_pytree(
-                    v, clipping_norm=clipping_norm, compute_dtype=compute_dtype
-                )
+    def _per_example_fn(kernel_clipping_norm, *args_single, **call_kwargs):
+        value, aux = fun_with_aux(*args_single, **call_kwargs)
+        if _scale_fn is None:
+            clipped_value, norm = clip_pytree(
+                value,
+                clipping_norm=kernel_clipping_norm,
+                compute_dtype=compute_dtype,
             )
+        else:
+            clipped_value, norm = _scale_fn(value)
+        squared_value = (
+            tree_map(
+                lambda x: x.square() if isinstance(x, torch.Tensor) else x,
+                clipped_value,
+            )
+            if second_moment
+            else None
         )
-
-        # Define per-example function
-        def per_example_fn(*args_single):
-            value, aux = fun_with_aux(*args_single, **kwargs)
-            clipped_value, norm = scale_fn(value)
-            squared_value = (
-                tree_map(
-                    lambda x: x.square() if isinstance(x, torch.Tensor) else x,
-                    clipped_value,
-                )
-                if second_moment
-                else None
-            )
-            if return_aux or return_stats:
-                # Build aux dict with clipping metadata
-                # IMPORTANT: Detach all tensors to prevent memory leaks from retaining
-                # computational graphs. These are monitoring values, not used for gradients.
-                aux_dict = {
-                    "norms": norm.norm.detach(),
-                    "clipped_norms": global_norm(
-                        clipped_value, compute_dtype=compute_dtype
-                    ).detach(),
+        if return_aux or return_stats:
+            diagnostics = {"norms": norm.norm.detach()}
+            if return_aux:
+                diagnostics["clipped_norms"] = global_norm(
+                    clipped_value, compute_dtype=compute_dtype
+                ).detach()
+            if norm.group_norms is not None:
+                diagnostics["group_norms"] = {
+                    key: group_norm.detach()
+                    for key, group_norm in norm.group_norms.items()
                 }
-                # Per-group norms (dict of scalar tensors → dict of 1D tensors after vmap)
-                if norm.group_norms is not None:
-                    aux_dict["group_norms"] = {
-                        k: v.detach() for k, v in norm.group_norms.items()
-                    }
 
-                # Extract nested values and aux from wrapped functions (e.g., grad_fn)
-                # aux may be a dict like {"values": val, "value_aux": user_aux} or just user_aux
-                if isinstance(aux, dict):
-                    # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
-                    if "values" in aux:
-                        val = aux["values"]
-                        aux_dict["values"] = (
-                            val.detach() if isinstance(val, torch.Tensor) else val
-                        )
-                    else:
-                        # No nested "values", use function output
-                        aux_dict["values"] = (
-                            value.detach() if isinstance(value, torch.Tensor) else value
-                        )
-
-                    # Extract user aux from nested dict if present
-                    if has_aux:
-                        if "value_aux" in aux:
-                            aux_dict["value_aux"] = aux["value_aux"]
-                        else:
-                            # aux is already the user aux (not nested)
-                            aux_dict["value_aux"] = aux
+            if return_aux and isinstance(aux, dict):
+                if "values" in aux:
+                    aux_value = aux["values"]
+                    diagnostics["values"] = (
+                        aux_value.detach()
+                        if isinstance(aux_value, torch.Tensor)
+                        else aux_value
+                    )
                 else:
-                    # aux is not a dict (direct user aux or None)
-                    aux_dict["values"] = (
+                    diagnostics["values"] = (
                         value.detach() if isinstance(value, torch.Tensor) else value
                     )
-                    if has_aux:
-                        aux_dict["value_aux"] = aux
+                if has_aux:
+                    diagnostics["value_aux"] = aux.get("value_aux", aux)
+            elif return_aux:
+                diagnostics["values"] = (
+                    value.detach() if isinstance(value, torch.Tensor) else value
+                )
+                if has_aux:
+                    diagnostics["value_aux"] = aux
 
-                if return_stats:
-                    if second_moment:
-                        return clipped_value, squared_value, aux_dict
-                    return clipped_value, aux_dict
-
-                if second_moment:
-                    return clipped_value, squared_value, aux_dict
-                return clipped_value, aux_dict
             if second_moment:
-                return clipped_value, squared_value
-            return clipped_value
+                return clipped_value, squared_value, diagnostics
+            return clipped_value, diagnostics
+        if second_moment:
+            return clipped_value, squared_value
+        return clipped_value
+
+    if _chunk_compiler is not None and microbatch_size is None:
+        raise ConfigurationError(
+            *("_chunk_compiler requires a finite microbatch_size",)
+        )
+
+    def _make_chunk_kernel(in_dims):
+        # Fixed and AUTO-S scaling are construction-time constants.  A
+        # stateful scaling parameter must cross this private boundary as a
+        # tensor input rather than be captured as changing Python state.
+        def _chunk_kernel(kernel_clipping_norm, *chunk_args, **call_kwargs):
+            """Run vmap, clipping, diagnostics, and reduction for one chunk."""
+            n_outputs = 1 + int(bool(second_moment)) + int(return_aux or return_stats)
+            out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
+            vmapped = _vmap(
+                _per_example_fn,
+                in_dims=(None, *in_dims),
+                out_dims=out_dims,
+                randomness="same",
+            )
+            outputs = vmapped(kernel_clipping_norm, *chunk_args, **call_kwargs)
+            if n_outputs == 1:
+                clipped_values = outputs
+                squared_values = None
+                diagnostics = ()
+            else:
+                output_index = 0
+                clipped_values = outputs[output_index]
+                output_index += 1
+                squared_values = outputs[output_index] if second_moment else None
+                if second_moment:
+                    output_index += 1
+                diagnostics = (
+                    outputs[output_index] if (return_aux or return_stats) else ()
+                )
+
+            reduced = tree_map(
+                lambda x: torch.sum(
+                    x,
+                    dim=0,
+                    dtype=_accumulation_dtype(x, dtype, compute_dtype),
+                ),
+                clipped_values,
+            )
+            dtype_markers = tree_map(lambda x: x.new_zeros(()), clipped_values)
+            if second_moment:
+                squared_reduced = tree_map(
+                    lambda x: torch.sum(
+                        x,
+                        dim=0,
+                        dtype=_accumulation_dtype(x, dtype, compute_dtype),
+                    ),
+                    squared_values,
+                )
+                squared_dtype_markers = tree_map(
+                    lambda x: x.new_zeros(()), squared_values
+                )
+            else:
+                squared_reduced = ()
+                squared_dtype_markers = ()
+            return (
+                reduced,
+                dtype_markers,
+                squared_reduced,
+                squared_dtype_markers,
+                diagnostics,
+            )
+
+        return _chunk_kernel
+
+    # Cache by positional batching structure so callers may use any valid
+    # positional/default-argument arrangement without reusing incompatible
+    # vmap ``in_dims``.
+    chunk_kernels: dict[tuple[int | None, ...], Callable] = {}
+
+    def clipped_fn(runtime_clipping_norm, *args, **kwargs):
+        current_clipping_norm, output_max_norm, output_squared_max_norm = (
+            _resolve_runtime_clipping_norm(
+                clipping_norm,
+                runtime_clipping_norm,
+                normalize_by,
+                second_moment,
+            )
+        )
+        kernel_clipping_norm = _tensor_clipping_norm(
+            current_clipping_norm, args, batch_argnums
+        )
+        in_dims = tuple(0 if i in batch_argnums else None for i in range(len(args)))
+        per_example_fn = _per_example_fn
 
         # Choose execution path based on microbatch_size
         stats = None
@@ -736,11 +677,11 @@ def clipped_fun(
             out_dims = 0 if n_outputs == 1 else (0,) * n_outputs
             vmapped = _vmap(
                 per_example_fn,
-                in_dims=in_dims,
+                in_dims=(None, *in_dims),
                 out_dims=out_dims,
                 randomness="same",
             )
-            outputs = vmapped(*args)
+            outputs = vmapped(kernel_clipping_norm, *args, **kwargs)
             if n_outputs == 1:
                 clipped_values = outputs
                 squared_values = None
@@ -771,30 +712,30 @@ def clipped_fun(
                 if second_moment
                 else None
             )
-        elif return_stats:
-            result, squared_result, stats = _microbatch_accumulate_stats_only(
-                per_example_fn=per_example_fn,
-                args=args,
-                batch_argnums=batch_argnums,
-                in_dims=in_dims,
-                microbatch_size=microbatch_size,
-                dtype=dtype,
-                compute_dtype=compute_dtype,
-                clipping_norm=clipping_norm,
-                second_moment=second_moment,
-            )
-            aux = ()
         else:
-            # Manual microbatch accumulation: process in chunks, accumulate as we go
-            result, squared_result, aux = _microbatch_accumulate(
-                per_example_fn=per_example_fn,
+            chunk_kernel = chunk_kernels.get(in_dims)
+            if chunk_kernel is None:
+                eager_chunk_kernel = _make_chunk_kernel(in_dims)
+                if _chunk_compiler is None:
+                    chunk_kernel = eager_chunk_kernel
+                else:
+                    # Compilation policy belongs to the owner; the kernel
+                    # itself remains tensor-only. Static chunk variants bound
+                    # recompilation by ``microbatch_size`` rather than by every
+                    # realized Poisson batch size.
+                    chunk_kernel = _chunk_compiler(eager_chunk_kernel)
+                chunk_kernels[in_dims] = chunk_kernel
+            result, squared_result, aux, stats = _microbatch_accumulate_reduced(
+                chunk_fn=chunk_kernel,
+                kernel_clipping_norm=kernel_clipping_norm,
                 args=args,
+                kwargs=kwargs,
                 batch_argnums=batch_argnums,
-                in_dims=in_dims,
                 microbatch_size=microbatch_size,
                 return_aux=return_aux,
+                return_stats=return_stats,
                 dtype=dtype,
-                compute_dtype=compute_dtype,
+                clipping_norm=current_clipping_norm,
                 second_moment=second_moment,
             )
 
@@ -822,7 +763,9 @@ def clipped_fun(
             norms = aux_dict.get("norms")
             group_norms_dict = aux_dict.get("group_norms")
             stats = _compute_clipping_stats(
-                norms, clipping_norm=clipping_norm, group_norms_dict=group_norms_dict
+                norms,
+                clipping_norm=current_clipping_norm,
+                group_norms_dict=group_norms_dict,
             )
 
             aux = ClippedFunAux(
@@ -848,13 +791,16 @@ def clipped_fun(
         aux_dict = aux if isinstance(aux, dict) else {}
         return output, _compute_clipping_stats(
             aux_dict.get("norms"),
-            clipping_norm=clipping_norm,
+            clipping_norm=current_clipping_norm,
             group_norms_dict=aux_dict.get("group_norms"),
         )
 
     # Wrap function to accept and return state
     def stateful_clipped_fn(*args, state, **kwargs):
-        result = clipped_fn(*args, **kwargs)
+        runtime_clipping_norm = (
+            state.clipping_norm if isinstance(state, _RuntimeClipState) else None
+        )
+        result = clipped_fn(runtime_clipping_norm, *args, **kwargs)
         return result, state  # State unchanged for fixed clipping
 
     # Return wrapped function with state

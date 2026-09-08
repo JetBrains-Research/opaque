@@ -193,8 +193,8 @@ Mechanism constraints (validated at construction):
 |---|---|---|
 | `bf16` | `False` | bf16 autocast on the per-example loss closure. |
 | `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
-| `gradient_checkpointing` | `False` | Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` — reentrant checkpointing doesn't compose with vmap. |
-| `torch_compile` | `False` | Compiles the per-example loss closure (not the model). Tries `fullgraph=True` first; falls back with a warning. |
+| `gradient_checkpointing` | `False` | Opaque automatically uses the vmap-safe non-reentrant path; no checkpointing kwargs are required. Incompatible with `torch_compile`. |
+| `torch_compile` | `False` | Compiles the tensor-only per-microbatch `vmap(grad)+clip+reduce` kernel with `fullgraph=True`. |
 
 ## Patches and kernels
 
