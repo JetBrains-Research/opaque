@@ -75,6 +75,23 @@ def _sdpa_sliding_window_mask(
     return mask.expand(batch_size, -1, -1, -1)
 
 
+def _is_compact_padding_mask(
+    attention_mask: torch.Tensor | None,
+    input_embeds: torch.Tensor,
+) -> bool:
+    """Whether a mask is per-key padding validity for this input."""
+    if attention_mask is None:
+        return False
+    expected_ndim = (
+        1
+        if input_embeds.ndim == 2  # noqa: PLR2004 - batchless embeddings are 2D
+        else 2
+    )
+    return attention_mask.ndim == expected_ndim and attention_mask.shape[
+        -1
+    ] == _query_length(input_embeds)
+
+
 def _can_use_compact_sdpa_sliding_window(
     config,
     input_embeds: torch.Tensor | None,
@@ -92,7 +109,10 @@ def _can_use_compact_sdpa_sliding_window(
         allow_is_causal_skip
         and sliding_window is not None
         and input_embeds is not None
-        and attention_mask is None
+        and (
+            attention_mask is None
+            or _is_compact_padding_mask(attention_mask, input_embeds)
+        )
         and getattr(config, "_attn_implementation", None) == "sdpa"
         and _safe_seq_length(past_key_values) == 0
         and cache_position is None
@@ -122,11 +142,12 @@ def vmap_create_compact_sdpa_sliding_window_causal_mask(
     block_sequence_ids: torch.Tensor | None = None,
     **kwargs,
 ) -> torch.Tensor | None:
-    """Leave no-padding SDPA prefill windowing to its compact attention path.
+    """Leave eligible SDPA prefill windowing to its compact attention path.
 
     This helper is installed only in model modules whose patched SDPA
-    implementation consumes ``sliding_window``. Other callers retain
-    :func:`vmap_create_sliding_window_causal_mask` and its dense fallback.
+    implementation consumes ``sliding_window`` and compact per-key padding.
+    Other callers retain :func:`vmap_create_sliding_window_causal_mask` and its
+    dense fallback.
     """
     input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
     if _can_use_compact_sdpa_sliding_window(
@@ -140,7 +161,9 @@ def vmap_create_compact_sdpa_sliding_window_causal_mask(
         and_mask_function,
         block_sequence_ids,
     ):
-        return None
+        return attention_mask
+    if attention_mask is not None and attention_mask.ndim > 2:  # noqa: PLR2004
+        return attention_mask
     return vmap_create_sliding_window_causal_mask(
         config,
         inputs_embeds=input_embeds,

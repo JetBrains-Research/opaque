@@ -409,20 +409,75 @@ class TestSlidingWindowWithoutPaddingMask:
         )
         assert mask is not None
 
-    def test_compact_sdpa_path_retains_padding_mask_fallback(self):
+    @pytest.mark.parametrize(
+        "padding",
+        [
+            torch.tensor([[0, 0, 1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[1, 1, 1, 1, 1, 1, 0, 0]]),
+        ],
+        ids=["left", "right"],
+    )
+    def test_compact_sdpa_path_preserves_padding_vector(self, padding):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.0,
+            },
+        )()
+        mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
+            config,
+            inputs_embeds=torch.randn(1, 8, 8),
+            attention_mask=padding,
+            past_key_values=None,
+        )
+        assert mask is padding
+
+    def test_compact_sdpa_path_preserves_batchless_vmap_padding(self):
+        config = type(
+            "Cfg",
+            (),
+            {
+                "_attn_implementation": "sdpa",
+                "sliding_window": 2,
+                "attention_dropout": 0.0,
+            },
+        )()
+
+        def create_mask(embeds, padding):
+            return vmap_create_compact_sdpa_sliding_window_causal_mask(
+                config,
+                inputs_embeds=embeds,
+                attention_mask=padding,
+                past_key_values=None,
+            )
+
+        embeds = torch.randn(3, 8, 4)
+        padding = torch.tensor(
+            [
+                [1, 1, 1, 1, 1, 1, 1, 1],
+                [0, 0, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 0, 0],
+            ]
+        )
+        torch.testing.assert_close(torch.vmap(create_mask)(embeds, padding), padding)
+
+    def test_compact_sdpa_path_retains_structured_mask_fallback(self):
         config = type(
             "Cfg",
             (),
             {"_attn_implementation": "sdpa", "sliding_window": 2},
         )()
+        structured = torch.ones(1, 1, 8, 8, dtype=torch.bool).tril_()
         mask = vmap_create_compact_sdpa_sliding_window_causal_mask(
             config,
             inputs_embeds=torch.randn(1, 8, 8),
-            attention_mask=torch.ones(1, 8),
+            attention_mask=structured,
             past_key_values=None,
         )
-        assert mask is not None
-        assert mask.dtype == torch.float32
+        assert mask is structured
 
     def test_non_binding_window_keeps_the_is_causal_fast_path(self):
         assert self._make_mask("sdpa", sliding_window=64, seq_len=8) is None

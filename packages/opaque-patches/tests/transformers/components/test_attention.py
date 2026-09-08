@@ -313,6 +313,165 @@ def test_sliding_window_sdpa_matches_dense_reference_without_full_mask(monkeypat
         torch.testing.assert_close(actual_grad, expected_grad)
 
 
+def test_sliding_window_sdpa_dispatches_eligible_triton_kernel(monkeypatch):
+    query = torch.randn(1, 4, 6, 3)
+    key = torch.randn(1, 2, 6, 3)
+    value = torch.randn_like(key)
+    padding = torch.tensor([[0, 1, 1, 1, 1, 1]])
+    calls = []
+
+    monkeypatch.setattr(
+        attention_components,
+        "_can_use_triton_sliding_window_attention",
+        lambda *args: True,
+    )
+
+    def kernel(*args):
+        calls.append(args)
+        return torch.zeros_like(query)
+
+    monkeypatch.setattr(
+        attention_components, "_triton_sliding_window_attention", kernel
+    )
+    output, weights = vmap_sdpa_attention_forward_sliding_window(
+        _Gemma2Attention(),
+        query,
+        key,
+        value,
+        padding,
+        scaling=None,
+        sliding_window=3,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][3] is padding
+    assert calls[0][4] == 3
+    assert calls[0][5] == query.shape[-1] ** -0.5
+    torch.testing.assert_close(output, torch.zeros(1, 6, 4, 3))
+    assert weights is None
+
+
+@pytest.mark.parametrize(
+    "padding",
+    [
+        torch.tensor([[0, 0, 1, 1, 1, 1]], dtype=torch.bool),
+        torch.tensor([[1, 1, 1, 1, 0, 0]], dtype=torch.bool),
+    ],
+    ids=["left", "right"],
+)
+def test_sliding_window_sdpa_supports_compact_padding(monkeypatch, padding):
+    monkeypatch.setattr(attention_components, "_SDPA_QUERY_CHUNK", 2)
+    torch.manual_seed(0)
+    query = torch.randn(1, 4, 6, 3, requires_grad=True)
+    key = torch.randn(1, 2, 6, 3, requires_grad=True)
+    value = torch.randn(1, 2, 6, 3, requires_grad=True)
+    causal = torch.ones(6, 6, dtype=torch.bool).tril_()
+    causal.triu_(diagonal=-2)
+    dense_mask = causal & padding[:, None, None, :]
+
+    output, weights = vmap_sdpa_attention_forward_sliding_window(
+        _Gemma2Attention(),
+        query,
+        key,
+        value,
+        padding,
+        scaling=0.7,
+        sliding_window=3,
+    )
+    expected = torch.nn.functional.scaled_dot_product_attention(
+        query,
+        key.repeat_interleave(2, dim=-3),
+        value.repeat_interleave(2, dim=-3),
+        attn_mask=dense_mask,
+        scale=0.7,
+    ).transpose(-3, -2)
+
+    torch.testing.assert_close(output, expected)
+    assert weights is None
+    if not padding[0, 0]:
+        assert torch.count_nonzero(output[:, :2]) == 0
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_sliding_window_sdpa_reuses_steady_state_masks(monkeypatch):
+    monkeypatch.setattr(attention_components, "_SDPA_QUERY_CHUNK", 2)
+    created = []
+    create_mask = attention_components._chunked_sliding_window_mask
+
+    def record_mask(*args, **kwargs):
+        mask = create_mask(*args, **kwargs)
+        created.append(mask.shape)
+        return mask
+
+    monkeypatch.setattr(
+        attention_components, "_chunked_sliding_window_mask", record_mask
+    )
+    query = torch.randn(1, 2, 10, 3)
+    key = torch.randn(1, 1, 10, 3)
+    value = torch.randn_like(key)
+
+    vmap_sdpa_attention_forward_sliding_window(
+        _Gemma2Attention(),
+        query,
+        key,
+        value,
+        None,
+        sliding_window=3,
+    )
+
+    assert created == [torch.Size([2, 2]), torch.Size([2, 4])]
+
+
+def test_compact_sliding_window_sdpa_compiles_fullgraph():
+    query = torch.randn(1, 4, 8, 4)
+    key = torch.randn(1, 2, 8, 4)
+    value = torch.randn_like(key)
+    padding = torch.tensor([[0, 1, 1, 1, 1, 1, 1, 1]])
+
+    def attention(q, k, v, mask):
+        return vmap_sdpa_attention_forward_sliding_window(
+            _Gemma2Attention(),
+            q,
+            k,
+            v,
+            mask,
+            sliding_window=3,
+        )[0]
+
+    expected = attention(query, key, value, padding)
+    actual = torch.compile(attention, backend="eager", fullgraph=True)(
+        query, key, value, padding
+    )
+    torch.testing.assert_close(actual, expected)
+
+
+def test_attention_chunk_planner_respects_workspace(monkeypatch):
+    query = torch.randn(1, 4, 2048, 64)
+    key = torch.randn(1, 2, 2048, 64)
+
+    monkeypatch.setattr(
+        attention_components, "_attention_workspace_budget_bytes", lambda device: 2**20
+    )
+    small = attention_components._attention_query_chunk_size(
+        query, key, 1024, softcap=False
+    )
+    monkeypatch.setattr(
+        attention_components,
+        "_attention_workspace_budget_bytes",
+        lambda device: 256 * 2**20,
+    )
+    large = attention_components._attention_query_chunk_size(
+        query, key, 1024, softcap=False
+    )
+
+    assert small < large
+    assert small in attention_components._ATTENTION_CHUNK_CANDIDATES
+    assert large in attention_components._ATTENTION_CHUNK_CANDIDATES
+
+
 def test_gemma2_softcap_sdpa_applies_sliding_window_without_dense_mask(monkeypatch):
     monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
     module = _Gemma2Attention()
@@ -341,6 +500,93 @@ def test_gemma2_softcap_sdpa_applies_sliding_window_without_dense_mask(monkeypat
     assert weights is None
     actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
     expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_dispatches_eligible_triton_kernel(monkeypatch):
+    module = _Gemma2Attention()
+    module.is_causal = True
+    query = torch.randn(1, 2, 6, 3)
+    key = torch.randn(1, 1, 6, 3)
+    value = torch.randn_like(key)
+    padding = torch.tensor([[0, 1, 1, 1, 1, 1]])
+    calls = []
+
+    monkeypatch.setattr(
+        attention_components,
+        "_can_use_triton_sliding_window_attention",
+        lambda *args: True,
+    )
+
+    def kernel(*args):
+        calls.append(args)
+        return torch.zeros_like(query)
+
+    monkeypatch.setattr(
+        attention_components, "_triton_sliding_window_attention", kernel
+    )
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        module,
+        query,
+        key,
+        value,
+        padding,
+        scaling=0.5,
+        softcap=1.5,
+        sliding_window=3,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][3] is padding
+    assert calls[0][4:] == (3, 0.5, 1.5)
+    torch.testing.assert_close(output, torch.zeros(1, 6, 2, 3))
+    assert weights is None
+
+
+def test_gemma2_softcap_sdpa_supports_compact_left_padding(monkeypatch):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    module = _Gemma2Attention()
+    module.is_causal = True
+    torch.manual_seed(0)
+    query = torch.randn(1, 2, 6, 3, requires_grad=True)
+    key = torch.randn(1, 1, 6, 3, requires_grad=True)
+    value = torch.randn(1, 1, 6, 3, requires_grad=True)
+    padding = torch.tensor([[0, 0, 1, 1, 1, 1]], dtype=torch.bool)
+    causal = torch.ones(6, 6, dtype=torch.bool).tril_()
+    causal.triu_(diagonal=-2)
+    dense_mask = causal & padding[:, None, None, :]
+
+    output, weights = vmap_sdpa_attention_forward_gemma2(
+        module,
+        query,
+        key,
+        value,
+        padding,
+        scaling=0.5,
+        softcap=1.5,
+        sliding_window=3,
+    )
+    ref_query = query.detach().requires_grad_()
+    ref_key = key.detach().requires_grad_()
+    ref_value = value.detach().requires_grad_()
+    expected, _ = _expected_gemma2_softcap_attention(
+        ref_query,
+        ref_key.repeat_interleave(2, dim=-3),
+        ref_value.repeat_interleave(2, dim=-3),
+        1.5,
+        scaling=0.5,
+        attention_mask=dense_mask,
+    )
+    expected = expected.transpose(-3, -2)
+
+    torch.testing.assert_close(output, expected)
+    assert weights is None
+    assert torch.count_nonzero(output[..., :2, :, :]) == 0
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(
+        expected.square().sum(), (ref_query, ref_key, ref_value)
+    )
     for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
         torch.testing.assert_close(actual_grad, expected_grad)
 
@@ -592,6 +838,51 @@ def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
         query, key, value
     )
 
+    for actual_grad, expected_grad in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gemma2_softcap_compact_padding_supports_vmap_grad(monkeypatch):
+    monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
+    torch.manual_seed(0)
+    query = torch.randn(2, 2, 5, 3)
+    key = torch.randn(2, 1, 5, 3)
+    value = torch.randn(2, 1, 5, 3)
+    padding = torch.tensor([[0, 1, 1, 1, 1], [1, 1, 1, 1, 0]], dtype=torch.bool)
+    module = _Gemma2Attention()
+    module.is_causal = True
+
+    def loss(q, k, v, mask):
+        output, _ = vmap_sdpa_attention_forward_gemma2(
+            module,
+            q,
+            k,
+            v,
+            mask,
+            scaling=1.0,
+            softcap=1.0,
+            sliding_window=3,
+        )
+        return output.square().sum()
+
+    def reference_loss(q, k, v, mask):
+        causal = torch.ones(5, 5, dtype=torch.bool).tril_()
+        causal.triu_(diagonal=-2)
+        output, _ = _expected_gemma2_softcap_attention(
+            q,
+            k.repeat_interleave(2, dim=-3),
+            v.repeat_interleave(2, dim=-3),
+            1.0,
+            attention_mask=causal & mask[None, None, :],
+        )
+        return output.square().sum()
+
+    actual = torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(
+        query, key, value, padding
+    )
+    expected = torch.vmap(torch.func.grad(reference_loss, argnums=(0, 1, 2)))(
+        query, key, value, padding
+    )
     for actual_grad, expected_grad in zip(actual, expected, strict=True):
         torch.testing.assert_close(actual_grad, expected_grad)
 

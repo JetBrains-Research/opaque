@@ -42,12 +42,42 @@ try:
 
     # Position embeddings
     from .rope_embedding import opaque_rope, opaque_rope_qk, opaque_slow_rope
+    from .sliding_window_attention import (
+        _can_use_triton_sliding_window_attention,
+        _triton_sliding_window_attention,
+    )
 
     # Activation functions
     from .swiglu import opaque_swiglu
 except ModuleNotFoundError as import_error:
     if import_error.name != "triton":
         raise
+
+    def _can_use_triton_sliding_window_attention(
+        query,
+        key,
+        value,
+        padding_mask,
+        sliding_window,
+        scale,
+        softcap=None,
+    ):
+        """Return ``False`` when the optional Triton runtime is unavailable."""
+        del query, key, value, padding_mask, sliding_window, scale, softcap
+        return False
+
+    def _triton_sliding_window_attention(
+        query,
+        key,
+        value,
+        padding_mask,
+        sliding_window,
+        scale,
+        softcap=None,
+    ):
+        """Reject direct private-kernel use when Triton is unavailable."""
+        del query, key, value, padding_mask, sliding_window, scale, softcap
+        raise ConfigurationError(*("Triton sliding-window attention is unavailable.",))
 
     def _apply_logit_transforms(
         logits: torch.Tensor,

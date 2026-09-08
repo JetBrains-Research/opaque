@@ -23,11 +23,15 @@ from transformers.modeling_utils import (
 )
 from transformers.models.gemma2 import modeling_gemma2
 from transformers.models.llama import modeling_llama
+from transformers.models.ministral import modeling_ministral
 from transformers.models.mistral import modeling_mistral
 
 from opaque.api.patches.transformers.components import attention as opaque_attention
 from opaque.api.patches.transformers.models.gemma2 import apply_gemma2_family_patches
 from opaque.api.patches.transformers.models.llama import apply_llama_family_patches
+from opaque.api.patches.transformers.models.ministral import (
+    apply_ministral_family_patches,
+)
 from opaque.api.patches.transformers.models.mistral import apply_mistral_family_patches
 from opaque.api.patches.transformers.runtime.masking import (
     vmap_create_compact_sdpa_sliding_window_causal_mask,
@@ -118,6 +122,55 @@ def test_mistral_scopes_compact_sliding_window_sdpa():
         modeling_mistral.create_sliding_window_causal_mask
         is vmap_create_compact_sdpa_sliding_window_causal_mask
     )
+
+
+@pytest.mark.parametrize(
+    ("modeling", "apply_family", "config_name", "model_name"),
+    [
+        (
+            modeling_mistral,
+            apply_mistral_family_patches,
+            "MistralConfig",
+            "MistralForCausalLM",
+        ),
+        (
+            modeling_ministral,
+            apply_ministral_family_patches,
+            "MinistralConfig",
+            "MinistralForCausalLM",
+        ),
+        (
+            modeling_gemma2,
+            apply_gemma2_family_patches,
+            "Gemma2Config",
+            "Gemma2ForCausalLM",
+        ),
+    ],
+    ids=["mistral", "ministral", "gemma2"],
+)
+def test_compact_sliding_attention_accepts_padded_batches(
+    modeling, apply_family, config_name, model_name
+):
+    apply_runtime_patches()
+    apply_family(eager_attention=True)
+    config = getattr(modeling, config_name)(
+        **_TINY_CONFIG,
+        sliding_window=2,
+        attention_dropout=0.0,
+        use_cache=False,
+    )
+    config._attn_implementation = "sdpa"
+    model = getattr(modeling, model_name)(config).eval()
+    input_ids = torch.tensor([[0, 0, 1, 2, 3, 4], [5, 6, 7, 8, 0, 0]])
+    attention_mask = torch.tensor(
+        [[0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0]], dtype=torch.bool
+    )
+
+    with torch.no_grad():
+        logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+
+    assert logits.shape == (2, 6, _TINY_CONFIG["vocab_size"])
+    assert torch.isfinite(logits).all()
 
 
 def test_gemma2_softcap_avoids_the_eager_fallback(

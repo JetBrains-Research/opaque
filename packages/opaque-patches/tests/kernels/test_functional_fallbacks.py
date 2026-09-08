@@ -13,6 +13,22 @@ import torch
 import torch.nn.functional as F
 
 
+def test_private_sliding_window_attention_rejects_cpu_inputs():
+    from opaque.api.patches.kernels import (
+        _can_use_triton_sliding_window_attention,
+        _triton_sliding_window_attention,
+    )
+    from opaque.exceptions import ConfigurationError
+
+    query = torch.randn(1, 2, 8, 4)
+    key = torch.randn(1, 1, 8, 4)
+    value = torch.randn_like(key)
+
+    assert not _can_use_triton_sliding_window_attention(query, key, value, None, 3, 0.5)
+    with pytest.raises(ConfigurationError, match="Triton sliding-window attention"):
+        _triton_sliding_window_attention(query, key, value, None, 3, 0.5)
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("triton") is not None,
     reason="Fallback tests only apply when Triton is unavailable",
