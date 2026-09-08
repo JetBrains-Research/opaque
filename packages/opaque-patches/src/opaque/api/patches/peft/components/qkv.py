@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 
+from ._packing import _projection_packs, _register_projection_pack
 from ._utils import _active_lora_dtype, _extract_lora_params_and_bias
 from .qkv_gemma3 import (
     _FUSEABLE_GEMMA3_QKV_ATTENTION_CLASSES,
@@ -46,6 +47,25 @@ def _resolve_fused_qkv_forward_factory(attn):
     return None
 
 
+def _initialize_qkv_projection_pack(attn):
+    """Build the initial non-persistent QKV packs during model patching."""
+    _register_projection_pack(
+        attn,
+        "qkv",
+        ("weight", "bias", "adapter_a", "adapter_b"),
+    )
+    Wq, Aq, Bq, Sq, bq = _extract_lora_params_and_bias(attn.q_proj)
+    Wk, Ak, Bk, Sk, bk = _extract_lora_params_and_bias(attn.k_proj)
+    Wv, Av, Bv, Sv, bv = _extract_lora_params_and_bias(attn.v_proj)
+    _projection_packs(
+        attn,
+        "qkv",
+        (Wq, Wk, Wv),
+        (bq, bk, bv),
+        ((Aq, Bq, Sq), (Ak, Bk, Sk), (Av, Bv, Sv)),
+    )
+
+
 def _opaque_fused_lora_qkv(self, hidden_states):
     """Compute Q, K, V using fused Opaque_LoRA_QKV kernel.
 
@@ -59,6 +79,13 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Wq, Aq, Bq, Sq, bq = _extract_lora_params_and_bias(self.q_proj)
     Wk, Ak, Bk, Sk, bk = _extract_lora_params_and_bias(self.k_proj)
     Wv, Av, Bv, Sv, bv = _extract_lora_params_and_bias(self.v_proj)
+    packed_W, packed_bias, packed_A, packed_B = _projection_packs(
+        self,
+        "qkv",
+        (Wq, Wk, Wv),
+        (bq, bk, bv),
+        ((Aq, Bq, Sq), (Ak, Bk, Sk), (Av, Bv, Sv)),
+    )
 
     # Keep full weights in their parameter dtype across the autograd boundary.
     # The custom Function casts them transiently in forward and backward.
@@ -81,6 +108,10 @@ def _opaque_fused_lora_qkv(self, hidden_states):
         Bv,
         Sv,
         bv,
+        packed_W,
+        packed_bias,
+        packed_A,
+        packed_B,
     )
 
 

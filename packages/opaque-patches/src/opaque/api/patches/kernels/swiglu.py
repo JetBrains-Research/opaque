@@ -21,6 +21,7 @@ from ._utils import (
     INT32_SAFETY_BUFFER,
     ensure_cuda_tensors,
     follow_autocast,
+    needs_long_strided_indexing,
     torch_gpu_device,
 )
 
@@ -57,6 +58,35 @@ def _fg_kernel(
     h_row = f_row * g_row
 
     tl.store(h + offsets, h_row, mask=mask)
+
+
+@triton.jit
+def _fg_strided_kernel(
+    e,
+    g,
+    h,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_row = tl.load(e + rows * e_row_stride + cols, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + rows * g_row_stride + cols, mask=mask, other=0)
+    f_row = (e_row * tl.sigmoid(e_row)).to(g_row.dtype)
+    tl.store(h + offsets, f_row * g_row, mask=mask)
 
 
 @triton.jit
@@ -127,6 +157,53 @@ def _DWf_DW_dfg_kernel(
     if COMPUTE_H:
         h_row = f_row * g_row
         tl.store(h_out + offsets, h_row, mask=mask)
+
+
+@triton.jit
+def _DWf_DW_dfg_strided_kernel(
+    DW,
+    e,
+    g,
+    de_out,
+    dg_out,
+    h_out,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_offsets = rows * e_row_stride + cols
+    g_offsets = rows * g_row_stride + cols
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
+    e_row = tl.load(e + e_offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + g_offsets, mask=mask, other=0)
+    se_row = tl.sigmoid(e_row)
+    f_row = (se_row * e_row).to(DW_row.dtype)
+    de_row = (
+        (DW_row * g_row).to(tl.float32) * se_row * (1.0 + e_row * (1.0 - se_row))
+    ).to(DW_row.dtype)
+    tl.store(de_out + e_offsets, de_row, mask=mask)
+    tl.store(dg_out + g_offsets, DW_row * f_row, mask=mask)
+    if COMPUTE_H:
+        tl.store(h_out + offsets, f_row * g_row, mask=mask)
+
+
+def _strided_2d(tensor):
+    return tensor.reshape(-1, tensor.shape[-1])
 
 
 class _SwiGLUBackward(torch.autograd.Function):
@@ -308,6 +385,37 @@ def _triton_swiglu_forward(gate, up):
     Calls the Triton kernel directly without autograd wrapper.
     For use as a callback in LoRA_MLP.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+        h = torch.empty_like(gate, memory_format=torch.contiguous_format)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _fg_strided_kernel[grid](
+                gate_2d,
+                up_2d,
+                h,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+            )
+        return h.reshape(original_shape)
+
     original_shape = gate.shape
     gate_flat = gate.reshape(-1)
     up_flat = up.reshape(-1)
@@ -383,6 +491,45 @@ def _triton_swiglu_backward_fused(dh, gate, up):
     Returns (h, dgate, dup) which alias the input buffers.
     For use in LoRA_MLP backward to avoid saving h and allocating grad buffers.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        dh_flat = dh.reshape(-1)
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _DWf_DW_dfg_strided_kernel[grid](
+                dh_flat,
+                gate_2d,
+                up_2d,
+                gate_2d,
+                up_2d,
+                dh_flat,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+                COMPUTE_H=True,
+            )
+        return (
+            dh_flat.reshape(original_shape),
+            gate_2d.reshape(original_shape),
+            up_2d.reshape(original_shape),
+        )
+
     original_shape = gate.shape
     dh_flat = dh.reshape(-1)
     gate_flat = gate.reshape(-1)

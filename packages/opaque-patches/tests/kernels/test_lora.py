@@ -28,6 +28,8 @@ pytest.importorskip("triton")
 
 from opaque.api.patches.kernels import lora as lora_kernels
 from opaque.api.patches.kernels.lora import (
+    ACTIVATION_GEGLU_APPROX,
+    ACTIVATION_GEGLU_EXACT,
     ACTIVATION_SWIGLU,
     Opaque_LoRA_MLP,
     Opaque_LoRA_QKV,
@@ -193,6 +195,9 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
                 None,
                 None,
                 0,
+                None,
+                None,
+                None,
             ),
         ),
         (
@@ -220,7 +225,7 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
         ),
         (
             _LoRAMLPInputBackward.vmap,
-            (0, 0, 0, None, None, None, None, None, None, None),
+            (0, 0, 0, None, None, None, None, None, None, None, None, None, None),
         ),
         (
             _LoRAMLPBackwardLite.vmap,
@@ -241,6 +246,9 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
                 0,
                 0,
                 0,
+                None,
+                None,
+                None,
             ),
         ),
     ],
@@ -714,6 +722,93 @@ class TestLoRAQKVForward:
         assert_precision(K_op, K_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="K")
         assert_precision(V_op, V_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="V")
 
+    def test_packs_unequal_base_projections_into_one_linear(self, monkeypatch):
+        torch.manual_seed(42)
+        kw = {"device": "cuda", "dtype": torch.float32}
+        X = torch.randn(2, 3, 8, **kw, requires_grad=True)
+        projections = []
+        for output in (8, 3, 3):
+            projections.extend(
+                (
+                    _kaiming_weight(output, 8, **kw),
+                    _lora_weight(8, 2, **kw),
+                    _lora_weight(2, output, **kw),
+                    SCALING,
+                    None,
+                )
+            )
+
+        linear = lora_kernels.F.linear
+        mm = lora_kernels.torch.mm
+        calls = 0
+        input_gradient_calls = 0
+
+        def count_linear(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return linear(*args, **kwargs)
+
+        def count_mm(*args, **kwargs):
+            nonlocal input_gradient_calls
+            input_gradient_calls += 1
+            return mm(*args, **kwargs)
+
+        monkeypatch.setattr(lora_kernels.F, "linear", count_linear)
+        monkeypatch.setattr(lora_kernels.torch, "mm", count_mm)
+        outputs = Opaque_LoRA_QKV.apply(X, *projections)
+        sum(output.sum() for output in outputs).backward()
+
+        assert calls == 1
+        assert input_gradient_calls == 1
+        assert [output.shape[-1] for output in outputs] == [8, 3, 3]
+
+    def test_incompatible_adapters_fall_back_with_gradient_parity(self):
+        torch.manual_seed(42)
+        kw = {"device": "cuda", "dtype": torch.float32}
+        X = torch.randn(2, 3, 8, **kw, requires_grad=True)
+        Wq = _kaiming_weight(7, 8, **kw)
+        Wk = _kaiming_weight(3, 8, **kw)
+        Wv = _kaiming_weight(3, 8, **kw)
+        Aq = _lora_weight(8, 2, **kw).requires_grad_(True)
+        Bq = _lora_weight(2, 7, **kw).requires_grad_(True)
+        Ak = _lora_weight(8, 3, **kw).requires_grad_(True)
+        Bk = _lora_weight(3, 3, **kw).requires_grad_(True)
+
+        outputs = opaque_lora_qkv(
+            X, Wq, Aq, Bq, 0.5, Wk, Ak, Bk, 0.75, Wv, None, None, 0.0
+        )
+        grads = torch.autograd.grad(
+            sum(output.square().mean() for output in outputs),
+            (X, Aq, Bq, Ak, Bk),
+        )
+
+        X_ref = X.detach().clone().requires_grad_(True)
+        ref_params = tuple(
+            parameter.detach().clone().requires_grad_(True)
+            for parameter in (Aq, Bq, Ak, Bk)
+        )
+        ref_outputs = pytorch_lora_qkv(
+            X_ref,
+            Wq,
+            ref_params[0],
+            ref_params[1],
+            0.5,
+            Wk,
+            ref_params[2],
+            ref_params[3],
+            0.75,
+            Wv,
+            None,
+            None,
+            0.0,
+        )
+        ref_grads = torch.autograd.grad(
+            sum(output.square().mean() for output in ref_outputs),
+            (X_ref, *ref_params),
+        )
+        for actual, expected in zip(grads, ref_grads, strict=True):
+            torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
+
 
 class TestLoRAQKVBackward:
     """Test LoRA-QKV backward pass precision."""
@@ -1106,9 +1201,139 @@ class TestLoRAMLPForward:
             label="output",
         )
 
+    @pytest.mark.parametrize(
+        ("activation_type", "activation"),
+        [
+            (ACTIVATION_SWIGLU, F.silu),
+            (ACTIVATION_GEGLU_EXACT, lambda value: F.gelu(value, approximate="none")),
+            (
+                ACTIVATION_GEGLU_APPROX,
+                lambda value: F.gelu(value, approximate="tanh"),
+            ),
+        ],
+    )
+    def test_packed_gate_up_all_activations_match_gradients(
+        self, activation_type, activation, monkeypatch
+    ):
+        torch.manual_seed(42)
+        kw = {"device": "cuda", "dtype": torch.float32}
+        X = torch.randn(2, 3, 8, **kw, requires_grad=True)
+        Wg = _kaiming_weight(12, 8, **kw)
+        Wu = _kaiming_weight(12, 8, **kw)
+        Wd = _kaiming_weight(8, 12, **kw)
+        adapters = [
+            _lora_weight(dim, rank, **kw).requires_grad_(True)
+            for dim, rank in ((8, 2), (2, 12), (8, 2), (2, 12), (12, 2), (2, 8))
+        ]
+        Ag, Bg, Au, Bu, Ad, Bd = adapters
+        linear = lora_kernels.F.linear
+        mm = lora_kernels.torch.mm
+        calls = 0
+        input_gradient_calls = 0
+
+        def count_linear(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return linear(*args, **kwargs)
+
+        def count_mm(*args, **kwargs):
+            nonlocal input_gradient_calls
+            input_gradient_calls += 1
+            return mm(*args, **kwargs)
+
+        activation_kernel = lora_kernels._ACTIVATION_FORWARD[activation_type]
+
+        def check_packed_views(gate, up):
+            assert not gate.is_contiguous()
+            assert not up.is_contiguous()
+            assert gate.untyped_storage().data_ptr() == up.untyped_storage().data_ptr()
+            return activation_kernel(gate, up)
+
+        monkeypatch.setattr(lora_kernels.F, "linear", count_linear)
+        monkeypatch.setattr(lora_kernels.torch, "mm", count_mm)
+        monkeypatch.setitem(
+            lora_kernels._ACTIVATION_FORWARD, activation_type, check_packed_views
+        )
+        actual = Opaque_LoRA_MLP.apply(
+            X,
+            Wg,
+            Ag,
+            Bg,
+            0.5,
+            Wu,
+            Au,
+            Bu,
+            0.75,
+            Wd,
+            Ad,
+            Bd,
+            1.25,
+            activation_type,
+        )[0]
+        actual_grads = torch.autograd.grad(actual.square().mean(), (X, *adapters))
+        assert calls == 3  # packed gate/up forward + down + packed recomputation
+        assert input_gradient_calls == 1
+
+        X_ref = X.detach().clone().requires_grad_(True)
+        ref_adapters = tuple(
+            parameter.detach().clone().requires_grad_(True) for parameter in adapters
+        )
+        Ag_r, Bg_r, Au_r, Bu_r, Ad_r, Bd_r = ref_adapters
+        gate = pytorch_lora_linear(X_ref, Wg, Ag_r, Bg_r, 0.5)
+        up = pytorch_lora_linear(X_ref, Wu, Au_r, Bu_r, 0.75)
+        expected = pytorch_lora_linear(activation(gate) * up, Wd, Ad_r, Bd_r, 1.25)
+        expected_grads = torch.autograd.grad(
+            expected.square().mean(), (X_ref, *ref_adapters)
+        )
+        torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+        for actual_grad, expected_grad in zip(
+            actual_grads, expected_grads, strict=True
+        ):
+            torch.testing.assert_close(actual_grad, expected_grad, rtol=2e-2, atol=2e-3)
+
 
 class TestLoRAMLPBackward:
     """Test LoRA-MLP backward pass precision."""
+
+    def test_packed_input_backward_reuses_adjacent_gradient_storage(self, monkeypatch):
+        kw = {"device": "cuda", "dtype": torch.float32}
+        gate_up_grad = torch.randn(6, 24, **kw)
+        dgate, dup = gate_up_grad.split(12, dim=-1)
+        Wg = torch.randn(12, 8, **kw)
+        Wu = torch.randn(12, 8, **kw)
+        packed_W = torch.cat((Wg, Wu), dim=0)
+        expected = gate_up_grad @ packed_W
+
+        def reject_copy(*args, **kwargs):
+            raise AssertionError("adjacent gate/up gradients must not be copied")
+
+        monkeypatch.setattr(lora_kernels.torch, "cat", reject_copy)
+        actual = lora_kernels._lora_mlp_input_backward_impl(
+            dgate,
+            dup,
+            Wg,
+            None,
+            None,
+            0.0,
+            Wu,
+            None,
+            None,
+            0.0,
+            packed_W,
+        )
+        torch.testing.assert_close(actual, expected)
+
+    def test_strided_indexing_uses_storage_span(self):
+        from opaque.api.patches.kernels._utils import (
+            INT32_SAFETY_BUFFER,
+            needs_long_strided_indexing,
+        )
+
+        columns = 14_336
+        stride = 2 * columns
+        rows = INT32_SAFETY_BUFFER // stride + 2
+        assert rows * columns <= INT32_SAFETY_BUFFER
+        assert needs_long_strided_indexing(rows, columns, stride, stride)
 
     def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch (non-vmap)."""

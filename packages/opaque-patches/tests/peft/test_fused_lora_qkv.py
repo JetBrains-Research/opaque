@@ -23,8 +23,8 @@ RTOL = 0.0001
 ATOL = 0.0001
 
 
-def test_qwen3_qkv_fusion_routes_and_falls_back_on_cpu():
-    """Qwen3 receives the dedicated fusion wrapper and keeps its CPU fallback."""
+def test_qwen3_lora_fusions_initialize_packs_and_fall_back_on_cpu():
+    """Qwen3 initializes projection packs while retaining its CPU fallback."""
     config = Qwen3Config(
         vocab_size=128,
         hidden_size=64,
@@ -40,13 +40,36 @@ def test_qwen3_qkv_fusion_routes_and_falls_back_on_cpu():
             r=8,
             lora_alpha=16,
             lora_dropout=0.0,
-            target_modules=["q_proj", "k_proj", "v_proj"],
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         ),
     )
+    state_dict_keys = set(model.state_dict())
     apply_model_patches(model, performance=False, compat=True, lora=True)
 
     attn = model.model.model.layers[0].self_attn
     assert hasattr(attn, "_opaque_fused_qkv")
+    assert attn._opaque_qkv_weight_pack.numel() > 0
+    assert attn._opaque_qkv_adapter_a_pack.numel() > 0
+    assert attn._opaque_qkv_adapter_b_pack.numel() > 0
+    mlp = model.model.model.layers[0].mlp
+    assert mlp._opaque_gate_up_weight_pack.numel() > 0
+    assert mlp._opaque_gate_up_adapter_a_pack.numel() > 0
+    assert mlp._opaque_gate_up_adapter_b_pack.numel() > 0
+    assert not any("_opaque_" in name for name in model.state_dict())
+    assert set(model.state_dict()) == state_dict_keys
+    assert {
+        "_opaque_qkv_weight_pack",
+        "_opaque_qkv_bias_pack",
+        "_opaque_qkv_adapter_a_pack",
+        "_opaque_qkv_adapter_b_pack",
+    }.issubset(dict(attn.named_buffers(recurse=False)))
     input_ids = torch.randint(0, config.vocab_size, (2, 8))
     assert torch.isfinite(model(input_ids).logits).all()
 
@@ -119,6 +142,53 @@ class TestFusedLoRAQKV:
             torch.testing.assert_close(actual_grad, expected_grad, rtol=2e-2, atol=2e-3)
         assert projection.lora_A["default"].weight.dtype == torch.float32
         assert projection.lora_B["default"].weight.dtype == torch.float32
+
+    def test_qkv_pack_cache_tracks_updates_and_active_adapter(self, device):
+        config = Qwen2Config(
+            vocab_size=64,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+        model = get_peft_model(
+            AutoModelForCausalLM.from_config(config),
+            LoraConfig(
+                r=4,
+                lora_alpha=8,
+                lora_dropout=0.0,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+            ),
+        )
+        model.add_adapter(
+            "alternate",
+            LoraConfig(
+                r=4,
+                lora_alpha=4,
+                lora_dropout=0.0,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+            ),
+        )
+        model.to(device)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
+        attention = model.model.model.layers[0].self_attn
+        hidden_states = torch.randn(2, 4, 32, device=device)
+
+        attention._opaque_fused_qkv(hidden_states)
+        first = attention._opaque_qkv_adapter_b_pack
+        attention._opaque_fused_qkv(hidden_states)
+        assert attention._opaque_qkv_adapter_b_pack is first
+
+        with torch.no_grad():
+            attention.q_proj.lora_B["default"].weight.add_(1)
+        attention._opaque_fused_qkv(hidden_states)
+        updated = attention._opaque_qkv_adapter_b_pack
+        assert updated is not first
+
+        model.set_adapter("alternate")
+        attention._opaque_fused_qkv(hidden_states)
+        assert attention._opaque_qkv_adapter_b_pack is not updated
 
     def test_fp32_adapters_keep_all_lora_fusions_under_bf16_autocast(
         self, device, monkeypatch

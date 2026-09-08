@@ -104,6 +104,53 @@ def _require_frozen_qkv_biases(*biases):
         )
 
 
+def _adapters_are_packable(*adapter_pairs):
+    if not adapter_pairs or any(A is None or B is None for A, B in adapter_pairs):
+        return False
+    first_A, _first_B = adapter_pairs[0]
+    rank = first_A.shape[1]
+    return all(
+        A.shape == (first_A.shape[0], rank)
+        and B.shape[0] == rank
+        and A.device == first_A.device
+        and B.device == first_A.device
+        and A.dtype == first_A.dtype
+        and B.dtype == first_A.dtype
+        for A, B in adapter_pairs
+    )
+
+
+def _pack_adapters(*adapters):
+    """Pack same-input adapters as concatenated A and scaled block-diagonal B."""
+    pairs = tuple((A, B) for A, B, _ in adapters)
+    if not _adapters_are_packable(*pairs):
+        return None, None
+    rank = adapters[0][0].shape[1]
+    packed_A = torch.cat([A for A, _, _ in adapters], dim=1)
+    packed_B = adapters[0][1].new_zeros(
+        (rank * len(adapters), sum(B.shape[1] for _, B, _ in adapters))
+    )
+    row = column = 0
+    for _A, B, scaling in adapters:
+        packed_B[row : row + rank, column : column + B.shape[1]] = B * scaling
+        row += rank
+        column += B.shape[1]
+    return packed_A, packed_B
+
+
+def _pack_qkv_base(Wq, bq, Wk, bk, Wv, bv):
+    packed_W = torch.cat((Wq, Wk, Wv), dim=0)
+    packed_bias = None
+    if any(bias is not None for bias in (bq, bk, bv)):
+        packed_bias = torch.cat(
+            tuple(
+                bias if bias is not None else weight.new_zeros(weight.shape[0])
+                for weight, bias in ((Wq, bq), (Wk, bk), (Wv, bv))
+            )
+        )
+    return packed_W, packed_bias
+
+
 def _lora_w_weight_backward_impl(grad_out, X, A, B, scaling):
     """Compute LoRA_W adapter gradients before releasing the saved input."""
     if A is None or B is None:
@@ -387,7 +434,24 @@ class _LoRAQKVBackward(torch.autograd.Function):
 
 
 def _lora_qkv_backward_lite(
-    grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv
+    grad_Q,
+    grad_K,
+    grad_V,
+    Wq,
+    Aq,
+    Bq,
+    Sq,
+    Wk,
+    Ak,
+    Bk,
+    Sk,
+    Wv,
+    Av,
+    Bv,
+    Sv,
+    packed_W=None,
+    packed_A=None,
+    packed_B=None,
 ):
     """Lightweight QKV backward: only computes dX (no weight grads, no X needed).
 
@@ -399,18 +463,21 @@ def _lora_qkv_backward_lite(
     grad_K_flat = grad_K.reshape(-1, grad_K.shape[-1])
     grad_V_flat = grad_V.reshape(-1, grad_V.shape[-1])
 
-    # dX from base weights
-    dX = torch.mm(grad_Q_flat, Wq)
-    dX.addmm_(grad_K_flat, Wk, beta=1, alpha=1)
-    dX.addmm_(grad_V_flat, Wv, beta=1, alpha=1)
+    grad_packed = torch.cat((grad_Q_flat, grad_K_flat, grad_V_flat), dim=1)
+    if packed_W is None:
+        packed_W = torch.cat((Wq, Wk, Wv), dim=0)
+    dX = torch.mm(grad_packed, packed_W)
 
     # dX from LoRA contributions
-    if Aq is not None and Bq is not None:
-        dX.addmm_(grad_Q_flat @ Bq.t(), Aq.t(), alpha=Sq, beta=1)
-    if Ak is not None and Bk is not None:
-        dX.addmm_(grad_K_flat @ Bk.t(), Ak.t(), alpha=Sk, beta=1)
-    if Av is not None and Bv is not None:
-        dX.addmm_(grad_V_flat @ Bv.t(), Av.t(), alpha=Sv, beta=1)
+    if packed_A is not None and packed_B is not None:
+        dX.addmm_(grad_packed @ packed_B.t(), packed_A.t(), beta=1)
+    else:
+        if Aq is not None and Bq is not None:
+            dX.addmm_(grad_Q_flat @ Bq.t(), Aq.t(), alpha=Sq, beta=1)
+        if Ak is not None and Bk is not None:
+            dX.addmm_(grad_K_flat @ Bk.t(), Ak.t(), alpha=Sk, beta=1)
+        if Av is not None and Bv is not None:
+            dX.addmm_(grad_V_flat @ Bv.t(), Av.t(), alpha=Sv, beta=1)
 
     return dX.reshape(*batch_shape, Wq.shape[1])
 
@@ -419,7 +486,26 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
     """Lightweight QKV backward: only dX, no weight grads, no X needed."""
 
     @staticmethod
-    def forward(grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+    def forward(
+        grad_Q,
+        grad_K,
+        grad_V,
+        Wq,
+        Aq,
+        Bq,
+        Sq,
+        Wk,
+        Ak,
+        Bk,
+        Sk,
+        Wv,
+        Av,
+        Bv,
+        Sv,
+        packed_W,
+        packed_A,
+        packed_B,
+    ):
         return _lora_qkv_backward_lite(
             grad_Q,
             grad_K,
@@ -436,6 +522,9 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
             Av,
             Bv,
             Sv,
+            packed_W,
+            packed_A,
+            packed_B,
         )
 
     @staticmethod
@@ -465,6 +554,9 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
         Av,
         Bv,
         Sv,
+        packed_W,
+        packed_A,
+        packed_B,
     ):
         _validate_vmap_dims(
             in_dims, name="_LoRAQKVBackwardLite", batched_indices={0, 1, 2}
@@ -491,6 +583,9 @@ class _LoRAQKVBackwardLite(torch.autograd.Function):
             Av,
             Bv,
             Sv,
+            packed_W,
+            packed_A,
+            packed_B,
         )
         dX = dX.reshape(*grad_Q.shape[:-1], Wq.shape[1])
         return dX, grad_Q_bdim
@@ -506,38 +601,148 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv):
+    def forward(
+        X,
+        Wq,
+        Aq,
+        Bq,
+        Sq,
+        bq,
+        Wk,
+        Ak,
+        Bk,
+        Sk,
+        bk,
+        Wv,
+        Av,
+        Bv,
+        Sv,
+        bv,
+        packed_W=None,
+        packed_bias=None,
+        packed_A=None,
+        packed_B=None,
+    ):
         """Forward pass for Q, K, V projections."""
         _require_frozen_qkv_biases(bq, bk, bv)
-        X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(
-            active_cuda_dtype(X), X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv
+        adapter_packable = (
+            packed_A is not None and packed_B is not None
+        ) or _adapters_are_packable((Aq, Bq), (Ak, Bk), (Av, Bv))
+        (
+            X,
+            Wq,
+            Aq,
+            Bq,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            bv,
+            packed_W,
+            packed_bias,
+            packed_A,
+            packed_B,
+        ) = cast_to_dtype(
+            active_cuda_dtype(X),
+            X,
+            Wq,
+            Aq,
+            Bq,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            bv,
+            packed_W,
+            packed_bias,
+            packed_A,
+            packed_B,
         )
         X_flat = X.reshape(-1, X.shape[-1])
-
-        Q = F.linear(X, Wq, bq)
-        if Aq is not None and Bq is not None:
-            Q.reshape(-1, Q.shape[-1]).addmm_(X_flat @ Aq, Bq, alpha=Sq, beta=1)
-
-        K = F.linear(X, Wk, bk)
-        if Ak is not None and Bk is not None:
-            K.reshape(-1, K.shape[-1]).addmm_(X_flat @ Ak, Bk, alpha=Sk, beta=1)
-
-        V = F.linear(X, Wv, bv)
-        if Av is not None and Bv is not None:
-            V.reshape(-1, V.shape[-1]).addmm_(X_flat @ Av, Bv, alpha=Sv, beta=1)
-
-        return Q, K, V
+        if packed_W is None:
+            packed_W, packed_bias = _pack_qkv_base(Wq, bq, Wk, bk, Wv, bv)
+        packed = F.linear(X, packed_W, packed_bias)
+        if adapter_packable and (packed_A is None or packed_B is None):
+            packed_A, packed_B = _pack_adapters(
+                (Aq, Bq, Sq), (Ak, Bk, Sk), (Av, Bv, Sv)
+            )
+        if packed_A is not None and packed_B is not None:
+            packed.reshape(-1, packed.shape[-1]).addmm_(
+                X_flat @ packed_A, packed_B, beta=1
+            )
+        else:
+            starts = (0, Wq.shape[0], Wq.shape[0] + Wk.shape[0])
+            for start, A, B, scaling in zip(
+                starts,
+                (Aq, Ak, Av),
+                (Bq, Bk, Bv),
+                (Sq, Sk, Sv),
+                strict=True,
+            ):
+                if A is not None and B is not None:
+                    projection = packed[..., start : start + B.shape[1]]
+                    delta = (X_flat @ A @ B).reshape(projection.shape)
+                    projection.add_(delta, alpha=scaling)
+        return packed.split((Wq.shape[0], Wk.shape[0], Wv.shape[0]), dim=-1)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, Wq, Aq, Bq, Sq, _bq, Wk, Ak, Bk, Sk, _bk, Wv, Av, Bv, Sv, _bv = inputs
+        (
+            X,
+            Wq,
+            Aq,
+            Bq,
+            Sq,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            Sk,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            Sv,
+            bv,
+            *packed_inputs,
+        ) = inputs
+        packed_W, _packed_bias, packed_A, packed_B = (
+            *packed_inputs,
+            None,
+            None,
+            None,
+            None,
+        )[:4]
+        if packed_W is None:
+            packed_W, _ = _pack_qkv_base(Wq, bq, Wk, bk, Wv, bv)
+        if (
+            packed_A is None
+            and packed_B is None
+            and _adapters_are_packable((Aq, Bq), (Ak, Bk), (Av, Bv))
+        ):
+            packed_A, packed_B = _pack_adapters(
+                (Aq, Bq, Sq), (Ak, Bk, Sk), (Av, Bv, Sv)
+            )
         # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
         # Skip saving X when weight grads aren't needed — reduces peak memory.
         needs_weight_grads = _needs_lora_weight_grads((Aq, Bq), (Ak, Bk), (Av, Bv))
         if needs_weight_grads:
-            ctx.save_for_backward(X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv)
+            ctx.save_for_backward(
+                X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv, packed_W, packed_A, packed_B
+            )
         else:
-            ctx.save_for_backward(Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv)
+            ctx.save_for_backward(
+                Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv, packed_W, packed_A, packed_B
+            )
+        ctx.extra_inputs = len(packed_inputs)
         ctx.needs_weight_grads = needs_weight_grads
         ctx.Sq = Sq
         ctx.Sk = Sk
@@ -549,7 +754,9 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
         Sq, Sk, Sv = ctx.Sq, ctx.Sk, ctx.Sv
 
         if ctx.needs_weight_grads:
-            X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
+            X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv, packed_W, packed_A, packed_B = (
+                ctx.saved_tensors
+            )
             dAq, dBq, dAk, dBk, dAv, dBv = _LoRAQKVBackward.apply(
                 grad_Q,
                 grad_K,
@@ -568,11 +775,27 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
             ctx.maybe_clear_saved_tensors()
             del X
         else:
-            Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
+            Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv, packed_W, packed_A, packed_B = (
+                ctx.saved_tensors
+            )
             dAq = dBq = dAk = dBk = dAv = dBv = None
 
-        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = cast_to_dtype(
-            ctx.compute_dtype, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv, packed_W, packed_A, packed_B = (
+            cast_to_dtype(
+                ctx.compute_dtype,
+                Wq,
+                Aq,
+                Bq,
+                Wk,
+                Ak,
+                Bk,
+                Wv,
+                Av,
+                Bv,
+                packed_W,
+                packed_A,
+                packed_B,
+            )
         )
         dX = _LoRAQKVBackwardLite.apply(
             grad_Q,
@@ -590,9 +813,12 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
             Av,
             Bv,
             Sv,
+            packed_W,
+            packed_A,
+            packed_B,
         )
 
-        return (
+        gradients = (
             dX,
             None,
             dAq,
@@ -610,42 +836,112 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
             None,
             None,  # V: Wv, Av, Bv, Sv, bv
         )
+        return gradients + (None,) * ctx.extra_inputs
 
     @staticmethod
     def vmap(
-        info, in_dims, X, Wq, Aq, Bq, Sq, bq, Wk, Ak, Bk, Sk, bk, Wv, Av, Bv, Sv, bv
+        info,
+        in_dims,
+        X,
+        Wq,
+        Aq,
+        Bq,
+        Sq,
+        bq,
+        Wk,
+        Ak,
+        Bk,
+        Sk,
+        bk,
+        Wv,
+        Av,
+        Bv,
+        Sv,
+        bv,
+        packed_W=None,
+        packed_bias=None,
+        packed_A=None,
+        packed_B=None,
     ):
         """Efficient vmap rule: merge vmap batch into regular batch."""
         _require_frozen_qkv_biases(bq, bk, bv)
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_QKV", batched_indices={0})
         X_bdim = in_dims[0]
-        X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv = cast_to_dtype(
-            active_cuda_dtype(X), X, Wq, Aq, Bq, bq, Wk, Ak, Bk, bk, Wv, Av, Bv, bv
+        adapter_packable = (
+            packed_A is not None and packed_B is not None
+        ) or _adapters_are_packable((Aq, Bq), (Ak, Bk), (Av, Bv))
+        (
+            X,
+            Wq,
+            Aq,
+            Bq,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            bv,
+            packed_W,
+            packed_bias,
+            packed_A,
+            packed_B,
+        ) = cast_to_dtype(
+            active_cuda_dtype(X),
+            X,
+            Wq,
+            Aq,
+            Bq,
+            bq,
+            Wk,
+            Ak,
+            Bk,
+            bk,
+            Wv,
+            Av,
+            Bv,
+            bv,
+            packed_W,
+            packed_bias,
+            packed_A,
+            packed_B,
         )
 
         # Merge vmap batch into regular batch
         original_shape = X.shape
         X_merged = X.reshape(-1, *X.shape[2:])
 
-        # Apply LoRA with addmm_ (same as non-vmap forward)
         X_flat = X_merged.reshape(-1, X_merged.shape[-1])
-
-        Q = F.linear(X_merged, Wq, bq)
-        if Aq is not None and Bq is not None:
-            Q.reshape(-1, Q.shape[-1]).addmm_(X_flat @ Aq, Bq, alpha=Sq, beta=1)
-
-        K = F.linear(X_merged, Wk, bk)
-        if Ak is not None and Bk is not None:
-            K.reshape(-1, K.shape[-1]).addmm_(X_flat @ Ak, Bk, alpha=Sk, beta=1)
-
-        V = F.linear(X_merged, Wv, bv)
-        if Av is not None and Bv is not None:
-            V.reshape(-1, V.shape[-1]).addmm_(X_flat @ Av, Bv, alpha=Sv, beta=1)
-
-        # Reshape back
-        Q = Q.reshape(*original_shape[:-1], -1)
-        K = K.reshape(*original_shape[:-1], -1)
-        V = V.reshape(*original_shape[:-1], -1)
+        if packed_W is None:
+            packed_W, packed_bias = _pack_qkv_base(Wq, bq, Wk, bk, Wv, bv)
+        packed = F.linear(X_merged, packed_W, packed_bias)
+        if adapter_packable and (packed_A is None or packed_B is None):
+            packed_A, packed_B = _pack_adapters(
+                (Aq, Bq, Sq), (Ak, Bk, Sk), (Av, Bv, Sv)
+            )
+        if packed_A is not None and packed_B is not None:
+            packed.reshape(-1, packed.shape[-1]).addmm_(
+                X_flat @ packed_A, packed_B, beta=1
+            )
+        else:
+            starts = (0, Wq.shape[0], Wq.shape[0] + Wk.shape[0])
+            for start, A, B, scaling in zip(
+                starts,
+                (Aq, Ak, Av),
+                (Bq, Bk, Bv),
+                (Sq, Sk, Sv),
+                strict=True,
+            ):
+                if A is not None and B is not None:
+                    projection = packed[..., start : start + B.shape[1]]
+                    delta = (X_flat @ A @ B).reshape(projection.shape)
+                    projection.add_(delta, alpha=scaling)
+        Q, K, V = packed.split((Wq.shape[0], Wk.shape[0], Wv.shape[0]), dim=-1)
+        Q = Q.reshape(*original_shape[:-1], Wq.shape[0])
+        K = K.reshape(*original_shape[:-1], Wk.shape[0])
+        V = V.reshape(*original_shape[:-1], Wv.shape[0])
 
         return (Q, K, V), (X_bdim, X_bdim, X_bdim)
 
@@ -757,18 +1053,58 @@ def _lora_mlp_weight_backward_impl(
     )
 
 
-def _lora_mlp_input_backward_impl(dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su):
+def _adjacent_mlp_grad_pack(dgate, dup):
+    """Recover the packed gate/up gradient when both tensors are adjacent views."""
+    dgate_flat = dgate.reshape(-1, dgate.shape[-1])
+    dup_flat = dup.reshape(-1, dup.shape[-1])
+    intermediate = dgate_flat.shape[1]
+    if (
+        dgate_flat.shape == dup_flat.shape
+        and dgate_flat.stride() == (2 * intermediate, 1)
+        and dup_flat.stride() == dgate_flat.stride()
+        and dup_flat.storage_offset() == dgate_flat.storage_offset() + intermediate
+        and dgate_flat.untyped_storage().data_ptr()
+        == dup_flat.untyped_storage().data_ptr()
+    ):
+        return dgate_flat.as_strided(
+            (dgate_flat.shape[0], 2 * intermediate),
+            (2 * intermediate, 1),
+            dgate_flat.storage_offset(),
+        )
+    return torch.cat((dgate_flat, dup_flat), dim=1)
+
+
+def _lora_mlp_input_backward_impl(
+    dgate,
+    dup,
+    Wg,
+    Ag,
+    Bg,
+    Sg,
+    Wu,
+    Au,
+    Bu,
+    Su,
+    packed_W=None,
+    packed_A=None,
+    packed_B=None,
+):
     """Compute the MLP input gradient without retaining the forward input."""
     batch_shape = dgate.shape[:-1]
     dgate_flat = dgate.reshape(-1, dgate.shape[-1])
     dup_flat = dup.reshape(-1, dup.shape[-1])
 
-    dX = torch.mm(dgate_flat, Wg)
-    dX.addmm_(dup_flat, Wu, beta=1, alpha=1)
-    if Ag is not None and Bg is not None:
-        dX.addmm_(dgate_flat @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
-    if Au is not None and Bu is not None:
-        dX.addmm_(dup_flat @ Bu.t(), Au.t(), alpha=Su, beta=1)
+    grad_packed = _adjacent_mlp_grad_pack(dgate_flat, dup_flat)
+    if packed_W is None:
+        packed_W = torch.cat((Wg, Wu), dim=0)
+    dX = torch.mm(grad_packed, packed_W)
+    if packed_A is not None and packed_B is not None:
+        dX.addmm_(grad_packed @ packed_B.t(), packed_A.t(), beta=1)
+    else:
+        if Ag is not None and Bg is not None:
+            dX.addmm_(dgate_flat @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
+        if Au is not None and Bu is not None:
+            dX.addmm_(dup_flat @ Bu.t(), Au.t(), alpha=Su, beta=1)
     return dX.reshape(*batch_shape, Wg.shape[1])
 
 
@@ -901,8 +1237,36 @@ class _LoRAMLPInputBackward(torch.autograd.Function):
     """MLP input-gradient stage wrapped for vmap(grad()) support."""
 
     @staticmethod
-    def forward(dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su):
-        return _lora_mlp_input_backward_impl(dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su)
+    def forward(
+        dgate,
+        dup,
+        Wg,
+        Ag,
+        Bg,
+        Sg,
+        Wu,
+        Au,
+        Bu,
+        Su,
+        packed_W,
+        packed_A,
+        packed_B,
+    ):
+        return _lora_mlp_input_backward_impl(
+            dgate,
+            dup,
+            Wg,
+            Ag,
+            Bg,
+            Sg,
+            Wu,
+            Au,
+            Bu,
+            Su,
+            packed_W,
+            packed_A,
+            packed_B,
+        )
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -913,20 +1277,66 @@ class _LoRAMLPInputBackward(torch.autograd.Function):
         raise NotImplementedError("Double backward not supported for LoRA_MLP")
 
     @staticmethod
-    def vmap(info, in_dims, dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su):
+    def vmap(
+        info,
+        in_dims,
+        dgate,
+        dup,
+        Wg,
+        Ag,
+        Bg,
+        Sg,
+        Wu,
+        Au,
+        Bu,
+        Su,
+        packed_W,
+        packed_A,
+        packed_B,
+    ):
         _validate_vmap_dims(
             in_dims, name="_LoRAMLPInputBackward", batched_indices={0, 1}
         )
         dgate_merged = dgate.reshape(-1, *dgate.shape[2:])
         dup_merged = dup.reshape(-1, *dup.shape[2:])
         dX = _lora_mlp_input_backward_impl(
-            dgate_merged, dup_merged, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su
+            dgate_merged,
+            dup_merged,
+            Wg,
+            Ag,
+            Bg,
+            Sg,
+            Wu,
+            Au,
+            Bu,
+            Su,
+            packed_W,
+            packed_A,
+            packed_B,
         )
         return dX.reshape(*dgate.shape[:-1], Wg.shape[1]), 0
 
 
 def _lora_mlp_backward_lite(
-    grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, gate, up, activation_type
+    grad_out,
+    Wg,
+    Ag,
+    Bg,
+    Sg,
+    Wu,
+    Au,
+    Bu,
+    Su,
+    Wd,
+    Ad,
+    Bd,
+    Sd,
+    gate,
+    up,
+    activation_type,
+    packed_W=None,
+    packed_A=None,
+    packed_B=None,
 ):
     """Lightweight MLP backward: only computes dX (no weight grads, no X needed).
 
@@ -947,12 +1357,21 @@ def _lora_mlp_backward_lite(
     _h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
 
     # dX: fresh allocation (no X buffer to reuse)
-    dX = torch.mm(dgate, Wg)
-    dX.addmm_(dup, Wu, beta=1, alpha=1)
-    if Ag is not None and Bg is not None:
-        dX.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
-    if Au is not None and Bu is not None:
-        dX.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
+    dX = _lora_mlp_input_backward_impl(
+        dgate,
+        dup,
+        Wg,
+        Ag,
+        Bg,
+        Sg,
+        Wu,
+        Au,
+        Bu,
+        Su,
+        packed_W,
+        packed_A,
+        packed_B,
+    )
 
     return dX.reshape(*batch_shape, Wg.shape[1])
 
@@ -978,6 +1397,9 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
         gate,
         up,
         activation_type,
+        packed_W,
+        packed_A,
+        packed_B,
     ):
         return _lora_mlp_backward_lite(
             grad_out,
@@ -996,6 +1418,9 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
             gate,
             up,
             activation_type,
+            packed_W,
+            packed_A,
+            packed_B,
         )
 
     @staticmethod
@@ -1026,6 +1451,9 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
         gate,
         up,
         activation_type,
+        packed_W,
+        packed_A,
+        packed_B,
     ):
         if in_dims[13] is None and in_dims[14] is None:
             raise NotImplementedError("Double backward not supported for LoRA_MLP")
@@ -1055,6 +1483,9 @@ class _LoRAMLPBackwardLite(torch.autograd.Function):
             gate_merged,
             up_merged,
             activation_type,
+            packed_W,
+            packed_A,
+            packed_B,
         )
         dX = dX.reshape(*grad_out.shape[:-1], Wg.shape[1])
         return dX, grad_out_bdim
@@ -1074,20 +1505,66 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type):
+    def forward(
+        X,
+        Wg,
+        Ag,
+        Bg,
+        Sg,
+        Wu,
+        Au,
+        Bu,
+        Su,
+        Wd,
+        Ad,
+        Bd,
+        Sd,
+        activation_type,
+        packed_W=None,
+        packed_A=None,
+        packed_B=None,
+    ):
         """Forward pass for MLP with configurable GLU activation."""
-        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
-            active_cuda_dtype(X), X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
+        adapter_packable = (
+            packed_A is not None and packed_B is not None
+        ) or _adapters_are_packable((Ag, Bg), (Au, Bu))
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, packed_W, packed_A, packed_B = (
+            cast_to_dtype(
+                active_cuda_dtype(X),
+                X,
+                Wg,
+                Ag,
+                Bg,
+                Wu,
+                Au,
+                Bu,
+                Wd,
+                Ad,
+                Bd,
+                packed_W,
+                packed_A,
+                packed_B,
+            )
         )
         X_flat = X.reshape(-1, X.shape[-1])
-
-        gate = F.linear(X, Wg)
-        if Ag is not None and Bg is not None:
-            gate.reshape(-1, gate.shape[-1]).addmm_(X_flat @ Ag, Bg, alpha=Sg, beta=1)
-
-        up = F.linear(X, Wu)
-        if Au is not None and Bu is not None:
-            up.reshape(-1, up.shape[-1]).addmm_(X_flat @ Au, Bu, alpha=Su, beta=1)
+        if packed_W is None:
+            packed_W = torch.cat((Wg, Wu), dim=0)
+        gate_up = F.linear(X, packed_W)
+        if adapter_packable and (packed_A is None or packed_B is None):
+            packed_A, packed_B = _pack_adapters((Ag, Bg, Sg), (Au, Bu, Su))
+        if packed_A is not None and packed_B is not None:
+            gate_up.reshape(-1, gate_up.shape[-1]).addmm_(
+                X_flat @ packed_A, packed_B, beta=1
+            )
+        else:
+            intermediate = Wg.shape[0]
+            if Ag is not None and Bg is not None:
+                gate = gate_up[..., :intermediate]
+                gate.add_((X_flat @ Ag @ Bg).reshape(gate.shape), alpha=Sg)
+            if Au is not None and Bu is not None:
+                up = gate_up[..., intermediate:]
+                up.add_((X_flat @ Au @ Bu).reshape(up.shape), alpha=Su)
+        gate, up = gate_up.split((Wg.shape[0], Wu.shape[0]), dim=-1)
 
         # Use Triton kernel for activation (Unsloth callback pattern)
         act_forward = _ACTIVATION_FORWARD[activation_type]
@@ -1102,12 +1579,40 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type = inputs
+        (
+            X,
+            Wg,
+            Ag,
+            Bg,
+            Sg,
+            Wu,
+            Au,
+            Bu,
+            Su,
+            Wd,
+            Ad,
+            Bd,
+            Sd,
+            activation_type,
+            *packed_inputs,
+        ) = inputs
+        packed_W, packed_A, packed_B = (*packed_inputs, None, None, None)[:3]
+        if packed_W is None:
+            packed_W = torch.cat((Wg, Wu), dim=0)
+        if (
+            packed_A is None
+            and packed_B is None
+            and _adapters_are_packable((Ag, Bg), (Au, Bu))
+        ):
+            packed_A, packed_B = _pack_adapters((Ag, Bg, Sg), (Au, Bu, Su))
         # Recompute the intermediate-width gate/up tensors in backward. Saving
         # the much narrower input is essential for long-sequence DP vmap batches.
         # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
         needs_weight_grads = _needs_lora_weight_grads((Ag, Bg), (Au, Bu), (Ad, Bd))
-        ctx.save_for_backward(X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd)
+        ctx.save_for_backward(
+            X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, packed_W, packed_A, packed_B
+        )
+        ctx.extra_inputs = len(packed_inputs)
         ctx.needs_weight_grads = needs_weight_grads
         ctx.Sg = Sg
         ctx.Su = Su
@@ -1133,16 +1638,24 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
                 saved_tensors[9],
             )
         )
-        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
-            ctx.compute_dtype, *saved_tensors
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, packed_W, packed_A, packed_B = (
+            cast_to_dtype(ctx.compute_dtype, *saved_tensors)
         )
         X_flat = X.reshape(-1, X.shape[-1])
-        gate = F.linear(X, Wg)
-        if Ag is not None and Bg is not None:
-            gate.reshape(-1, gate.shape[-1]).addmm_(X_flat @ Ag, Bg, alpha=Sg, beta=1)
-        up = F.linear(X, Wu)
-        if Au is not None and Bu is not None:
-            up.reshape(-1, up.shape[-1]).addmm_(X_flat @ Au, Bu, alpha=Su, beta=1)
+        gate_up = F.linear(X, packed_W)
+        if packed_A is not None and packed_B is not None:
+            gate_up.reshape(-1, gate_up.shape[-1]).addmm_(
+                X_flat @ packed_A, packed_B, beta=1
+            )
+        else:
+            intermediate = Wg.shape[0]
+            if Ag is not None and Bg is not None:
+                gate = gate_up[..., :intermediate]
+                gate.add_((X_flat @ Ag @ Bg).reshape(gate.shape), alpha=Sg)
+            if Au is not None and Bu is not None:
+                up = gate_up[..., intermediate:]
+                up.add_((X_flat @ Au @ Bu).reshape(up.shape), alpha=Su)
+        gate, up = gate_up.split((Wg.shape[0], Wu.shape[0]), dim=-1)
 
         if ctx.needs_weight_grads:
             dgate, dup, dAg, dBg, dAu, dBu, dAd, dBd = _LoRAMLPBackward.apply(
@@ -1170,10 +1683,33 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
             )
             ctx.maybe_clear_saved_tensors()
             del X, X_flat, Wd, Ad, Bd, gate, up
-            Wg, Ag, Bg, Wu, Au, Bu = cast_to_dtype(
-                ctx.compute_dtype, Wg, Ag, Bg, Wu, Au, Bu
+            Wg, Ag, Bg, Wu, Au, Bu, packed_W, packed_A, packed_B = cast_to_dtype(
+                ctx.compute_dtype,
+                Wg,
+                Ag,
+                Bg,
+                Wu,
+                Au,
+                Bu,
+                packed_W,
+                packed_A,
+                packed_B,
             )
-            dX = _LoRAMLPInputBackward.apply(dgate, dup, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su)
+            dX = _LoRAMLPInputBackward.apply(
+                dgate,
+                dup,
+                Wg,
+                Ag,
+                Bg,
+                Sg,
+                Wu,
+                Au,
+                Bu,
+                Su,
+                packed_W,
+                packed_A,
+                packed_B,
+            )
         else:
             ctx.maybe_clear_saved_tensors()
             del X, X_flat
@@ -1194,10 +1730,13 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
                 gate,
                 up,
                 ctx.activation_type,
+                packed_W,
+                packed_A,
+                packed_B,
             )
             dAg = dBg = dAu = dBu = dAd = dBd = None
 
-        return (
+        gradients = (
             dX,
             None,
             dAg,
@@ -1213,6 +1752,7 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
             None,  # down
             None,  # activation_type
         )
+        return gradients + (None,) * ctx.extra_inputs
 
     @staticmethod
     def vmap(
@@ -1232,6 +1772,9 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         Bd,
         Sd,
         activation_type,
+        packed_W=None,
+        packed_A=None,
+        packed_B=None,
     ):
         """Efficient vmap rule: merge vmap batch into regular batch.
 
@@ -1241,8 +1784,26 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         """
         _validate_vmap_dims(in_dims, name="Opaque_LoRA_MLP", batched_indices={0})
         X_bdim = in_dims[0]
-        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = cast_to_dtype(
-            active_cuda_dtype(X), X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
+        adapter_packable = (
+            packed_A is not None and packed_B is not None
+        ) or _adapters_are_packable((Ag, Bg), (Au, Bu))
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, packed_W, packed_A, packed_B = (
+            cast_to_dtype(
+                active_cuda_dtype(X),
+                X,
+                Wg,
+                Ag,
+                Bg,
+                Wu,
+                Au,
+                Bu,
+                Wd,
+                Ad,
+                Bd,
+                packed_W,
+                packed_A,
+                packed_B,
+            )
         )
 
         # Merge vmap batch into regular batch
@@ -1251,13 +1812,24 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         X_flat = X_merged.reshape(-1, X_merged.shape[-1])
 
         # Apply MLP with addmm_ + direct Triton activation (no autograd needed)
-        gate = F.linear(X_merged, Wg)
-        if Ag is not None and Bg is not None:
-            gate.reshape(-1, gate.shape[-1]).addmm_(X_flat @ Ag, Bg, alpha=Sg, beta=1)
-
-        up = F.linear(X_merged, Wu)
-        if Au is not None and Bu is not None:
-            up.reshape(-1, up.shape[-1]).addmm_(X_flat @ Au, Bu, alpha=Su, beta=1)
+        if packed_W is None:
+            packed_W = torch.cat((Wg, Wu), dim=0)
+        gate_up = F.linear(X_merged, packed_W)
+        if adapter_packable and (packed_A is None or packed_B is None):
+            packed_A, packed_B = _pack_adapters((Ag, Bg, Sg), (Au, Bu, Su))
+        if packed_A is not None and packed_B is not None:
+            gate_up.reshape(-1, gate_up.shape[-1]).addmm_(
+                X_flat @ packed_A, packed_B, beta=1
+            )
+        else:
+            intermediate = Wg.shape[0]
+            if Ag is not None and Bg is not None:
+                gate = gate_up[..., :intermediate]
+                gate.add_((X_flat @ Ag @ Bg).reshape(gate.shape), alpha=Sg)
+            if Au is not None and Bu is not None:
+                up = gate_up[..., intermediate:]
+                up.add_((X_flat @ Au @ Bu).reshape(up.shape), alpha=Su)
+        gate, up = gate_up.split((Wg.shape[0], Wu.shape[0]), dim=-1)
 
         # Direct Triton activation kernel (safe: backward uses the staged Functions)
         act_forward = _ACTIVATION_FORWARD[activation_type]

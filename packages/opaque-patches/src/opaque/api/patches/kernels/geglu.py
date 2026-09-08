@@ -23,6 +23,7 @@ from ._utils import (
     INT32_SAFETY_BUFFER,
     ensure_cuda_tensors,
     follow_autocast,
+    needs_long_strided_indexing,
     torch_gpu_device,
     triton_tanh,
 )
@@ -63,6 +64,37 @@ def _exact_forward_kernel(
     h_row = f_row * g_row
 
     tl.store(h + offsets, h_row, mask=mask)
+
+
+@triton.jit
+def _exact_forward_strided_kernel(
+    e,
+    g,
+    h,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_row = tl.load(e + rows * e_row_stride + cols, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + rows * g_row_stride + cols, mask=mask, other=0)
+    f_row = (0.5 * e_row * (tl.math.erf(tl.math.rsqrt(2.0) * e_row) + 1.0)).to(
+        g_row.dtype
+    )
+    tl.store(h + offsets, f_row * g_row, mask=mask)
 
 
 @triton.jit
@@ -131,6 +163,48 @@ def _exact_backward_kernel(
     if COMPUTE_H:
         h_row = f_row * g_row
         tl.store(h_out + offsets, h_row, mask=mask)
+
+
+@triton.jit
+def _exact_backward_strided_kernel(
+    DW,
+    e,
+    g,
+    de_out,
+    dg_out,
+    h_out,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_offsets = rows * e_row_stride + cols
+    g_offsets = rows * g_row_stride + cols
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
+    e_row = tl.load(e + e_offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + g_offsets, mask=mask, other=0)
+    f_partial_row = 0.5 * (tl.math.erf(tl.math.rsqrt(2.0) * e_row) + 1.0)
+    f_row = (f_partial_row * e_row).to(DW_row.dtype)
+    df_de = f_partial_row + 0.3989422804014327 * e_row * tl.exp(-0.5 * e_row * e_row)
+    de_row = ((DW_row * g_row).to(tl.float32) * df_de).to(DW_row.dtype)
+    tl.store(de_out + e_offsets, de_row, mask=mask)
+    tl.store(dg_out + g_offsets, DW_row * f_row, mask=mask)
+    if COMPUTE_H:
+        tl.store(h_out + offsets, f_row * g_row, mask=mask)
 
 
 class _GeGLUExactBackward(torch.autograd.Function):
@@ -327,6 +401,38 @@ def _approx_forward_kernel(
 
 
 @triton.jit
+def _approx_forward_strided_kernel(
+    e,
+    g,
+    h,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_row = tl.load(e + rows * e_row_stride + cols, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + rows * g_row_stride + cols, mask=mask, other=0)
+    s = 0.7978845608028654
+    f_row = (
+        0.5 * e_row * (triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0)
+    ).to(g_row.dtype)
+    tl.store(h + offsets, f_row * g_row, mask=mask)
+
+
+@triton.jit
 def _approx_backward_kernel(
     DW,
     e,
@@ -397,6 +503,56 @@ def _approx_backward_kernel(
     if COMPUTE_H:
         h_row = f_row * g_row
         tl.store(h_out + offsets, h_row, mask=mask)
+
+
+@triton.jit
+def _approx_backward_strided_kernel(
+    DW,
+    e,
+    g,
+    de_out,
+    dg_out,
+    h_out,
+    n_cols,
+    n_elements,
+    e_row_stride,
+    g_row_stride,
+    BLOCK_SIZE: tl.constexpr,
+    LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if LONG_INDEXING:
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
+        n_elements = tl.cast(n_elements, tl.int64)
+    else:
+        offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    rows = offsets // n_cols
+    cols = offsets - rows * n_cols
+    e_offsets = rows * e_row_stride + cols
+    g_offsets = rows * g_row_stride + cols
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
+    e_row = tl.load(e + e_offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + g_offsets, mask=mask, other=0)
+    s = 0.7978845608028654
+    a = s * e_row
+    b = a * 0.044715 * e_row * e_row
+    T = 1.0 + triton_tanh(a + b)
+    T2 = 0.5 * T
+    df_de = T2 - T2 * (T - 2.0) * (a + 3.0 * b)
+    f_row = (T2 * e_row).to(DW_row.dtype)
+    de_row = ((DW_row * g_row).to(tl.float32) * df_de).to(DW_row.dtype)
+    tl.store(de_out + e_offsets, de_row, mask=mask)
+    tl.store(dg_out + g_offsets, DW_row * f_row, mask=mask)
+    if COMPUTE_H:
+        tl.store(h_out + offsets, f_row * g_row, mask=mask)
+
+
+def _strided_2d(tensor):
+    return tensor.reshape(-1, tensor.shape[-1])
 
 
 class _GeGLUApproxBackward(torch.autograd.Function):
@@ -596,6 +752,37 @@ def _triton_geglu_exact_forward(gate, up):
     Calls the Triton kernel directly without autograd wrapper.
     For use as a callback in LoRA_MLP.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+        h = torch.empty_like(gate, memory_format=torch.contiguous_format)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _exact_forward_strided_kernel[grid](
+                gate_2d,
+                up_2d,
+                h,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+            )
+        return h.reshape(original_shape)
+
     original_shape = gate.shape
     gate_flat = gate.reshape(-1)
     up_flat = up.reshape(-1)
@@ -666,6 +853,45 @@ def _triton_geglu_exact_backward_fused(dh, gate, up):
     Overwrites: dh → h, gate → dgate, up → dup.
     Returns (h, dgate, dup) which alias the input buffers.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        dh_flat = dh.reshape(-1)
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _exact_backward_strided_kernel[grid](
+                dh_flat,
+                gate_2d,
+                up_2d,
+                gate_2d,
+                up_2d,
+                dh_flat,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+                COMPUTE_H=True,
+            )
+        return (
+            dh_flat.reshape(original_shape),
+            gate_2d.reshape(original_shape),
+            up_2d.reshape(original_shape),
+        )
+
     original_shape = gate.shape
     dh_flat = dh.reshape(-1)
     gate_flat = gate.reshape(-1)
@@ -702,6 +928,37 @@ def _triton_geglu_approx_forward(gate, up):
     Calls the Triton kernel directly without autograd wrapper.
     For use as a callback in LoRA_MLP.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+        h = torch.empty_like(gate, memory_format=torch.contiguous_format)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _approx_forward_strided_kernel[grid](
+                gate_2d,
+                up_2d,
+                h,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+            )
+        return h.reshape(original_shape)
+
     original_shape = gate.shape
     gate_flat = gate.reshape(-1)
     up_flat = up.reshape(-1)
@@ -772,6 +1029,45 @@ def _triton_geglu_approx_backward_fused(dh, gate, up):
     Overwrites: dh → h, gate → dgate, up → dup.
     Returns (h, dgate, dup) which alias the input buffers.
     """
+    if not gate.is_contiguous() or not up.is_contiguous():
+        original_shape = gate.shape
+        dh_flat = dh.reshape(-1)
+        gate_2d = _strided_2d(gate)
+        up_2d = _strided_2d(up)
+        n_elements = gate.numel()
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _approx_backward_strided_kernel[grid](
+                dh_flat,
+                gate_2d,
+                up_2d,
+                gate_2d,
+                up_2d,
+                dh_flat,
+                gate.shape[-1],
+                n_elements,
+                gate_2d.stride(0),
+                up_2d.stride(0),
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=int(
+                    needs_long_strided_indexing(
+                        gate_2d.shape[0],
+                        gate_2d.shape[1],
+                        gate_2d.stride(0),
+                        up_2d.stride(0),
+                    )
+                ),
+                COMPUTE_H=True,
+            )
+        return (
+            dh_flat.reshape(original_shape),
+            gate_2d.reshape(original_shape),
+            up_2d.reshape(original_shape),
+        )
+
     original_shape = gate.shape
     dh_flat = dh.reshape(-1)
     gate_flat = gate.reshape(-1)

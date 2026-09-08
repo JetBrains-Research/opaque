@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import torch
 
+from ._packing import _projection_packs, _register_projection_pack
 from ._utils import (
     _active_lora_dtype,
     _extract_lora_params,
@@ -38,6 +39,24 @@ def _is_phi3_style_mlp(mlp):
     return hasattr(mlp, "gate_up_proj") and not hasattr(mlp, "gate_proj")
 
 
+def _initialize_mlp_projection_pack(mlp):
+    """Build the initial non-persistent gate/up packs during model patching."""
+    _register_projection_pack(
+        mlp,
+        "gate_up",
+        ("weight", "adapter_a", "adapter_b"),
+    )
+    Wg, Ag, Bg, Sg = _extract_lora_params(mlp.gate_proj)
+    Wu, Au, Bu, Su = _extract_lora_params(mlp.up_proj)
+    _projection_packs(
+        mlp,
+        "gate_up",
+        (Wg, Wu),
+        None,
+        ((Ag, Bg, Sg), (Au, Bu, Su)),
+    )
+
+
 def _make_fused_lora_mlp_forward(original_forward, activation_type):
     """Create fused LoRA MLP forward using Opaque_LoRA_MLP kernel.
 
@@ -63,6 +82,13 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         Wg, Ag, Bg, Sg = _extract_lora_params(self.gate_proj)
         Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
         Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
+        packed_W, _packed_bias, packed_A, packed_B = _projection_packs(
+            self,
+            "gate_up",
+            (Wg, Wu),
+            None,
+            ((Ag, Bg, Sg), (Au, Bu, Su)),
+        )
 
         # Keep full weights in their parameter dtype across the autograd boundary.
         # The custom Function casts them transiently in forward and backward.
@@ -83,6 +109,9 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
             Bd,
             Sd,
             activation_type,
+            packed_W,
+            packed_A,
+            packed_B,
         )
 
         # Add biases if present (most models don't have MLP bias)

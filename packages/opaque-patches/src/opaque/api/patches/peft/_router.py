@@ -9,10 +9,12 @@ from .components._utils import _bias_is_frozen, _has_lora, _no_bias, _no_lora_dr
 from .components.linear import _make_lora_linear_forward
 from .components.mlp import (
     _MLP_ACTIVATION_MAP,
+    _initialize_mlp_projection_pack,
     _is_phi3_style_mlp,
     _make_fused_lora_mlp_forward,
 )
 from .components.qkv import (
+    _initialize_qkv_projection_pack,
     _opaque_fused_lora_qkv,
     _resolve_fused_qkv_forward_factory,
 )
@@ -86,6 +88,7 @@ def _auto_fuse_lora(model):
                 and _no_lora_dropout(attn, "k_proj")
                 and _no_lora_dropout(attn, "v_proj")
             ):
+                _initialize_qkv_projection_pack(attn)
                 attn._opaque_fused_qkv = types.MethodType(
                     _opaque_fused_lora_qkv,
                     attn,
@@ -136,6 +139,7 @@ def _auto_fuse_lora(model):
 
         activation_type = _MLP_ACTIVATION_MAP[cls_name]
 
+        _initialize_mlp_projection_pack(mlp)
         fused_mlp_fwd = _make_fused_lora_mlp_forward(mlp.forward, activation_type)
         fused_mlp_fwd.__opaque_lora_mlp_patched__ = True
         mlp.forward = types.MethodType(fused_mlp_fwd, mlp)

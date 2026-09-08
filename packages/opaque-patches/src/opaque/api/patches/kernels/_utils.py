@@ -118,6 +118,17 @@ def needs_long_indexing(n_elements: int) -> bool:
     return n_elements > INT32_SAFETY_BUFFER
 
 
+def needs_long_strided_indexing(n_rows: int, n_cols: int, *row_strides: int) -> bool:
+    """Check int64 indexing against the largest strided storage offset."""
+    if n_rows == 0 or n_cols == 0:
+        return False
+    maximum_offset = max(
+        n_rows * n_cols - 1,
+        *((n_rows - 1) * stride + n_cols - 1 for stride in row_strides),
+    )
+    return maximum_offset > INT32_SAFETY_BUFFER
+
+
 # =============================================================================
 # Linear cross-entropy utilities
 # Ported from Apple's cut_cross_entropy project
