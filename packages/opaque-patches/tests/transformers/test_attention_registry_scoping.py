@@ -27,6 +27,7 @@ from transformers.models.mistral import modeling_mistral
 
 from opaque.api.patches.transformers.components import attention as opaque_attention
 from opaque.api.patches.transformers.models.gemma2 import apply_gemma2_family_patches
+from opaque.api.patches.transformers.models.llama import apply_llama_family_patches
 from opaque.api.patches.transformers.models.mistral import apply_mistral_family_patches
 from opaque.api.patches.transformers.runtime.masking import (
     vmap_create_compact_sdpa_sliding_window_causal_mask,
@@ -65,19 +66,28 @@ def softcap_fallback_spy(monkeypatch):
     monkeypatch.setattr(
         opaque_attention, "vmap_eager_attention_forward_gemma2", spy, raising=True
     )
-    monkeypatch.setitem(
-        opaque_attention.vmap_sdpa_attention_forward_gemma2.__globals__,
-        "vmap_eager_attention_forward_gemma2",
-        spy,
-    )
     return calls
 
 
 def test_shared_attention_registry_keeps_stock_sdpa(patched_gemma2_family):
-    """Other families still resolve ``"sdpa"`` to HF's own implementation."""
+    """Family overrides never replace the process-wide SDPA implementation."""
     assert SHARED_ATTENTION_FUNCTIONS["sdpa"] is sdpa_attention_forward
-    assert modeling_llama.ALL_ATTENTION_FUNCTIONS is SHARED_ATTENTION_FUNCTIONS
-    assert modeling_llama.ALL_ATTENTION_FUNCTIONS["sdpa"] is sdpa_attention_forward
+    assert (
+        modeling_llama.ALL_ATTENTION_FUNCTIONS["sdpa"]
+        is not opaque_attention.vmap_sdpa_attention_forward_gemma2
+    )
+
+
+def test_default_gqa_sdpa_override_is_family_scoped():
+    apply_runtime_patches()
+    apply_llama_family_patches(eager_attention=True)
+
+    assert SHARED_ATTENTION_FUNCTIONS["sdpa"] is sdpa_attention_forward
+    assert modeling_llama.ALL_ATTENTION_FUNCTIONS is not SHARED_ATTENTION_FUNCTIONS
+    assert (
+        modeling_llama.ALL_ATTENTION_FUNCTIONS["sdpa"]
+        is opaque_attention.vmap_sdpa_attention_forward
+    )
 
 
 def test_gemma2_module_gets_a_private_interface(patched_gemma2_family):

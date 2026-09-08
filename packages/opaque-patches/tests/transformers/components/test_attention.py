@@ -17,7 +17,9 @@ from opaque_test_support import prepare_lora_model, run_clipped_grad_test
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.patches.transformers.components import attention as attention_components
 from opaque.api.patches.transformers.components.attention import (
+    vmap_eager_attention_forward,
     vmap_eager_attention_forward_gemma2,
+    vmap_sdpa_attention_forward,
     vmap_sdpa_attention_forward_gemma2,
     vmap_sdpa_attention_forward_sliding_window,
 )
@@ -91,15 +93,193 @@ def _assert_gemma2_softcap_attention(attention, *, returns_weights):
         torch.testing.assert_close(actual, expected)
 
 
+@pytest.mark.parametrize("mask_kind", ["none", "boolean", "additive", "per_head"])
+def test_gqa_sdpa_uses_natural_kv_storage_and_matches_reference(monkeypatch, mask_kind):
+    torch.manual_seed(0)
+    query = torch.randn(1, 4, 5, 3, requires_grad=True)
+    key = torch.randn(1, 2, 5, 3, requires_grad=True)
+    value = torch.randn(1, 2, 5, 3, requires_grad=True)
+    if mask_kind == "boolean":
+        attention_mask = torch.ones(1, 1, 5, 5, dtype=torch.bool).tril_()
+    elif mask_kind == "additive":
+        attention_mask = torch.randn(1, 1, 5, 5)
+    elif mask_kind == "per_head":
+        attention_mask = torch.randn(1, 4, 5, 5)
+    else:
+        attention_mask = None
+    module = _Gemma2Attention()
+    module.num_key_value_groups = 2
+
+    seen_kv = []
+    real_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+    def record_sdpa(q, k, v, **kwargs):
+        seen_kv.append((k, v, kwargs))
+        return real_sdpa(q, k, v, **kwargs)
+
+    monkeypatch.setattr(
+        attention_components,
+        "vmap_repeat_kv",
+        lambda *args, **kwargs: pytest.fail("GQA must not call repeat_kv"),
+    )
+    monkeypatch.setattr(
+        torch.nn.functional, "scaled_dot_product_attention", record_sdpa
+    )
+    output, weights = vmap_sdpa_attention_forward(
+        module, query, key, value, attention_mask, scaling=0.5
+    )
+
+    expected = real_sdpa(
+        query,
+        key.repeat_interleave(2, dim=-3),
+        value.repeat_interleave(2, dim=-3),
+        attn_mask=attention_mask,
+        scale=0.5,
+    ).transpose(-3, -2)
+    torch.testing.assert_close(output, expected)
+    assert weights is None
+    assert len(seen_kv) == key.shape[-3]
+    for seen_key, seen_value, kwargs in seen_kv:
+        assert seen_key.untyped_storage().data_ptr() == key.untyped_storage().data_ptr()
+        assert (
+            seen_value.untyped_storage().data_ptr()
+            == value.untyped_storage().data_ptr()
+        )
+        assert seen_key.stride(-3) == 0
+        assert seen_value.stride(-3) == 0
+        assert "enable_gqa" not in kwargs
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gqa_sdpa_uses_native_gqa_when_backend_supports_it(monkeypatch):
+    query = torch.randn(1, 4, 5, 3)
+    key = torch.randn(1, 2, 5, 3)
+    value = torch.randn(1, 2, 5, 3)
+    module = _Gemma2Attention()
+    module.num_key_value_groups = 2
+    calls = []
+    real_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+    def record_sdpa(q, k, v, **kwargs):
+        calls.append((k, v, kwargs))
+        return real_sdpa(q, k, v, **kwargs)
+
+    monkeypatch.setattr(attention_components, "_can_use_native_gqa", lambda *args: True)
+    monkeypatch.setattr(
+        torch.nn.functional, "scaled_dot_product_attention", record_sdpa
+    )
+
+    output, _ = vmap_sdpa_attention_forward(
+        module, query, key, value, None, scaling=0.5
+    )
+    expected = real_sdpa(query, key, value, scale=0.5, enable_gqa=True).transpose(
+        -3, -2
+    )
+
+    torch.testing.assert_close(output, expected)
+    assert len(calls) == 1
+    seen_key, seen_value, kwargs = calls[0]
+    assert seen_key is key
+    assert seen_value is value
+    assert kwargs["enable_gqa"] is True
+
+
+@pytest.mark.cuda
+def test_native_gqa_eligibility_uses_gqa_backend_parameters():
+    device = torch.device("cuda")
+    query = torch.randn(1, 4, 128, 64, device=device, dtype=torch.bfloat16)
+    key = torch.randn(1, 2, 128, 64, device=device, dtype=torch.bfloat16)
+    value = torch.randn_like(key)
+    params = torch.backends.cuda.SDPAParams(query, key, value, None, 0.0, False, True)
+    if not torch.backends.cuda.can_use_flash_attention(params):
+        pytest.skip("This CUDA device cannot run native Flash GQA")
+
+    assert attention_components._can_use_native_gqa(query, key, value, None, 0.0, False)
+
+
+def test_gqa_sdpa_supports_vmap_grad():
+    torch.manual_seed(0)
+    query = torch.randn(3, 4, 5, 3)
+    key = torch.randn(3, 2, 5, 3)
+    value = torch.randn(3, 2, 5, 3)
+    module = _Gemma2Attention()
+    module.num_key_value_groups = 2
+
+    def loss(q, k, v):
+        output, _ = vmap_sdpa_attention_forward(module, q, k, v, None, scaling=0.5)
+        return output.square().sum()
+
+    def reference_loss(q, k, v):
+        output = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k.repeat_interleave(2, dim=-3),
+            v.repeat_interleave(2, dim=-3),
+            scale=0.5,
+        )
+        return output.square().sum()
+
+    actual = torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(query, key, value)
+    expected = torch.vmap(torch.func.grad(reference_loss, argnums=(0, 1, 2)))(
+        query, key, value
+    )
+    for actual_grad, expected_grad in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_gqa_eager_attention_matches_reference_without_repeat_kv(monkeypatch):
+    torch.manual_seed(0)
+    query = torch.randn(1, 4, 5, 3, requires_grad=True)
+    key = torch.randn(1, 2, 5, 3, requires_grad=True)
+    value = torch.randn(1, 2, 5, 3, requires_grad=True)
+    attention_mask = torch.ones(1, 1, 5, 5, dtype=torch.bool).tril_()
+    module = _Gemma2Attention()
+    module.num_key_value_groups = 2
+    module.train()
+
+    monkeypatch.setattr(
+        attention_components,
+        "vmap_repeat_kv",
+        lambda *args, **kwargs: pytest.fail("GQA must not call repeat_kv"),
+    )
+    output, weights = vmap_eager_attention_forward(
+        module, query, key, value, attention_mask, scaling=0.5
+    )
+
+    repeated_key = key.repeat_interleave(2, dim=-3)
+    repeated_value = value.repeat_interleave(2, dim=-3)
+    expected_weights = torch.softmax(
+        (query @ repeated_key.transpose(-2, -1) * 0.5).masked_fill(
+            ~attention_mask, torch.finfo(query.dtype).min
+        ),
+        dim=-1,
+    )
+    expected = (expected_weights @ repeated_value).transpose(-3, -2)
+    torch.testing.assert_close(output, expected)
+    torch.testing.assert_close(weights, expected_weights)
+
+    actual_grads = torch.autograd.grad(output.square().sum(), (query, key, value))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (query, key, value))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
 def test_sliding_window_sdpa_matches_dense_reference_without_full_mask(monkeypatch):
-    query = torch.randn(1, 2, 5, 3, requires_grad=True)
+    query = torch.randn(1, 4, 5, 3, requires_grad=True)
     key = torch.randn(1, 2, 5, 3, requires_grad=True)
     value = torch.randn(1, 2, 5, 3, requires_grad=True)
     sliding_window = 3
     dense_mask = torch.ones((5, 5), dtype=torch.bool).tril_()
     dense_mask.triu_(diagonal=1 - sliding_window)
     expected = torch.nn.functional.scaled_dot_product_attention(
-        query, key, value, attn_mask=dense_mask, scale=0.7
+        query,
+        key.repeat_interleave(2, dim=-3),
+        value.repeat_interleave(2, dim=-3),
+        attn_mask=dense_mask,
+        scale=0.7,
     )
     mask_shapes = []
     real_sdpa = torch.nn.functional.scaled_dot_product_attention
@@ -304,15 +484,30 @@ def test_gemma2_softcap_sdpa_preserves_grouped_query_attention(monkeypatch):
     module = _Gemma2Attention()
     module.num_key_value_groups = 2
 
-    output, _ = vmap_sdpa_attention_forward_gemma2(
-        module,
-        query,
-        key,
-        value,
-        attention_mask,
-        scaling=0.5,
-        softcap=1.5,
+    monkeypatch.setattr(
+        attention_components,
+        "vmap_repeat_kv",
+        lambda *args, **kwargs: pytest.fail("GQA must not call repeat_kv"),
     )
+    saved_tensors = []
+
+    def record_saved(tensor):
+        saved_tensors.append(tensor)
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(record_saved, lambda tensor: tensor):
+        output, _ = vmap_sdpa_attention_forward_gemma2(
+            module,
+            query,
+            key,
+            value,
+            attention_mask,
+            scaling=0.5,
+            softcap=1.5,
+        )
+
+    assert any(tensor is key for tensor in saved_tensors)
+    assert any(tensor is value for tensor in saved_tensors)
 
     ref_query = query.detach().requires_grad_()
     ref_key = key.detach().requires_grad_()
@@ -368,11 +563,12 @@ def test_gemma2_softcap_sdpa_keeps_nonzero_training_dropout_fallback(monkeypatch
 
 def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
     monkeypatch.setattr(attention_components, "_GEMMA2_QUERY_CHUNK", 2)
-    query, key, value = _gemma2_softcap_inputs()
-    query = torch.cat((query, query * 0.5), dim=0)
-    key = torch.cat((key, key * 1.5), dim=0)
-    value = torch.cat((value, value * 0.75), dim=0)
+    torch.manual_seed(0)
+    query = torch.randn(2, 4, 5, 3)
+    key = torch.randn(2, 2, 5, 3)
+    value = torch.randn(2, 2, 5, 3)
     module = _Gemma2Attention()
+    module.num_key_value_groups = 2
     module.is_causal = True
 
     def loss(q, k, v):
@@ -382,7 +578,13 @@ def test_gemma2_softcap_sdpa_supports_vmap_grad(monkeypatch):
         return output.square().sum()
 
     def reference_loss(q, k, v):
-        output, _ = _expected_gemma2_softcap_attention(q, k, v, 1.0, is_causal=True)
+        output, _ = _expected_gemma2_softcap_attention(
+            q,
+            k.repeat_interleave(2, dim=-3),
+            v.repeat_interleave(2, dim=-3),
+            1.0,
+            is_causal=True,
+        )
         return output.square().sum()
 
     actual = torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(query, key, value)
@@ -446,6 +648,63 @@ def _cuda_peak_delta(fn):
     gc.collect()
     torch.cuda.empty_cache()
     return peak
+
+
+@pytest.mark.cuda
+def test_gqa_sdpa_reduces_cuda_peak_memory():
+    device = torch.device("cuda")
+    dtype = torch.bfloat16
+    sequence_length = 2048
+    query_heads = 32
+    key_value_heads = 8
+    head_dim = 128
+    query = torch.randn(
+        1,
+        query_heads,
+        sequence_length,
+        head_dim,
+        device=device,
+        dtype=dtype,
+    )
+    key = torch.randn(
+        1,
+        key_value_heads,
+        sequence_length,
+        head_dim,
+        device=device,
+        dtype=dtype,
+    )
+    value = torch.randn_like(key)
+    module = _Gemma2Attention().eval()
+    module.num_key_value_groups = query_heads // key_value_heads
+
+    def grouped():
+        return vmap_sdpa_attention_forward(
+            module, query, key, value, None, scaling=None
+        )
+
+    def repeated():
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key.repeat_interleave(module.num_key_value_groups, dim=-3),
+            value.repeat_interleave(module.num_key_value_groups, dim=-3),
+        )
+
+    grouped_peak = _cuda_peak_delta(grouped)
+    repeated_peak = _cuda_peak_delta(repeated)
+    eliminated_kv_bytes = (
+        2
+        * (query_heads - key_value_heads)
+        * sequence_length
+        * head_dim
+        * query.element_size()
+    )
+
+    assert repeated_peak - grouped_peak > eliminated_kv_bytes * 0.5, (
+        f"Expected at least half the expanded K/V allocation to disappear; "
+        f"grouped={grouped_peak / 2**20:.1f} MiB, "
+        f"repeated={repeated_peak / 2**20:.1f} MiB"
+    )
 
 
 @pytest.mark.cuda
