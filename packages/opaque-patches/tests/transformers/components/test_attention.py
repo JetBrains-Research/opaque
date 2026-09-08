@@ -505,6 +505,7 @@ def test_gemma2_softcap_sdpa_applies_sliding_window_without_dense_mask(monkeypat
 
 
 def test_gemma2_softcap_dispatches_eligible_triton_kernel(monkeypatch):
+    monkeypatch.setattr(attention_components, "_TRITON_SOFTCAP_MIN_SEQUENCE", 1)
     module = _Gemma2Attention()
     module.is_causal = True
     query = torch.randn(1, 2, 6, 3)

@@ -16,6 +16,9 @@ _ATTENTION_FALLBACK_WORKSPACE_BYTES = 256 * _MIB
 _ATTENTION_MAX_WORKSPACE_BYTES = 512 * _MIB
 _ATTENTION_FREE_MEMORY_FRACTION = 0.125
 _ATTENTION_CHUNK_CANDIDATES = (1024, 512, 256, 128, 64, 32, 16, 1)
+# At short lengths Triton's launch workspace exceeds Gemma2's dense score matrix.
+_TRITON_SOFTCAP_MIN_SEQUENCE = 2048
+_CUDA_SOFTCAP_FALLBACK_MAX_CHUNK = 64
 # Test-only overrides; production always uses the workspace planner.
 _GEMMA2_QUERY_CHUNK: int | None = None
 _SDPA_QUERY_CHUNK: int | None = None
@@ -83,8 +86,13 @@ def _attention_query_chunk_size(
     score_bytes = 12 if softcap else max(4, query.element_size() * 2)
     backend_multiplier = 2 if query.device.type in {"cpu", "mps"} else 1
     budget = _attention_workspace_budget_bytes(query.device)
+    candidates = _ATTENTION_CHUNK_CANDIDATES
+    if softcap and query.device.type == "cuda":
+        candidates = tuple(
+            chunk for chunk in candidates if chunk <= _CUDA_SOFTCAP_FALLBACK_MAX_CHUNK
+        )
 
-    for chunk in _ATTENTION_CHUNK_CANDIDATES:
+    for chunk in candidates:
         chunk = min(chunk, query_length)
         key_extent = (
             min(key.shape[-2], sliding_window + chunk - 1)
@@ -972,14 +980,18 @@ def vmap_sdpa_attention_forward_gemma2(
         if not module.training or dropout == 0.0:
             kernel_window = sliding_window or query.shape[-2]
             padding_mask = attention_mask if compact_padding else None
-            if is_causal and _can_use_triton_sliding_window_attention(
-                query,
-                key,
-                value,
-                padding_mask,
-                kernel_window,
-                scaling,
-                softcap,
+            if (
+                is_causal
+                and query.shape[-2] >= _TRITON_SOFTCAP_MIN_SEQUENCE
+                and _can_use_triton_sliding_window_attention(
+                    query,
+                    key,
+                    value,
+                    padding_mask,
+                    kernel_window,
+                    scaling,
+                    softcap,
+                )
             ):
                 attn_output = _triton_sliding_window_attention(
                     query,
