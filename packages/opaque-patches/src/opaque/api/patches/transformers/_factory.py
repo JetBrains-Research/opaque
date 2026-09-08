@@ -31,6 +31,7 @@ from opaque.api.patches.transformers._router import (
 )
 from opaque.api.patches.transformers.components.batchify import apply_batchify_patch
 from opaque.api.patches.transformers.components.cross_entropy import (
+    _fused_linear_ce_supports_class,
     _make_fused_ce_causal_lm_forward,
     apply_causal_lm_loss_function_patch,
 )
@@ -379,6 +380,7 @@ def make_apply_model_patches(
             (fused_linear_cross_entropy or chunked_linear_ce)
             and kwargs.get("fused_linear_cross_entropy", False)
             and causal_lm_obj is not None
+            and _fused_linear_ce_supports_class(causal_lm_obj)
         ):
             linear_ce_factory = _make_fused_ce_causal_lm_forward
             if chunked_linear_ce:

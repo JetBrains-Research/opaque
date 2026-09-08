@@ -808,19 +808,50 @@ class DPTrainer:
         custom model. Non-HF ``nn.Module`` models log a warning and remain
         supported.
         """
+        self._fused_forward_uses_marker = False
         try:
             from opaque.patches import apply_model_patches
         except ImportError:
             log.debug("opaque.patches unavailable; skipping model patches.")
             return
 
-        kwargs = self.args.performance_kernels_config or {}
+        kwargs = dict(self.args.performance_kernels_config or {})
+        # The wrapper is inert unless a caller explicitly marks a loss-only
+        # forward, so DPTrainer can install it automatically while preserving an
+        # explicit False opt-out. Direct apply_model_patches callers remain
+        # opt-in through that API's own default.
+        kwargs.setdefault("fused_linear_cross_entropy", True)
         apply_model_patches(
             self._model,
             compat=bool(self.args.use_compat_patches),
             performance=True,
             kernels=bool(self.args.use_performance_kernels),
             **kwargs,
+        )
+
+        def accepts_marker(module: Any, *, allow_var_kwargs: bool) -> bool:
+            try:
+                parameters = inspect.signature(module.forward).parameters.values()
+            except (TypeError, ValueError):
+                return False
+            return any(
+                parameter.name == "opaque_fused_loss_only"
+                or (
+                    allow_var_kwargs and parameter.kind is inspect.Parameter.VAR_KEYWORD
+                )
+                for parameter in parameters
+            )
+
+        # A PEFT wrapper commonly accepts **kwargs while only its nested causal-LM
+        # module carries the actual fused forward. Require both facts so an
+        # unsupported custom model never receives an unknown marker.
+        self._fused_forward_uses_marker = bool(
+            kwargs["fused_linear_cross_entropy"]
+            and accepts_marker(self._model, allow_var_kwargs=True)
+            and any(
+                accepts_marker(module, allow_var_kwargs=False)
+                for module in self._model.modules()
+            )
         )
 
     def _setup_precision(self) -> None:
@@ -2354,6 +2385,12 @@ class DPTrainer:
         # the kwarg but the trainer-side rebuild below corrects that.
         if smoothing > 0.0:
             inputs = {**inputs, "label_smoothing": smoothing}
+        if (
+            not return_logits
+            and self._compute_loss_func is None
+            and self._fused_forward_uses_marker
+        ):
+            inputs = {**inputs, "opaque_fused_loss_only": True}
 
         output = fmodel(params, **inputs)
         # Output is required to be dict-like (``ModelOutput`` /
@@ -2601,6 +2638,9 @@ class DPTrainer:
         # path; users who want ``compute_loss_func`` honoured at eval set
         # ``include_for_metrics=["loss"]`` to take the per-example path
         # above.
+        forward_inputs = {**model_inputs, **labels_kwargs}
+        if prediction_loss_only and has_labels and self._fused_forward_uses_marker:
+            forward_inputs["opaque_fused_loss_only"] = True
         with torch.no_grad():
             was_training = self._model.training
             if was_training:
@@ -2608,11 +2648,9 @@ class DPTrainer:
             try:
                 if self._ctx is not None:
                     merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
-                    output = self._ctx.fmodel(
-                        merged, **{**model_inputs, **labels_kwargs}
-                    )
+                    output = self._ctx.fmodel(merged, **forward_inputs)
                 else:
-                    output = model(**{**model_inputs, **labels_kwargs})
+                    output = model(**forward_inputs)
             finally:
                 if was_training:
                     self._model.train()

@@ -39,10 +39,11 @@ def _eager_mean(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    logit_scale=1.0,
 ):
     """Materialized, vmap-safe reference matching the kernel's math + reduction."""
     sc = logit_softcapping or None
-    flat = _softcap(hidden[..., :-1, :] @ weight.transpose(-1, -2), sc)
+    flat = _softcap((hidden[..., :-1, :] @ weight.transpose(-1, -2)) * logit_scale, sc)
     flat = flat.reshape(-1, weight.shape[0])
     t = labels[..., 1:].reshape(-1)
     valid = t != ignore_index
@@ -66,6 +67,7 @@ _FEATURES = [
     pytest.param({"logit_softcapping": 30.0}, id="softcap"),
     pytest.param({"label_smoothing": 0.1}, id="label_smoothing"),
     pytest.param({"use_token_scaling": True}, id="token_scaling"),
+    pytest.param({"logit_scale": 0.25, "logit_softcapping": 30.0}, id="scaled_softcap"),
 ]
 
 

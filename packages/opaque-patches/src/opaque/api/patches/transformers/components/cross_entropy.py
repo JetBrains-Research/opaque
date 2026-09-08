@@ -123,6 +123,7 @@ _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.llama.modeling_llama", "LlamaForCausalLM"),
     ("transformers.models.mistral.modeling_mistral", "MistralForCausalLM"),
     ("transformers.models.ministral.modeling_ministral", "MinistralForCausalLM"),
+    ("transformers.models.mellum.modeling_mellum", "MellumForCausalLM"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2ForCausalLM"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3ForCausalLM"),
     ("transformers.models.smollm3.modeling_smollm3", "SmolLM3ForCausalLM"),
@@ -137,6 +138,14 @@ _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.gemma3.modeling_gemma3", "Gemma3ForCausalLM"),
     ("transformers.models.exaone4.modeling_exaone4", "Exaone4ForCausalLM"),
 ]
+
+
+def _fused_linear_ce_supports_class(target_cls: type[nn.Module]) -> bool:
+    """Whether the generic fused forward matches this causal-LM structure."""
+    identity = (target_cls.__module__, target_cls.__name__)
+    return identity in _FUSED_CE_CAUSAL_LM or not target_cls.__module__.startswith(
+        "transformers.models."
+    )
 
 
 def _fused_linear_ce_loss_is_supported(
@@ -297,17 +306,18 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
             weight = self.lm_head.weight
 
-            # Cohere-style multiplicative logit scaling: logits * scale
-            logit_scale = getattr(self.config, "logit_scale", None)
-            if logit_scale is not None and logit_scale != 1.0:
-                weight = weight * logit_scale
-
-            # Granite divisive scaling: logits / logits_scaling
-            # Applied to weight before kernel (same as Cohere) so autograd
-            # correctly chains the gradient back to the original weight.
-            logits_scaling = getattr(self.config, "logits_scaling", None)
-            if logits_scaling is not None and logits_scaling != 1.0:
-                weight = weight / logits_scaling
+            # Keep family scaling scalar so a large transformed head is never
+            # materialized. The kernels apply it to each logits tile and include
+            # it in the hidden/head gradient chain rule.
+            configured_logit_scale = getattr(self.config, "logit_scale", None)
+            configured_logits_scaling = getattr(self.config, "logits_scaling", None)
+            logit_scale = float(
+                1.0 if configured_logit_scale is None else configured_logit_scale
+            )
+            logits_scaling = float(
+                1.0 if configured_logits_scaling is None else configured_logits_scaling
+            )
+            logit_scale /= logits_scaling
 
             # Gemma2 softcapping: softcap * tanh(logits / softcap)
             softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
@@ -323,6 +333,7 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
                 softcap,
                 label_smoothing,
                 False,  # use_token_scaling: plain CE for the LM-head loss
+                logit_scale,
             )
             if use_chunked_ce:
                 chunk_vocab = (

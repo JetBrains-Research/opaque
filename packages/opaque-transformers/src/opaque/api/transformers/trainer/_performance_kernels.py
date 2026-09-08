@@ -5,8 +5,9 @@ DPTrainer drives opaque-patches via two split umbrellas:
 * ``use_compat_patches`` → ``compat`` (vmap-safety: ``eager_attention``,
   ``batchify``, vmap-safe masking / collator / checkpoint hooks).
 * ``use_performance_kernels`` → ``kernels`` (CUDA + Triton kernel group:
-  ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``, and the
-  opt-in ``fused_linear_cross_entropy``).
+  ``rope``, ``rms_norm``, ``activation``, and ``cross_entropy``).
+* ``fused_linear_cross_entropy`` installs automatically under ``DPTrainer``
+  but activates only for calls known to be loss-only; explicit ``False`` opts out.
 
 The ``performance`` bucket — currently only ``kv_cache`` — stays on by
 default regardless of ``use_performance_kernels``: ``kv_cache`` is a pure
@@ -17,8 +18,9 @@ it) opt out explicitly via ``performance_kernels_config={"kv_cache":
 False}``.
 
 ``performance_kernels_config`` is a flat ``dict[str, bool | int]`` forwarded
-as-is to ``opaque.patches.apply_model_patches`` kwargs — no key
-translation.  Supported keys mirror the opaque-patches surface:
+without key translation. `DPTrainer` supplies the automatic
+``fused_linear_cross_entropy=True`` default only when that key is absent.
+Supported keys mirror the opaque-patches surface:
 ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
 ``fused_linear_cross_entropy``, ``chunked_linear_cross_entropy``, ``kv_cache``,
 ``eager_attention``, ``batchify``. The chunked setting accepts a positive

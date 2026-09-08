@@ -66,6 +66,7 @@ def _stream_lse(
     targets,
     softcap,
     chunks,
+    logit_scale=1.0,
     need_logit_target=True,
     need_sum_logits=False,
 ):
@@ -94,7 +95,9 @@ def _stream_lse(
         lo, hi = c * Vc, min((c + 1) * Vc, V)
         if lo >= hi:
             break
-        lc = _softcap(_linear_chunk(e, weight[lo:hi]), softcap)  # (N, hi-lo)
+        lc = _softcap(
+            _linear_chunk(e, weight[lo:hi]) * logit_scale, softcap
+        )  # (N, hi-lo)
         cmax = torch.maximum(m, lc.max(-1).values)
         s = s * torch.exp(m - cmax) + torch.exp(lc - cmax[:, None]).sum(-1)
         m = cmax
@@ -143,6 +146,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
         logit_softcapping=0,
         label_smoothing=0.0,
         use_token_scaling=False,
+        logit_scale=1.0,
         chunk_vocab=None,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
@@ -152,6 +156,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
             targets,
             softcap,
             _num_chunks(weight.shape[0], chunk_vocab),
+            logit_scale,
             need_sum_logits=float(label_smoothing) != 0.0,
         )
         loss = _per_token_loss(
@@ -174,6 +179,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
             logit_softcapping,
             label_smoothing,
             use_token_scaling,
+            logit_scale,
             chunk_vocab,
         ) = inputs
         _, lse, token_weight = output
@@ -182,6 +188,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.label_smoothing = float(label_smoothing)
         ctx.use_token_scaling = bool(use_token_scaling)
+        ctx.logit_scale = float(logit_scale)
         ctx.chunk_vocab = chunk_vocab
 
     @staticmethod
@@ -216,7 +223,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
             if lo >= hi:
                 break
             wc = weight[lo:hi] if low_precision_linear else weight[lo:hi].to(cdt)
-            lc = _softcap(_linear_chunk(ef, wc), softcap)
+            lc = _softcap(_linear_chunk(ef, wc) * ctx.logit_scale, softcap)
             p = torch.exp(lc - lse[:, None])  # softmax chunk
             sel = (targets >= lo) & (targets < hi)
             idx = (targets - lo).clamp(0, hi - lo - 1)
@@ -228,6 +235,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
             gl = p
             if softcap is not None:
                 gl.mul_(1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
+            gl.mul_(ctx.logit_scale)
             gl.mul_(row[:, None])
             linear_grad = gl.to(e.dtype) if low_precision_linear else gl
             grad_e = grad_e + (linear_grad @ wc).to(cdt)
@@ -235,7 +243,7 @@ class _ChunkedLinearCE(torch.autograd.Function):
                 w_chunks.append(linear_grad.t() @ ef)
         grad_e = grad_e.to(e.dtype)
         grad_w = torch.cat(w_chunks, dim=0).to(weight.dtype) if compute_dc else None
-        return grad_e, grad_w, None, None, None, None, None
+        return grad_e, grad_w, None, None, None, None, None, None
 
 
 def linear_nll_sum_chunked(
@@ -246,6 +254,7 @@ def linear_nll_sum_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    logit_scale=1.0,
     chunk_vocab=None,
 ):
     """Unreduced NLL sum over non-ignored tokens.
@@ -263,6 +272,7 @@ def linear_nll_sum_chunked(
         logit_softcapping,
         label_smoothing,
         use_token_scaling,
+        logit_scale,
         chunk_vocab,
     )
     valid = targets != ignore_index
@@ -277,6 +287,7 @@ def linear_cross_entropy_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    logit_scale=1.0,
     chunk_vocab=None,
 ):
     """Mean-reduced chunked linear CE — matches ``opaque_linear_cross_entropy_loss``.
@@ -291,6 +302,7 @@ def linear_cross_entropy_chunked(
         logit_softcapping,
         label_smoothing,
         use_token_scaling,
+        logit_scale,
         chunk_vocab,
     )
     targets = labels[..., 1:].contiguous().flatten()

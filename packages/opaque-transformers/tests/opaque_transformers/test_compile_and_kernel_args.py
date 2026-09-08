@@ -306,6 +306,7 @@ def test_use_performance_kernels_default_keeps_kv_cache_and_compat_on(
     assert calls[0]["kwargs"]["performance"] is True
     assert calls[0]["kwargs"]["kernels"] is False
     assert calls[0]["kwargs"]["compat"] is True
+    assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
 
 
 def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatch):
@@ -355,6 +356,24 @@ def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeyp
     assert calls[0]["kwargs"]["rms_norm"] is True
     assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
     assert calls[0]["kwargs"]["chunked_linear_cross_entropy"] == 2048
+
+
+def test_performance_kernels_config_can_disable_automatic_fused_loss(
+    tmp_path, monkeypatch
+):
+    calls: list[dict] = []
+
+    def _spy(model, **kwargs):
+        calls.append({"kwargs": kwargs})
+
+    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+
+    trainer, _model = _tiny_trainer(
+        tmp_path,
+        performance_kernels_config={"fused_linear_cross_entropy": False},
+    )
+    assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is False
+    assert trainer._fused_forward_uses_marker is False
 
 
 def test_performance_kernels_config_can_disable_kv_cache(tmp_path, monkeypatch):

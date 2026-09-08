@@ -23,6 +23,28 @@ class _LogitsOnlyModel(torch.nn.Module):
         return {"logits": self.linear(x)}
 
 
+class _FusedAwareModel(torch.nn.Module):
+    main_input_name = "x"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(4, 2)
+        self.fused_requests: list[bool] = []
+
+    def forward(self, x, labels=None, opaque_fused_loss_only=False):
+        self.fused_requests.append(opaque_fused_loss_only)
+        logits = self.linear(x)
+        loss = (
+            torch.nn.functional.cross_entropy(logits, labels)
+            if labels is not None
+            else None
+        )
+        return {
+            "loss": loss,
+            "logits": None if opaque_fused_loss_only else logits,
+        }
+
+
 class _StopOnInitCallback(TrainerCallback):
     def on_init_end(self, args, state, control, **kwargs):
         control.should_training_stop = True
@@ -148,6 +170,120 @@ def test_full_determinism_uses_hf_deterministic_seed_helper(tmp_path, monkeypatc
     )
 
     assert calls == [("full", 123)]
+
+
+def test_supported_causal_lm_installs_inert_fused_wrapper_automatically(tmp_path):
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    config = LlamaConfig(
+        vocab_size=32,
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        max_position_embeddings=32,
+    )
+    config._attn_implementation = "eager"
+    trainer = DPTrainer(model=LlamaForCausalLM(config), args=_args(tmp_path))
+    input_ids = torch.randint(0, config.vocab_size, (1, 6))
+
+    eager = trainer.model(input_ids=input_ids, labels=input_ids, return_dict=True)
+    fused = trainer.model(
+        input_ids=input_ids,
+        labels=input_ids,
+        return_dict=True,
+        opaque_fused_loss_only=True,
+    )
+
+    assert trainer._fused_forward_uses_marker is True
+    assert eager.logits is not None
+    assert fused.logits is None
+    assert torch.allclose(fused.loss, eager.loss, atol=1e-4, rtol=1e-4)
+
+
+def test_unsupported_causal_lm_does_not_install_generic_fused_wrapper(tmp_path):
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    config = GPT2Config(
+        vocab_size=32,
+        n_embd=16,
+        n_layer=1,
+        n_head=2,
+        n_positions=32,
+    )
+    trainer = DPTrainer(model=GPT2LMHeadModel(config), args=_args(tmp_path))
+    input_ids = torch.randint(0, config.vocab_size, (1, 6))
+
+    output = trainer.model(input_ids=input_ids, labels=input_ids, return_dict=True)
+
+    assert trainer._fused_forward_uses_marker is False
+    assert output.logits is not None
+    assert output.loss is not None
+
+
+def test_model_native_per_example_loss_requests_fused_loss_only(tmp_path):
+    trainer = DPTrainer(model=_FusedAwareModel(), args=_args(tmp_path))
+    requests = []
+
+    def fmodel(params, **inputs):
+        del params
+        requests.append(inputs.get("opaque_fused_loss_only", False))
+        logits = torch.tensor([2.0, -1.0])
+        return {"loss": logits.sum(), "logits": logits}
+
+    inputs = {"x": torch.zeros(4), "labels": torch.tensor(0)}
+    loss = trainer.compute_per_example_loss(fmodel, {}, inputs)
+    loss_with_logits, logits = trainer.compute_per_example_loss(
+        fmodel, {}, inputs, return_logits=True
+    )
+
+    assert requests == [True, False]
+    assert torch.equal(loss, loss_with_logits)
+    assert logits is not None
+
+
+def test_custom_per_example_loss_keeps_logits_available(tmp_path):
+    trainer = DPTrainer(
+        model=_FusedAwareModel(),
+        args=_args(tmp_path),
+        compute_loss_func=lambda output, labels: output["logits"].sum() + labels * 0,
+    )
+    requests = []
+
+    def fmodel(params, **inputs):
+        del params
+        requests.append(inputs.get("opaque_fused_loss_only", False))
+        logits = torch.tensor([2.0, -1.0])
+        return {"loss": logits.sum(), "logits": logits}
+
+    trainer.compute_per_example_loss(
+        fmodel, {}, {"x": torch.zeros(4), "labels": torch.tensor(0)}
+    )
+
+    assert requests == [False]
+
+
+def test_prediction_step_requests_fused_loss_only_only_without_predictions(tmp_path):
+    model = _FusedAwareModel()
+    trainer = DPTrainer(model=model, args=_args(tmp_path))
+    batch = {"x": torch.randn(2, 4), "labels": torch.tensor([0, 1])}
+
+    loss, predictions, labels = trainer.prediction_step(
+        model, dict(batch), prediction_loss_only=True
+    )
+    assert loss is not None
+    assert predictions is None
+    assert labels is None
+    assert model.fused_requests == [True]
+
+    loss, predictions, labels = trainer.prediction_step(
+        model, dict(batch), prediction_loss_only=False
+    )
+    assert loss is not None
+    assert predictions is not None
+    assert labels is not None
+    assert model.fused_requests == [True, False]
 
 
 def test_label_smoothing_recomputes_loss_from_logits_for_vector_case(tmp_path):
