@@ -195,6 +195,19 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
 # Participation samplers require restoring their saved cursor.
 _CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
 
+# MoE router-load release (``router_load_release``).  ``"off"`` keeps the
+# trainer on the plain per-example path; the other modes add a zero probe
+# parameter whose noised gradient releases the token-weighted centred
+# router load of the batch (see :mod:`opaque.api.transformers.moe_load`).
+_ROUTER_LOAD_MODES: tuple[str, ...] = (
+    "off",
+    "monitor",
+    "surrogate",
+    "monitor_then_surrogate",
+)
+_ROUTER_LOAD_FILTER_KINDS: tuple[str, ...] = ("ema", "window")
+_ROUTER_AUX_KINDS: tuple[str, ...] = ("pooled", "per_layer", "per_sequence")
+
 # Per-mechanism kwargs defaults auto-filled into
 # ``privacy_noise_mechanism_kwargs`` when the user leaves them blank.
 # Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
@@ -514,6 +527,87 @@ class TrainingArguments:
     # arbitrary weights (public-data warmup, an HF checkpoint, a pretrained
     # model), load them at construction via ``model=...`` — the run begins
     # with a zero accountant.
+
+    # =================================================================
+    # MoE router-load release (mixture-of-experts load balancing under DP)
+    # =================================================================
+    #: ``"off"`` (default) trains without any router-load term.  ``"monitor"``
+    #: releases the batch router load through a zero probe parameter and logs
+    #: the imbalance monitor ``router_load/*`` without touching the objective.
+    #: ``"surrogate"`` additionally adds the per-example load-balancing
+    #: surrogate (Switch-Transformer aux loss at the public load estimate)
+    #: with coefficient :attr:`router_aux_loss_coef`.
+    #: ``"monitor_then_surrogate"`` starts as ``"monitor"`` and switches the
+    #: surrogate on once the monitor exceeds :attr:`router_load_trip` on two
+    #: consecutive logged evaluations.  Any mode other than ``"off"`` requires
+    #: ``clipping_mode="fixed"``, a finite ``clipping_norm``, a model family
+    #: whose backbone records router logits, and the chunked causal-LM forward
+    #: (``fused_linear_cross_entropy``, enabled automatically).  The release
+    #: rides on the same per-group Gaussian or matrix mechanism as the
+    #: gradient, so the privacy accountant is unchanged; the price is a
+    #: ``sqrt(1 + router_load_ratio)`` inflation of the gradient noise.
+    router_load_release: str = "off"
+    #: Budget share ``rho = C_h / C_g`` of the probe group relative to the
+    #: gradient clipping bound.  ``0.02`` is the preset-regime default; larger
+    #: values give a less noisy load estimate at a larger gradient-noise
+    #: inflation.
+    router_load_ratio: float = 0.02
+    #: Surrogate coefficient ``alpha``.  ``None`` reads the model config's
+    #: ``router_aux_loss_coef`` in the surrogate modes and means ``0`` in
+    #: ``"monitor"``.
+    router_aux_loss_coef: float | None = None
+    #: Public token-count constant ``T_bar`` of the per-example weight
+    #: ``w_x = T_x / T_bar``.  ``None`` uses :attr:`router_load_max_tokens`.
+    #: A measured mean length of a public held-out split makes the surrogate
+    #: direction exact in expectation on ragged data.
+    router_load_mean_tokens: int | None = None
+    #: Public row length ``T_max`` (an upper bound on the valid tokens of any
+    #: example).  ``None`` resolves to the trainer's ``max_length`` argument
+    #: when the trainer has one (SFT / DPO), otherwise to the model config's
+    #: ``max_position_embeddings``.  Rows longer than this bound raise.
+    router_load_max_tokens: int | None = None
+    #: Smoothing filter of the released load stream: ``"ema"`` (bias-corrected
+    #: exponential moving average with :attr:`router_load_filter_beta`) or
+    #: ``"window"`` (mean of the last :attr:`router_load_filter_window`
+    #: releases).
+    router_load_filter_kind: str = "ema"
+    #: EMA coefficient of the ``"ema"`` filter.
+    router_load_filter_beta: float = 0.99
+    #: Window length of the ``"window"`` filter.
+    router_load_filter_window: int = 256
+    #: Apply the dead zone and the positive-part James-Stein shrinkage to the
+    #: smoothed estimate before it enters the surrogate.
+    router_load_shrink: bool = True
+    #: Dead-zone constant ``c``: the smoothed deviation is treated as zero when
+    #: its squared norm is below ``c * E * s_t^2`` (``s_t`` the known noise
+    #: std of the estimate).
+    router_load_dead_zone: float = 2.0
+    #: Monitor threshold ``tau`` on ``router_load/D`` (largest relative
+    #: deviation of an expert's load from its share ``k/E``).  Exceeding it on
+    #: two consecutive logged evaluations sets ``router_load/tripped`` and, in
+    #: ``"monitor_then_surrogate"``, switches the surrogate on.
+    router_load_trip: float = 0.5
+    #: Form of the surrogate: ``"pooled"`` (the Hugging Face objective at the
+    #: public pooled load estimate), ``"per_sequence"`` (the example's own
+    #: load ``h(x)`` replaces the public estimate: no release is needed but it
+    #: is a different regulariser), ``"per_layer"`` (not supported yet).
+    router_aux: str = "pooled"
+    #: Router z-loss coefficient (ST-MoE); ``0`` disables the term.  It is
+    #: per-token separable and adds no privacy cost.
+    router_z_loss_coef: float = 0.0
+    #: Bind an fp32-logit forward on the family's router modules (the
+    #: precision Mellum 2.0 was pretrained with): exact ties disappear and the
+    #: logits handed to the load statistics are the executed ones.  Off by
+    #: default because adapters served through stock Hugging Face run bf16
+    #: routes.
+    router_fp32: bool = False
+    #: Public statement that every collated row is fully valid (packed
+    #: sequences, no padding).  ``True`` lets the attention mask take its
+    #: all-valid fast path without probing the batch; ``False`` always
+    #: materialises the mask.  ``None`` keeps the runtime's default probe, or,
+    #: with the router-load release on, behaves as ``False`` so no kernel
+    #: choice depends on the private batch content.
+    packed_sequences: bool | None = None
 
     # =================================================================
     # Preemption
@@ -918,6 +1012,8 @@ class TrainingArguments:
                 )
             )
 
+        self._validate_router_load_fields()
+
         # Idempotency sentinel.
         self._dp_post_init_done = True
 
@@ -1037,6 +1133,118 @@ class TrainingArguments:
             self.report_to = []
         elif not isinstance(self.report_to, list):
             self.report_to = [self.report_to]
+
+    def _validate_router_load_fields(self) -> None:
+        """Validate the MoE router-load release fields."""
+        if self.router_load_release not in _ROUTER_LOAD_MODES:
+            raise ConfigurationError(
+                *(
+                    f"router_load_release={self.router_load_release!r}; expected "
+                    f"one of {_ROUTER_LOAD_MODES}.",
+                )
+            )
+        if self.router_load_filter_kind not in _ROUTER_LOAD_FILTER_KINDS:
+            raise ConfigurationError(
+                *(
+                    f"router_load_filter_kind={self.router_load_filter_kind!r}; "
+                    f"expected one of {_ROUTER_LOAD_FILTER_KINDS}.",
+                )
+            )
+        if self.router_aux not in _ROUTER_AUX_KINDS:
+            raise ConfigurationError(
+                *(
+                    f"router_aux={self.router_aux!r}; expected one of "
+                    f"{_ROUTER_AUX_KINDS}.",
+                )
+            )
+        if self.packed_sequences is not None and not isinstance(
+            self.packed_sequences, bool
+        ):
+            raise InputTypeError(
+                *(
+                    "packed_sequences must be True, False or None; got "
+                    f"{self.packed_sequences!r}.",
+                )
+            )
+        if self.router_load_release == "off":
+            return
+        positive = (
+            ("router_load_ratio", self.router_load_ratio),
+            ("router_load_trip", self.router_load_trip),
+        )
+        for name, value in positive:
+            if not value > 0:
+                raise ConfigurationError(*(f"{name} must be positive, got {value!r}.",))
+        for name, value in (
+            ("router_load_mean_tokens", self.router_load_mean_tokens),
+            ("router_load_max_tokens", self.router_load_max_tokens),
+            ("router_load_filter_window", self.router_load_filter_window),
+        ):
+            if value is not None and int(value) < 1:
+                raise ConfigurationError(*(f"{name} must be >= 1, got {value!r}.",))
+        if not 0.0 < self.router_load_filter_beta < 1.0:
+            raise ConfigurationError(
+                *(
+                    "router_load_filter_beta must lie in (0, 1); got "
+                    f"{self.router_load_filter_beta!r}.",
+                )
+            )
+        for name, value in (
+            ("router_load_dead_zone", self.router_load_dead_zone),
+            ("router_z_loss_coef", self.router_z_loss_coef),
+        ):
+            if value < 0:
+                raise ConfigurationError(*(f"{name} must be >= 0, got {value!r}.",))
+        if self.router_aux_loss_coef is not None and self.router_aux_loss_coef < 0:
+            raise ConfigurationError(
+                *(
+                    "router_aux_loss_coef must be >= 0, got "
+                    f"{self.router_aux_loss_coef!r}.",
+                )
+            )
+        if self.router_aux == "per_layer":
+            raise ConfigurationError(
+                *(
+                    "router_aux='per_layer' is not supported yet; use 'pooled' "
+                    "or 'per_sequence'.",
+                )
+            )
+        if self.clipping_mode != "fixed":
+            raise ConfigurationError(
+                *(
+                    f"router_load_release={self.router_load_release!r} requires "
+                    f"clipping_mode='fixed' (got {self.clipping_mode!r}): the "
+                    "probe group needs a constant, structural clipping bound.",
+                )
+            )
+        clipping_values = (
+            self.clipping_norm.values()
+            if isinstance(self.clipping_norm, dict)
+            else (self.clipping_norm,)
+        )
+        if any(
+            isinstance(value, float) and math.isinf(value) for value in clipping_values
+        ):
+            raise ConfigurationError(
+                *(
+                    f"router_load_release={self.router_load_release!r} requires a "
+                    "finite clipping_norm: the probe bound is a fixed share of "
+                    "the gradient bound.",
+                )
+            )
+        kernels = self.performance_kernels_config
+        if (
+            isinstance(kernels, dict)
+            and kernels.get("fused_linear_cross_entropy") is False
+        ):
+            raise ConfigurationError(
+                *(
+                    f"router_load_release={self.router_load_release!r} needs the "
+                    "chunked causal-LM forward, but performance_kernels_config "
+                    "sets fused_linear_cross_entropy=False explicitly; drop that "
+                    "key or set router_load_release='off'.",
+                )
+            )
 
     def _validate_privacy_fields(self) -> None:
         """Normalize and validate optimizer, clipping, noise, and sampling fields."""

@@ -14,11 +14,11 @@ from opaque.exceptions import ConfigurationError, InputTypeError
 
 from ._convert import (
     _convert_trl_config,
-    _drop_router_aux_loss,
     _import_trl,
     _reject_if_truthy,
     _reject_pad_token,
     _reject_truncation_mode,
+    _router_aux_loss_transform,
 )
 
 if TYPE_CHECKING:
@@ -114,8 +114,12 @@ def _loss_type_transform(trl: dict[str, Any]) -> dict[str, Any]:
     return {"loss_type": mapped}
 
 
+# A user-set MoE load-balancing coefficient becomes the router-load release
+# in ``monitor`` mode: TRL's DPO never adds the aux term to the preference
+# loss, so the release only monitors the routing imbalance of the policy.
 TRL_DPO_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "loss_type": _loss_type_transform,
+    "router_aux_loss_coef": _router_aux_loss_transform("DPOConfig", "monitor"),
 }
 
 
@@ -137,7 +141,6 @@ TRL_DPO_DROP_FIELDS: dict[str, str | Callable[[Any], str | None]] = {
         "reference heads; this TRL flag is silently honored at its True "
         "mode and ignored otherwise."
     ),
-    "router_aux_loss_coef": _drop_router_aux_loss,
 }
 
 

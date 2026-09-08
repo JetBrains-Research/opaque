@@ -146,6 +146,19 @@ materially different gradient scales, with bounds near their typical
 norms; use `auto_clipped_grad` when avoiding a fixed threshold is more
 important than tuning one.
 
+For a mixture-of-experts model the
+[router-load release](../mechanisms/dp-sgd/moe-load-balancing.md) adds
+one more group to the `PerGroup` bound: a zero probe parameter whose
+per-example gradient is the token-weighted centred router load, with a
+structural bound $C_h = \rho\, C_g\, (1 + g)$ that never clips.
+`mf_gaussian_noise` latches the two-group bound on its first call and
+applies the correlated noise to the probe leaf like any other leaf; the
+whole-run accountant is unchanged and the gradient noise grows by
+$\sqrt{1+\rho}$ (see
+[router-load release under matrix mechanisms](../mechanisms/dp-ftrl/index.md#router-load-release-under-matrix-mechanisms)).
+`DPTrainer` builds the group itself from `router_load_release`; the
+example script does it through `opaque.api.transformers.moe_load`.
+
 ## 4. Noise
 
 `opaque.dpftrl.noise.mf_gaussian_noise` injects correlated noise:

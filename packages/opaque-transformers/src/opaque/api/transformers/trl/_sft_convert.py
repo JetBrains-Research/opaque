@@ -14,11 +14,11 @@ from opaque.exceptions import InputTypeError
 
 from ._convert import (
     _convert_trl_config,
-    _drop_router_aux_loss,
     _import_trl,
     _reject_if_truthy,
     _reject_pad_token,
     _reject_truncation_mode,
+    _router_aux_loss_transform,
 )
 
 if TYPE_CHECKING:
@@ -49,8 +49,12 @@ TRL_SFT_DIRECT_FIELDS: frozenset[str] = frozenset(
 TRL_SFT_RENAME_MAP: dict[str, str] = {}
 
 
-# TRANSFORM — TRL SFT field requires a derivation step.
-TRL_SFT_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+# TRANSFORM — TRL SFT field requires a derivation step.  A user-set MoE
+# load-balancing coefficient becomes the router-load release in
+# ``surrogate`` mode (the same objective at a DP estimate of the batch load).
+TRL_SFT_TRANSFORM_MAP: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "router_aux_loss_coef": _router_aux_loss_transform("SFTConfig", "surrogate"),
+}
 
 
 # REJECT_IF_SET — TRL has the field but opaque does not implement it.
@@ -87,7 +91,6 @@ TRL_SFT_DROP_FIELDS: dict[str, str | Callable[[Any], str | None]] = {
         "Only meaningful with ``packing=True``, which opaque does not "
         "support; silently dropped."
     ),
-    "router_aux_loss_coef": _drop_router_aux_loss,
 }
 
 

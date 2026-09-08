@@ -187,6 +187,46 @@ Mechanism constraints (validated at construction):
   dataset / batch size to satisfy this).
 - BSR requires `alpha > beta` (paper constraint).
 
+## MoE router-load release
+
+Mixture-of-experts checkpoints trained with a load-balancing loss keep
+that objective under DP through the
+[router-load release](../../mechanisms/dp-sgd/moe-load-balancing.md):
+a DP estimate of the batch router load is released together with the
+gradient as its own per-group clipping bound, at a
+`sqrt(1 + router_load_ratio)` inflation of the gradient noise and with
+no change to the privacy accountant. The load-balancing gradient is
+evaluated at the public estimate.
+
+| Field | Default | Effect |
+|---|---|---|
+| `router_load_release` | `"off"` | `"monitor"` releases the load and logs the imbalance monitor without touching the objective; `"surrogate"` also adds the per-example load-balancing surrogate; `"monitor_then_surrogate"` starts as monitor and switches the surrogate on once the monitor exceeds `router_load_trip` on two consecutive logged evaluations. |
+| `router_load_ratio` | `0.02` | Budget share `C_h / C_g` of the probe group relative to the gradient clipping bound. Larger values give a less noisy load estimate at a larger gradient-noise inflation; `0.1` is recommended when the router or the experts are trainable. |
+| `router_aux_loss_coef` | `None` | Surrogate coefficient. `None` reads the model config's `router_aux_loss_coef` in the surrogate modes and means `0` in `"monitor"`. |
+| `router_load_mean_tokens` | `None` | Public token-count constant of the per-example weight `T_x / T_bar`. `None` uses `router_load_max_tokens`; the mean length of a public held-out split makes the surrogate direction exact in expectation on ragged data. For DPO it is the pair constant and defaults to twice the row bound. |
+| `router_load_max_tokens` | `None` | Public bound on the valid tokens of one row. `None` resolves to the SFT / DPO `max_length` or the model's `max_position_embeddings`; longer rows raise. |
+| `router_load_filter_kind` | `"ema"` | `"ema"` (bias-corrected exponential moving average with `router_load_filter_beta`, default `0.99`) or `"window"` (mean of the last `router_load_filter_window` releases, default `256`). |
+| `router_load_shrink` | `True` | Apply the dead zone and the positive-part James-Stein shrinkage before the estimate enters the surrogate. |
+| `router_load_dead_zone` | `2.0` | Dead-zone constant `c`: the smoothed deviation counts as zero when its squared norm is below `c * E * s_t^2` for the known noise std `s_t`. |
+| `router_load_trip` | `0.5` | Monitor threshold on `router_load/D`, the largest relative deviation of an expert's load from its share `k / E`. |
+| `router_aux` | `"pooled"` | `"pooled"` is the Hugging Face objective at the public estimate; `"per_sequence"` uses the example's own load (no release, a different regulariser); `"per_layer"` is not supported yet. |
+| `router_z_loss_coef` | `0.0` | Router z-loss coefficient; per-token separable, no privacy cost. |
+| `router_fp32` | `False` | Bind an fp32-logit forward on the family's router modules (the precision Mellum 2.0 was pretrained with). Off by default because adapters served through stock Hugging Face run bf16 routes. |
+| `packed_sequences` | `None` | Public statement that every collated row is fully valid. `True` allows the all-valid attention fast path without probing the batch; `False` always materialises the mask; `None` keeps the runtime's probe, or behaves as `False` when the release is on. |
+
+Any mode other than `"off"` requires `clipping_mode="fixed"` with a
+finite `clipping_norm`, no private second moments, a MoE family whose
+backbone records router logits, and the chunked causal-LM forward: the
+trainer passes `fused_linear_cross_entropy=True` to the patches itself
+and raises when `performance_kernels_config` sets it to `False`
+explicitly. Checkpoints gain a sidecar `router_load_state.pt`, and a
+resume that changes `router_load_ratio`, the filter, the dead zone or
+the model geometry raises `CheckpointError`. The logged `grad_norm` /
+`clipped_grad_norm` exclude the probe group and the public monitors
+land under `router_load/*`. See the mechanism page for the
+[modes and defaults](../../mechanisms/dp-sgd/moe-load-balancing.md#modes-and-defaults)
+and the [cost table](../../mechanisms/dp-sgd/moe-load-balancing.md#cost-table).
+
 ## Compute / precision
 
 | Field | Default | Notes |
@@ -293,6 +333,10 @@ What the converter does:
   `adamw_torch_fused → adamw` + `optim_args={"fused": True}`,
   `adafactor=True → optim="adafactor"`) and `use_liger_kernel →
   use_performance_kernels`;
+- **maps** a user-set positive TRL `router_aux_loss_coef` to
+  `router_load_release="surrogate"` (SFT) or `"monitor"` (DPO) with the
+  coefficient forwarded as `router_aux_loss_coef` (an info log); pass
+  `router_load_release="off"` to opt out;
 - **drops** irrelevant fields (with a `RuntimeWarning` when non-default), and
   **raises** with a per-field rationale on unsupported ones (`fp16`, `fsdp`,
   paged optimizers, …).

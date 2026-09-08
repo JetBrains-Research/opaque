@@ -122,8 +122,10 @@ The trainer auto-registers `DefaultFlowCallback`, the progress
 callback pair, and `BestModelSaveCallback` (only when
 `save_strategy="best"`).  Reporting integrations selected by
 `args.report_to` (W&B, TensorBoard, MLflow, …) are wrapped so the
-privacy metric keys (`privacy/epsilon`, `privacy/clip_rate`, …) land
-as hierarchical paths in backends that support metric trees.
+privacy metric keys (`privacy/epsilon`, `privacy/clip_rate`, …) and, with
+the [MoE router-load release](../../mechanisms/dp-sgd/moe-load-balancing.md)
+on, the `router_load/*` monitors land as hierarchical paths in backends
+that support metric trees.
 
 `on_substep_end` is **not** fired — each DP-SGD step is one atomic
 clip-noise-step over one Poisson sample.

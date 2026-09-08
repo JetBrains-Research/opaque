@@ -120,21 +120,51 @@ def test_reject_packing(tmp_path):
     "router_aux_loss_coef" not in _SFT_FIELDS,
     reason="TRL does not expose router_aux_loss_coef",
 )
-def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
-    """A deliberately set MoE aux-loss coefficient converts, loudly, to no-op.
+def test_router_aux_loss_maps_to_the_router_load_release(tmp_path):
+    """A deliberately set MoE aux-loss coefficient converts to the DP release.
 
-    Opaque cannot compute the router load-balancing term — it is coupled
-    across the batch, so it has no per-example gradient to clip — but a
-    coefficient it silently ignores would train differently than the user
-    asked, so say so.
+    The batch-level router load-balancing term has no per-example gradient to
+    clip; opaque realises it through ``router_load_release`` (the same load-balancing objective at a DP estimate of the batch router load).
     """
-    with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         cfg = SFTConfig.from_trl(
             _trl_args(tmp_path, router_aux_loss_coef=0.5),
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "surrogate"
+    assert cfg.router_aux_loss_coef == 0.5
+    assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
+
+
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _SFT_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
+def test_router_aux_loss_release_can_be_switched_off(tmp_path):
+    """An explicit ``router_load_release`` override wins over the mapping."""
+    cfg = SFTConfig.from_trl(
+        _trl_args(tmp_path, router_aux_loss_coef=0.5),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+        router_load_release="off",
+    )
+    assert cfg.router_load_release == "off"
+
+
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _SFT_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
+def test_negative_router_aux_loss_is_dropped_with_a_warning(tmp_path):
+    with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
+        cfg = SFTConfig.from_trl(
+            _trl_args(tmp_path, router_aux_loss_coef=-0.5),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
+    assert cfg.router_load_release == "off"
 
 
 @pytest.mark.skipif(
@@ -155,7 +185,7 @@ def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "off"
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
@@ -176,7 +206,7 @@ def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "off"
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 

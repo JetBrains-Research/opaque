@@ -246,6 +246,17 @@ class SFTTrainer(DPTrainer):
             args.performance_kernels_config = cfg
         else:
             self._loss_fn = _SFT_LOSSES[args.loss_type]
+            if args.router_load_release != "off":
+                # The release reads router logits off the chunked causal-LM
+                # forward, which only the model-level fused loss path calls.
+                raise ConfigurationError(
+                    *(
+                        f"router_load_release={args.router_load_release!r} needs the "
+                        "model-level fused loss path: use loss_type='chunked_nll', "
+                        "or loss_type='nll' with log_completion_metrics=False and "
+                        f"no compute_loss_func (got loss_type={args.loss_type!r}).",
+                    )
+                )
 
         # ---- dataset preprocessing (before super().__init__) --------------
         self._formatting_func = formatting_func
@@ -586,9 +597,17 @@ class SFTTrainer(DPTrainer):
                     if self._fused_forward_uses_marker
                     else {}
                 ),
+                **self._router_load_forward_kwargs(return_logits),
             )
             loss = out["loss"]
             logits = out.get("logits")  # None on the fused path
+            if not return_logits and self._router_load is not None:
+                loss = self._apply_router_load_terms(
+                    loss,
+                    getattr(out, "router_logits", None),
+                    inputs["attention_mask"],
+                    params,
+                )
         elif self._fused_dft or (not return_logits and self._fused_dft_loss_only):
             # ``dft`` has no model-level fused forward, so project the backbone's
             # last hidden state ``(T, H)`` through ``fused_dft_loss`` (falls back

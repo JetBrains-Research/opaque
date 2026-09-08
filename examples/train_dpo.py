@@ -69,6 +69,9 @@ USAGE:
   # 4-GPU distributed run with torchrun
   torchrun --nproc_per_node=4 examples/train_dpo.py --preset qwen-7b-codesec
 
+  # Mellum 2 (MoE) with the DP router-load monitor (preset default)
+  python examples/train_dpo.py --preset mellum2-codesec
+
   # Or customize individual parameters:
   python examples/train_dpo.py \\
     --model-name "HuggingFaceTB/SmolLM2-135M-Instruct" \\
@@ -90,20 +93,27 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import hashlib
 import importlib.util
 import os
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 
-from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.patches import (
+    apply_model_patches,
+    apply_runtime_patches,
+    set_packed_sequences,
+)
 
 apply_runtime_patches()
 
@@ -118,6 +128,10 @@ import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
+from opaque.api.transformers import moe_load
+from opaque.api.transformers.moe_load import PROBE_NAME, RouterLoadState
+from opaque.exceptions import CheckpointError, ConfigurationError
+from opaque.serialization import from_state_dict, state_dict
 from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
@@ -526,7 +540,382 @@ def _tokenize_preference_example(example, tokenizer, max_length):
     }
 
 
-def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
+# ---------------------------------------------------------------------------
+# Router-load release (MoE load balancing under DP)
+# ---------------------------------------------------------------------------
+#
+# A Switch-style load-balancing loss needs the batch load vector, which is
+# not per-example separable.  ``opaque.api.transformers.moe_load`` replaces
+# it by a public estimate ``f_tilde`` released through a zero probe parameter
+# that rides on the same clipped pytree as the gradient: the probe forms its
+# own ``PerGroup`` group with a structural (never active) bound, so the joint
+# release is one Gaussian mechanism, ``dpsgd_acc.gaussian`` is unchanged and
+# the only price is a ``sqrt(1 + ratio)`` inflation of the gradient noise.
+# The protected unit is the preference pair: the load and router
+# probabilities pool the chosen and rejected policy forwards with the common
+# denominator ``L * (T_c + T_r)`` and the public weight ``(T_c + T_r) /
+# T_bar_pair``; the frozen reference forward contributes nothing.  This loop
+# calls the helper at four seams: ``attach_probe`` before
+# ``make_functional``, ``probe_bounds`` for the clipping bound, the
+# post-processing between ``noise_fn`` and the optimizer update, and a
+# sidecar checkpoint of the post-processing state.  With
+# ``--router-load-release off`` none of this code runs.
+
+_ROUTER_LOAD_MODES = ("off", "monitor", "surrogate", "monitor_then_surrogate")
+_ROUTER_LOAD_FILTER = {"kind": "ema", "beta": 0.99, "window": 256}
+_ROUTER_LOAD_DEAD_ZONE = 2.0
+_ROUTER_LOAD_SHRINK = True
+# Fields of ``RouterLoadState`` that must match when a sidecar is restored.
+_ROUTER_LOAD_STATE_KEYS = (
+    "ratio",
+    "kind",
+    "beta",
+    "window",
+    "dead_zone",
+    "num_experts",
+    "top_k",
+    "num_layers",
+    "mean_tokens",
+    "max_tokens",
+    "lam",
+)
+
+
+def _validate_router_load_args(args) -> None:
+    """Reject configurations the router-load release does not cover."""
+    if args.router_load_release == "off":
+        return
+    if args.clipping_mode != "fixed":
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs --clipping-mode fixed: the probe "
+                "group is a constant structural bound, while adaptive clipping "
+                "moves the threshold and AUTO-S rescales every group (got "
+                f"--clipping-mode {args.clipping_mode!r}).",
+            )
+        )
+    if args.second_moment:
+        raise ConfigurationError(
+            *(
+                "--router-load-release is incompatible with --second-moment: the "
+                "squared stream of the probe would consume budget.",
+            )
+        )
+    if args.noise_mechanism != "gaussian":
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs --noise-mechanism gaussian: the "
+                "post-processing assumes Gaussian noise on the probe leaf.",
+            )
+        )
+    if args.router_load_ratio <= 0:
+        raise ConfigurationError(
+            *(f"--router-load-ratio must be positive, got {args.router_load_ratio}.",)
+        )
+
+
+def _moe_geometry(model) -> tuple[int, int, int]:
+    """``(num_layers, num_experts, top_k)`` of the routed MoE layers of ``model``.
+
+    ``num_layers`` counts the top-k router modules, which is the number of
+    router-logit tensors the backbone records per example (a family with
+    dense layers records fewer than ``config.num_hidden_layers``).
+    """
+    routers = [m for m in model.modules() if "TopKRouter" in type(m).__name__]
+    if not routers:
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs a stacked-expert MoE family with a "
+                "top-k router (for example Mellum 2); the model has none.",
+            )
+        )
+    shapes = {(int(r.num_experts), int(r.top_k)) for r in routers}
+    if len(shapes) != 1:
+        raise ConfigurationError(
+            *(f"routers disagree on (num_experts, top_k): {sorted(shapes)}.",)
+        )
+    (num_experts, top_k) = next(iter(shapes))
+    return len(routers), num_experts, top_k
+
+
+def _resolve_backbone(model) -> tuple[object, str, str]:
+    """``(backbone, params prefix, lm_head key)`` for the router-logit forward.
+
+    The policy forward of the release calls the backbone functionally with
+    ``output_router_logits=True`` and applies the LM head itself, so it
+    returns full logits (which ``sequence_logp`` needs) alongside the router
+    logits without going through HF's batch-coupled auxiliary loss.  Under
+    PEFT the backbone sits at ``base_model.model.<base_model_prefix>``; the
+    LM-head key is resolved by identity so tied embeddings work.
+    """
+    if hasattr(model, "peft_config"):
+        inner = model.base_model.model
+        path_to_inner = "base_model.model."
+    else:
+        inner = model
+        path_to_inner = ""
+    prefix = getattr(inner, "base_model_prefix", None)
+    backbone = getattr(inner, prefix, None) if prefix else None
+    output_embeddings = inner.get_output_embeddings()
+    weight = getattr(output_embeddings, "weight", None)
+    if backbone is None or weight is None:
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs a causal LM exposing its backbone "
+                "and output embeddings.",
+            )
+        )
+    name_by_id = {id(p): n for n, p in model.named_parameters()}
+    lm_head_name = name_by_id.get(id(weight))
+    if lm_head_name is None:
+        raise ConfigurationError(
+            *("could not locate the LM-head weight among the model parameters.",)
+        )
+    return backbone, path_to_inner + prefix + ".", lm_head_name
+
+
+def _resolve_router_aux_coef(args, config) -> float:
+    """Surrogate coefficient ``alpha``: ``0`` in monitor, else the CLI or config value."""
+    if args.router_load_release == "monitor":
+        return 0.0
+    if args.router_aux_loss_coef is not None:
+        return float(args.router_aux_loss_coef)
+    coef = getattr(config, "router_aux_loss_coef", None)
+    if coef is None:
+        raise ConfigurationError(
+            *(
+                "--router-aux-loss-coef is required: the model config carries no "
+                "router_aux_loss_coef.",
+            )
+        )
+    return float(coef)
+
+
+def _load_router_load_state(path: str, template: RouterLoadState) -> RouterLoadState:
+    """Restore a sidecar and check it describes the same release as ``template``."""
+    loaded = from_state_dict(
+        template, torch.load(path, map_location="cpu", weights_only=True)
+    )
+    mismatched = {
+        k: (getattr(loaded, k), getattr(template, k))
+        for k in _ROUTER_LOAD_STATE_KEYS
+        if getattr(loaded, k) != getattr(template, k)
+    }
+    if mismatched:
+        raise CheckpointError(
+            *(
+                f"router-load sidecar {path} was written for a different release "
+                f"configuration (saved, current): {mismatched}.",
+            )
+        )
+    if loaded.phi.shape != template.phi.shape or not torch.allclose(
+        loaded.phi, template.phi
+    ):
+        raise CheckpointError(
+            *(
+                f"router-load sidecar {path} was written for a different noise "
+                "operator or horizon (filter factors differ).",
+            )
+        )
+    return loaded
+
+
+def _probe_free_clip_rate(aux, clip_norm: PerGroup, batch_size: int) -> float:
+    """Mean per-group clip rate over the gradient groups (probe excluded)."""
+    rates = [
+        float((aux.group_norms[g] > clip_norm.values[g]).sum().item())
+        / max(1.0, float(batch_size))
+        for g in clip_norm.values
+        if g != PROBE_NAME
+    ]
+    return sum(rates) / len(rates) if rates else 0.0
+
+
+class _RouterLoadRun:
+    """Loop-side driver of the router-load release (seams 2 to 4).
+
+    Built right after ``make_functional`` (the loss closure needs its policy
+    forward and the closure tensor ``f_tilde``) and armed with the
+    post-processing state once the noise multiplier is known.  Every method
+    is public post-processing of the noised probe leaf; nothing here touches
+    per-example data outside the gradient transform.
+    """
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        alpha: float,
+        trip: float,
+        lam: float,
+        geometry: tuple[int, int, int],
+        backbone_handles: tuple[object, str, str],
+        mean_tokens: float,
+        device: torch.device,
+        state_path: str | None,
+        is_main_process: bool,
+    ) -> None:
+        self.mode = mode
+        self.alpha = float(alpha)
+        self.trip = float(trip)
+        self.lam = float(lam)
+        self.num_layers, self.num_experts, self.top_k = geometry
+        self.backbone, self.prefix, self.lm_head_name = backbone_handles
+        self.mean_tokens = float(mean_tokens)
+        self.state_path = state_path
+        self.is_main_process = is_main_process
+        self.state: RouterLoadState | None = None
+        self._template: RouterLoadState | None = None
+        self.target = torch.full(
+            (self.num_experts,), self.top_k / self.num_experts, device=device
+        )
+        self._alpha_before_arm = 0.0 if mode == "monitor_then_surrogate" else self.alpha
+        self._trip_streak = 0
+
+    @property
+    def alpha_active(self) -> float:
+        return (
+            self.state.alpha_active
+            if self.state is not None
+            else self._alpha_before_arm
+        )
+
+    def arm(self, state: RouterLoadState) -> None:
+        """Install the post-processing state (seam 4 restores the sidecar)."""
+        self._template = state
+        self.state = state
+        self.target.copy_(state.f_tilde.to(self.target))
+        if self.state_path and Path(self.state_path).exists():
+            self.state = _load_router_load_state(self.state_path, state)
+            self.target.copy_(self.state.f_tilde.to(self.target))
+            if self.is_main_process:
+                print(
+                    f"  Restored router-load state from {self.state_path} "
+                    f"(step {self.state.step}, tripped={self.state.tripped})"
+                )
+
+    def forward(self, merged, input_ids, attention_mask):
+        """Policy forward returning ``(logits, router_logits)`` for one example.
+
+        The backbone is called functionally with the backbone-scoped slice of
+        ``merged`` and ``output_router_logits=True``; the LM head is applied
+        here.  Per-example ``(T,)`` inputs get their batch dim added and
+        stripped (the vmap-safety ``batchify`` patch lives on the causal-LM
+        class, not on the backbone).
+        """
+        prefix = self.prefix
+        backbone_params = {
+            k[len(prefix) :]: v for k, v in merged.items() if k.startswith(prefix)
+        }
+        unbatched = input_ids.ndim < 2  # noqa: PLR2004 - per-example ids are 1-D
+        if unbatched:
+            input_ids = input_ids.unsqueeze(0)
+            attention_mask = attention_mask.unsqueeze(0)
+        out = torch.func.functional_call(
+            self.backbone,
+            backbone_params,
+            (),
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "output_router_logits": True,
+            },
+        )
+        hidden = out[0] if isinstance(out, tuple) else out.last_hidden_state
+        logits = F.linear(hidden, merged[self.lm_head_name])
+        return (logits.squeeze(0) if unbatched else logits), out.router_logits
+
+    def terms_pair(
+        self,
+        loss,
+        chosen_router_logits,
+        chosen_mask,
+        rejected_router_logits,
+        rejected_mask,
+        params,
+    ):
+        """Value-neutral augmentation pooled over the chosen and rejected forwards."""
+        pooled_logits = [
+            torch.cat(
+                [c.reshape(-1, self.num_experts), r.reshape(-1, self.num_experts)]
+            )
+            for c, r in zip(chosen_router_logits, rejected_router_logits, strict=True)
+        ]
+        pooled_mask = torch.cat([chosen_mask.reshape(-1), rejected_mask.reshape(-1)])
+        return moe_load.router_load_terms(
+            loss,
+            pooled_logits,
+            pooled_mask,
+            params,
+            f_tilde=self.target,
+            alpha=self.alpha_active,
+            lam=self.lam,
+            top_k=self.top_k,
+            num_layers=self.num_layers,
+            num_experts=self.num_experts,
+            mean_tokens=self.mean_tokens,
+        )
+
+    def check_probe_zero(self, trainable) -> None:
+        """The probe is a public constant zero; any drift is a hard error."""
+        if int(torch.count_nonzero(trainable[PROBE_NAME])) != 0:
+            raise RuntimeError(
+                *(
+                    "router-load probe parameter drifted from zero: the optimizer "
+                    "update of the probe must be exactly zero.",
+                )
+            )
+
+    def consume(self, noisy_grads) -> None:
+        """Seam 3: read the noised probe leaf, post-process, zero the leaf."""
+        leaf = _step_pytree(noisy_grads)[PROBE_NAME]
+        self.state = moe_load.update(self.state, leaf)
+        leaf.zero_()
+        self.target.copy_(self.state.f_tilde.to(self.target))
+
+    def metrics(self) -> dict[str, float]:
+        return moe_load.summary(self.state)
+
+    def on_eval(self) -> dict[str, float]:
+        """Trip rule at a logged evaluation, then the sidecar save.
+
+        ``D > trip`` on two consecutive evaluations sets ``tripped``; in
+        ``monitor_then_surrogate`` it also switches the surrogate on.
+        """
+        stats = self.metrics()
+        self._trip_streak = (
+            self._trip_streak + 1 if stats["router_load/D"] > self.trip else 0
+        )
+        if self._trip_streak >= 2 and not self.state.tripped:  # noqa: PLR2004
+            alpha_active = (
+                self.alpha
+                if self.mode == "monitor_then_surrogate"
+                else self.state.alpha_active
+            )
+            self.state = dataclasses.replace(
+                self.state, tripped=True, alpha_active=alpha_active
+            )
+            if self.is_main_process:
+                print(
+                    f"  Router-load monitor tripped (D={stats['router_load/D']:.3f} "
+                    f"> {self.trip} twice); surrogate coefficient now {alpha_active:g}"
+                )
+        self.save()
+        return self.metrics()
+
+    def save(self) -> None:
+        if self.state_path and self.is_main_process and self.state is not None:
+            torch.save(state_dict(self.state), self.state_path)
+
+
+def _step_pytree(noisy_grads):
+    """The first-moment ``pytree`` of a noised output, unwrapping the paired SM output."""
+    if isinstance(noisy_grads, SecondMomentNoiseOutput):
+        return noisy_grads.noisy_grads.pytree
+    return noisy_grads.pytree
+
+
+def _make_per_example_loss(fmodel, frozen, *, loss_type, beta, router_load=None):
     """Build the DPO per-example loss closure (TWO forwards: chosen + rejected).
 
     The returned callable has signature::
@@ -541,6 +930,11 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
     which is exactly ``argnums=0`` (trainable params) + the 8 per-example args
     in ``_BATCH_ARGNUMS``. ``frozen`` first in the merge so trainable params win
     on key collision. Each output depends only on this example's data.
+
+    With ``router_load`` set (the MoE router-load release), both policy
+    forwards go through :meth:`_RouterLoadRun.forward` so they also return the
+    router logits, and the loss is augmented value-neutrally by
+    :meth:`_RouterLoadRun.terms_pair`; the loss value is unchanged.
     """
 
     def per_example_loss(
@@ -555,17 +949,38 @@ def _make_per_example_loss(fmodel, frozen, *, loss_type, beta):
         ref_rejected_logps,
     ):
         merged = {**frozen, **trainable_params}
-        chosen_out = fmodel(merged, input_ids=chosen_ids, attention_mask=chosen_mask)
-        rejected_out = fmodel(
-            merged, input_ids=rejected_ids, attention_mask=rejected_mask
-        )
-        chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
-        rejected_logp = sequence_logp(rejected_out.logits, rejected_ids, rejected_cmask)
+        if router_load is None:
+            chosen_out = fmodel(
+                merged, input_ids=chosen_ids, attention_mask=chosen_mask
+            )
+            rejected_out = fmodel(
+                merged, input_ids=rejected_ids, attention_mask=rejected_mask
+            )
+            chosen_logits, rejected_logits = chosen_out.logits, rejected_out.logits
+        else:
+            chosen_logits, chosen_router = router_load.forward(
+                merged, chosen_ids, chosen_mask
+            )
+            rejected_logits, rejected_router = router_load.forward(
+                merged, rejected_ids, rejected_mask
+            )
+        chosen_logp = sequence_logp(chosen_logits, chosen_ids, chosen_cmask)
+        rejected_logp = sequence_logp(rejected_logits, rejected_ids, rejected_cmask)
         # Log-ratios = policy logp - precomputed reference logp (per example).
-        return _DPO_LOSSES[loss_type](
+        loss = _DPO_LOSSES[loss_type](
             chosen_logp - ref_chosen_logps,
             rejected_logp - ref_rejected_logps,
             beta=beta,
+        )
+        if router_load is None:
+            return loss
+        return router_load.terms_pair(
+            loss,
+            chosen_router,
+            chosen_mask,
+            rejected_router,
+            rejected_mask,
+            trainable_params,
         )
 
     return per_example_loss
@@ -580,6 +995,7 @@ def _make_reference_free_loss(
     simpo_gamma=1.0,
     cpo_alpha=1.0,
     orpo_lambda=1.0,
+    router_load=None,
 ):
     """Build a reference-free per-example loss closure (TWO forwards, no ref).
 
@@ -600,6 +1016,10 @@ def _make_reference_free_loss(
 
     SimPO and ORPO use length-normalized completion log-probs; CPO uses the raw
     (un-normalized) chosen/rejected log-probs as the preference signal.
+
+    ``router_load`` (the MoE router-load release) routes both policy forwards
+    through :meth:`_RouterLoadRun.forward` and augments the loss
+    value-neutrally with :meth:`_RouterLoadRun.terms_pair`.
     """
 
     def per_example_loss(
@@ -612,41 +1032,64 @@ def _make_reference_free_loss(
         rejected_cmask,
     ):
         merged = {**frozen, **trainable_params}
-        chosen_out = fmodel(merged, input_ids=chosen_ids, attention_mask=chosen_mask)
-        rejected_out = fmodel(
-            merged, input_ids=rejected_ids, attention_mask=rejected_mask
-        )
+        if router_load is None:
+            chosen_out = fmodel(
+                merged, input_ids=chosen_ids, attention_mask=chosen_mask
+            )
+            rejected_out = fmodel(
+                merged, input_ids=rejected_ids, attention_mask=rejected_mask
+            )
+            chosen_logits, rejected_logits = chosen_out.logits, rejected_out.logits
+        else:
+            chosen_logits, chosen_router = router_load.forward(
+                merged, chosen_ids, chosen_mask
+            )
+            rejected_logits, rejected_router = router_load.forward(
+                merged, rejected_ids, rejected_mask
+            )
         if loss_type == "cpo":
             # CPO scores the raw (NOT length-normalized) completion log-probs:
             # a sigmoid preference term blended with a chosen-NLL regulariser.
-            chosen_logp = sequence_logp(chosen_out.logits, chosen_ids, chosen_cmask)
-            rejected_logp = sequence_logp(
-                rejected_out.logits, rejected_ids, rejected_cmask
-            )
-            return mpo_combine(
+            chosen_logp = sequence_logp(chosen_logits, chosen_ids, chosen_cmask)
+            rejected_logp = sequence_logp(rejected_logits, rejected_ids, rejected_cmask)
+            loss = mpo_combine(
                 {
                     "pref": sigmoid_loss(chosen_logp, rejected_logp, beta=beta),
                     "nll": chosen_nll_loss(chosen_logp),
                 },
                 {"pref": 1.0, "nll": cpo_alpha},
             )
-
-        # SimPO and ORPO both score length-normalized completion log-probs.
-        chosen_logp = sequence_logp(
-            chosen_out.logits, chosen_ids, chosen_cmask, length_normalized=True
-        )
-        rejected_logp = sequence_logp(
-            rejected_out.logits, rejected_ids, rejected_cmask, length_normalized=True
-        )
-        if loss_type == "simpo":
-            return simpo_loss(chosen_logp, rejected_logp, beta=beta, gamma=simpo_gamma)
-        # ORPO: odds-ratio preference term blended with a chosen-NLL regulariser.
-        return mpo_combine(
-            {
-                "or": odds_ratio_loss(chosen_logp, rejected_logp),
-                "nll": chosen_nll_loss(chosen_logp),
-            },
-            {"or": 1.0, "nll": orpo_lambda},
+        else:
+            # SimPO and ORPO both score length-normalized completion log-probs.
+            chosen_logp = sequence_logp(
+                chosen_logits, chosen_ids, chosen_cmask, length_normalized=True
+            )
+            rejected_logp = sequence_logp(
+                rejected_logits, rejected_ids, rejected_cmask, length_normalized=True
+            )
+            if loss_type == "simpo":
+                loss = simpo_loss(
+                    chosen_logp, rejected_logp, beta=beta, gamma=simpo_gamma
+                )
+            else:
+                # ORPO: odds-ratio preference term blended with a chosen-NLL
+                # regulariser.
+                loss = mpo_combine(
+                    {
+                        "or": odds_ratio_loss(chosen_logp, rejected_logp),
+                        "nll": chosen_nll_loss(chosen_logp),
+                    },
+                    {"or": 1.0, "nll": orpo_lambda},
+                )
+        if router_load is None:
+            return loss
+        return router_load.terms_pair(
+            loss,
+            chosen_router,
+            chosen_mask,
+            rejected_router,
+            rejected_mask,
+            trainable_params,
         )
 
     return per_example_loss
@@ -1114,6 +1557,78 @@ def parse_args():
         "independently; auto uses per-group R_k).",
     )
 
+    # MoE router-load release
+    moe_group = parser.add_argument_group(
+        "moe", "DP router-load release for mixture-of-experts models"
+    )
+    moe_group.add_argument(
+        "--router-load-release",
+        type=str,
+        choices=list(_ROUTER_LOAD_MODES),
+        default="off",
+        help="Release the per-expert router load through a zero probe parameter "
+        "clipped and noised jointly with the gradient (accounting unchanged; "
+        "gradient noise inflated by sqrt(1 + ratio)). 'monitor' only tracks the "
+        "public imbalance D; 'surrogate' also trains the load-balancing "
+        "surrogate at the released load; 'monitor_then_surrogate' switches the "
+        "surrogate on once D exceeds --router-load-trip on two consecutive "
+        "evaluations. Requires --clipping-mode fixed, --noise-mechanism gaussian "
+        "and no --second-moment. The load pools the chosen and rejected policy "
+        "forwards of each preference pair.",
+    )
+    moe_group.add_argument(
+        "--router-aux-loss-coef",
+        type=float,
+        default=None,
+        help="Surrogate coefficient alpha (default: the model config's "
+        "router_aux_loss_coef in the surrogate modes; 0 in monitor).",
+    )
+    moe_group.add_argument(
+        "--router-load-ratio",
+        type=float,
+        default=0.02,
+        help="Budget share rho = C_h / C_g of the probe group (default 0.02).",
+    )
+    moe_group.add_argument(
+        "--router-load-mean-tokens",
+        type=float,
+        default=None,
+        help="Public token-count constant T_bar_pair of the per-pair weight "
+        "w = (T_c + T_r) / T_bar_pair (default: 2 * --max-length).",
+    )
+    moe_group.add_argument(
+        "--router-load-trip",
+        type=float,
+        default=0.5,
+        help="Imbalance threshold on D = max_e |d_e| / (k/E); exceeded on two "
+        "consecutive evaluations it sets the tripped flag (default 0.5).",
+    )
+    moe_group.add_argument(
+        "--router-load-state-path",
+        type=str,
+        default=None,
+        help="Sidecar file for the public post-processing state (RouterLoadState). "
+        "Written after every evaluation and at the end; restored at start when "
+        "the file exists and describes the same release configuration.",
+    )
+    moe_group.add_argument(
+        "--router-fp32",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Compute the router logits in fp32 (the precision Mellum 2 was "
+        "pretrained with; removes bf16 routing ties). Off by default.",
+    )
+    moe_group.add_argument(
+        "--packed-sequences",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Public packing flag for the attention mask policy: "
+        "--packed-sequences declares every row all-valid (fast attention path "
+        "without probing the batch); --no-packed-sequences always materialises "
+        "the mask so the kernel choice never depends on the batch content "
+        "(recommended for ragged data under DP). Default: probe the batch.",
+    )
+
     # Model precision
     precision_group = parser.add_argument_group("Model Configuration")
     precision_group.add_argument(
@@ -1322,6 +1837,13 @@ def parse_args():
         _set("max_length", 1024)
         _set("lora_modules", ["q_proj", "k_proj", "v_proj", "o_proj"])
         _set("dtype", "bfloat16")
+        # DP router-load release: monitor the public imbalance (rho = 0.02).
+        # The release needs a fixed clipping threshold, so the preset drops
+        # to fixed clipping only while the release is on.
+        _set("router_load_release", "monitor")
+        _set("router_load_ratio", 0.02)
+        if args.router_load_release != "off":
+            _set("clipping_mode", "fixed")
     elif args.preset == "mellum-codesec":
         # Mellum-4b (dense Llama) DP-DPO at ε=8. Dense MLP, so LoRA targets the
         # gate/up/down projections alongside the attention projections.
@@ -1359,6 +1881,7 @@ def parse_args():
 
     if not args.smoke:
         _require_configured(parser, args)
+        _validate_router_load_args(args)
 
     # --microbatch-size 0 means "no microbatching" (full-batch vmap).
     # Needed because argparse type=int can't accept None on CLI to override presets.
@@ -1787,7 +2310,13 @@ def main():
     # DPO consumes ``out.logits`` (not the model's ``.loss``), so we do NOT
     # opt into the fused linear+CE kernel here — the per-example loss needs
     # the full logits tensor to compute ``sequence_logp`` over completions.
-    apply_model_patches(model)
+    use_router_load = args.router_load_release != "off"
+    if args.router_fp32:
+        apply_model_patches(model, router_fp32=True)
+    else:
+        apply_model_patches(model)
+    if args.packed_sequences is not None:
+        set_packed_sequences(args.packed_sequences)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -1993,6 +2522,14 @@ def main():
     print("\nConverting to functional form (LoRA parameters only)...")
     print("  (This may take 1-2 minutes for large models...)")
     start_time = time.time()
+    if use_router_load:
+        # Seam 1: the zero probe parameter must be in the trainable pytree, so
+        # it is registered before ``make_functional`` partitions the model.
+        moe_geometry = _moe_geometry(model)
+        backbone_handles = _resolve_backbone(model)
+        moe_load.attach_probe(
+            model, num_layers=moe_geometry[0], num_experts=moe_geometry[1]
+        )
     fmodel, trainable_params, frozen_params = make_functional(
         model,
         disable_autograd_tracking=True,
@@ -2002,6 +2539,46 @@ def main():
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
     print_memory(device, "After functional conversion")
+
+    router_load = None
+    router_load_clip_norm = None
+    if use_router_load:
+        # Seam 2: the probe becomes its own group of the clipping bound with
+        # the structural bound C_h = ratio * C_g * (1 + guard); the user's
+        # groups are compiled over the gradient leaves only.  The protected
+        # unit is the pair, so T_max is the two padded rows together.
+        router_load_mean_tokens = (
+            float(args.router_load_mean_tokens)
+            if args.router_load_mean_tokens is not None
+            else 2.0 * args.max_length
+        )
+        user_clip = (
+            {**args.per_group_clipping, "fallback": args.per_group_clipping_fallback}
+            if args.per_group_clipping and args.per_group_clipping_fallback is not None
+            else (args.per_group_clipping or float(args.clipping_norm))
+        )
+        router_load_clip_norm, router_load_lam = moe_load.probe_bounds(
+            user_clip,
+            trainable_params,
+            ratio=args.router_load_ratio,
+            num_layers=moe_geometry[0],
+            num_experts=moe_geometry[1],
+            top_k=moe_geometry[2],
+            mean_tokens=router_load_mean_tokens,
+            max_tokens=2.0 * args.max_length,
+        )
+        router_load = _RouterLoadRun(
+            mode=args.router_load_release,
+            alpha=_resolve_router_aux_coef(args, config),
+            trip=args.router_load_trip,
+            lam=router_load_lam,
+            geometry=moe_geometry,
+            backbone_handles=backbone_handles,
+            mean_tokens=router_load_mean_tokens,
+            device=device,
+            state_path=args.router_load_state_path,
+            is_main_process=is_main_process,
+        )
 
     # Per-example DPO loss closure (TWO forwards: chosen + rejected). Output for
     # example i depends only on example i's data, so per-example sensitivity is O(C).
@@ -2014,10 +2591,15 @@ def main():
             simpo_gamma=args.simpo_gamma,
             cpo_alpha=args.cpo_alpha,
             orpo_lambda=args.orpo_lambda,
+            router_load=router_load,
         )
     else:
         per_example_loss_fn = _make_per_example_loss(
-            fmodel, frozen_params, loss_type=args.loss_type, beta=args.beta
+            fmodel,
+            frozen_params,
+            loss_type=args.loss_type,
+            beta=args.beta,
+            router_load=router_load,
         )
 
     # Verified canary scoring: the per-example DPO loss is the membership
@@ -2199,6 +2781,15 @@ def main():
             print(f"  Effective (for accounting): {clip_norm.effective:.3f}")
     else:
         clip_norm = args.clipping_norm
+
+    if router_load is not None:
+        clip_norm = router_load_clip_norm
+        if is_main_process:
+            print("\nClipping norms with the router-load probe group:")
+            for gname, val in clip_norm.values.items():
+                count = sum(1 for g in clip_norm.groups.values() if g == gname)
+                print(f"  {gname}: {val:.4f} ({count} params)")
+            print(f"  Effective (for accounting): {clip_norm.effective:.4f}")
 
     # Setup optimizer
     print("\nSetting up DP-SGD DPO training...")
@@ -2506,6 +3097,66 @@ def main():
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
+
+    if router_load is not None:
+        # Post-processing state of the release: i.i.d. Gaussian noise (closed
+        # form filter factors) at the per-step bound of the clipped pytree.
+        router_load.arm(
+            moe_load.initial_state(
+                num_layers=moe_geometry[0],
+                num_experts=moe_geometry[1],
+                top_k=moe_geometry[2],
+                ratio=args.router_load_ratio,
+                lam=router_load.lam,
+                max_norm=initial_bound,
+                noise_multiplier=noise_multiplier,
+                kind=_ROUTER_LOAD_FILTER["kind"],
+                beta=_ROUTER_LOAD_FILTER["beta"],
+                window=_ROUTER_LOAD_FILTER["window"],
+                dead_zone=_ROUTER_LOAD_DEAD_ZONE,
+                shrink=_ROUTER_LOAD_SHRINK,
+                alpha=router_load.alpha_active,
+                mean_tokens=router_load.mean_tokens,
+                max_tokens=2.0 * args.max_length,
+                phi=moe_load.filter_factors(
+                    None,
+                    n_steps=max(1, total_steps),
+                    kind=_ROUTER_LOAD_FILTER["kind"],
+                    beta=_ROUTER_LOAD_FILTER["beta"],
+                    window=_ROUTER_LOAD_FILTER["window"],
+                    num_experts=moe_geometry[1],
+                ),
+            )
+        )
+        num_layers, num_experts, top_k = moe_geometry
+        share = top_k / num_experts
+        s_inf = router_load.state.base_noise_std * float(router_load.state.phi[-1])
+        print("\nRouter-load release:")
+        print(
+            f"  Mode: {router_load.mode} (E={num_experts}, k={top_k}, L={num_layers})"
+        )
+        print(
+            f"  Surrogate coefficient: {router_load.alpha:g} "
+            f"(active now: {router_load.alpha_active:g}); trip D > {router_load.trip}"
+        )
+        print(
+            f"  Probe: rho={args.router_load_ratio}, lam={router_load.lam:.6g}, "
+            f"C_h={clip_norm.values[PROBE_NAME]:.6g}, "
+            f"T_bar_pair={router_load.mean_tokens:.1f}, T_max_pair={2 * args.max_length}"
+        )
+        print(
+            f"  Filter: {_ROUTER_LOAD_FILTER['kind']} "
+            f"(beta={_ROUTER_LOAD_FILTER['beta']}); dead zone c={_ROUTER_LOAD_DEAD_ZONE}"
+        )
+        print(
+            f"  Smoothed load noise s_inf={s_inf:.3e} ({s_inf / share:.3f} of k/E); "
+            f"dead-zone radius {(_ROUTER_LOAD_DEAD_ZONE * num_experts) ** 0.5 * s_inf:.3e}"
+        )
+        if args.packed_sequences is None:
+            print(
+                "  Attention-mask policy: batch-probed (pass --no-packed-sequences "
+                "to derive the kernel choice from the public packing flag)"
+            )
     if args.noise_mechanism == "bounded_gaussian":
         # Pass ``bound`` unconditionally: at ``noise_multiplier=0`` the bounded
         # path still clamps the input to the interval, keeping the mechanism
@@ -2591,6 +3242,8 @@ def main():
 
             # === Execution ===
             with tracker.train(batch_size=batch_size) as sp:
+                if router_load is not None:
+                    router_load.check_probe_zero(trainable_params)
                 # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
@@ -2603,6 +3256,14 @@ def main():
 
                 step_clip_norm = _step_clip_norm(grads_tuple)
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                if router_load is not None:
+                    # Seam 3: the noised probe leaf is the only released
+                    # quantity; its post-processing yields the next public
+                    # f_tilde, and the leaf is zeroed so the optimizer update
+                    # of the probe is zero.  Rank-identical under DDP: the leaf
+                    # was all-reduced with the gradient and the noise key is
+                    # shared across ranks.
+                    router_load.consume(noisy_grads)
                 noise_stddev = _step_noise_stddev(noisy_grads)
                 if is_ddp:
                     noise_state = sync(noise_state)
@@ -2622,7 +3283,21 @@ def main():
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
             clip_rate = aux.clipping_rate
-            mean_grad_norm = aux.grad_norms.mean().item()
+            if router_load is not None:
+                # Per-group clipping reports no scalar rate; average the
+                # gradient groups' rates (the probe group never clips and is
+                # excluded).  Gradient norms over the gradient groups only:
+                # the probe's norm is a function of the pair's routing and is
+                # never logged.
+                clip_rate = _probe_free_clip_rate(aux, step_clip_norm, batch_size)
+                probe_free_norms, probe_free_clipped = moe_load.telemetry_without_probe(
+                    aux
+                )
+                mean_grad_norm = probe_free_norms.mean().item()
+                mean_clipped_grad_norm = probe_free_clipped.mean().item()
+            else:
+                mean_grad_norm = aux.grad_norms.mean().item()
+                mean_clipped_grad_norm = aux.clipped_grad_norms.mean().item()
 
             losses.append(avg_loss)
             clip_norms_history.append(_effective(step_clip_norm))
@@ -2645,7 +3320,7 @@ def main():
                         "train/clipping_norm": _effective(step_clip_norm),
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
-                        "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
+                        "train/clipped_grad_norm_mean": mean_clipped_grad_norm,
                         "train/noise_std": _effective(noise_stddev),
                         "train/lr": current_lr,
                         **tracker.train.last.to_dict(prefix="train/"),
@@ -2655,6 +3330,8 @@ def main():
                         and aux.group_norms is not None
                     ):
                         for gname in step_clip_norm.values:
+                            if router_load is not None and gname == PROBE_NAME:
+                                continue  # never log the probe's per-example norms
                             gn_bound = step_clip_norm.values[gname]
                             wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                             gnorms = aux.group_norms[gname]
@@ -2669,6 +3346,8 @@ def main():
                                 wb_metrics[f"group/noise_std/{gname}"] = (
                                     noise_stddev.values[gname]
                                 )
+                    if router_load is not None:
+                        wb_metrics.update(router_load.metrics())
                     wandb.log(wb_metrics, step=global_step)
 
                 last = tracker.train.last
@@ -2681,6 +3360,15 @@ def main():
                     f"Noise: σ={_effective(noise_stddev):.4f} | "
                     f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
                 )
+                if router_load is not None:
+                    rl = router_load.metrics()
+                    print(
+                        f"           router load: D={rl['router_load/D']:.3f} "
+                        f"D_layer_max={rl['router_load/D_layer_max']:.3f} "
+                        f"f=[{rl['router_load/f_min']:.4f}, {rl['router_load/f_max']:.4f}] "
+                        f"s_t={rl['router_load/noise_std']:.2e} "
+                        f"shrink={rl['router_load/shrink']:.2f}"
+                    )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
@@ -2702,6 +3390,10 @@ def main():
                     f"chosen_r={eval_m['rewards/chosen']:.4f}, "
                     f"rejected_r={eval_m['rewards/rejected']:.4f}, ε={epsilon:.3f}"
                 )
+                if router_load is not None:
+                    # Trip rule on the public monitor, then the sidecar save.
+                    metrics.update(router_load.on_eval())
+                    eval_msg += f", D={metrics['router_load/D']:.3f}"
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
@@ -2788,6 +3480,21 @@ def main():
             print(
                 f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
             )
+
+    if router_load is not None:
+        router_load.save()
+        rl = router_load.metrics()
+        print("\nRouter-load release:")
+        print(f"  Releases consumed: {router_load.state.step}")
+        print(
+            f"  Final D: {rl['router_load/D']:.3f} (layer max "
+            f"{rl['router_load/D_layer_max']:.3f}), tripped={router_load.state.tripped}"
+        )
+        print(
+            f"  f_tilde range: [{rl['router_load/f_min']:.4f}, "
+            f"{rl['router_load/f_max']:.4f}], entropy {rl['router_load/entropy']:.4f}"
+        )
+        print(f"  Surrogate coefficient in force: {router_load.alpha_active:g}")
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")

@@ -128,15 +128,51 @@ def test_loss_type_aot_rejected(tmp_path):
     "router_aux_loss_coef" not in _DPO_FIELDS,
     reason="TRL does not expose router_aux_loss_coef",
 )
-def test_router_aux_loss_is_dropped_with_a_warning(tmp_path):
-    """A deliberately set MoE aux-loss coefficient converts, loudly, to no-op."""
-    with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
+def test_router_aux_loss_maps_to_the_router_load_release(tmp_path):
+    """A deliberately set MoE aux-loss coefficient converts to the DP release.
+
+    The batch-level router load-balancing term has no per-example gradient to
+    clip; opaque realises it through ``router_load_release`` (TRL's DPO adds no aux term to the preference loss, so only the imbalance monitor is enabled).
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         cfg = DPOConfig.from_trl(
             _trl_dpo_args(tmp_path, router_aux_loss_coef=0.5),
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "monitor"
+    assert cfg.router_aux_loss_coef == 0.5
+    assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
+
+
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _DPO_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
+def test_router_aux_loss_release_can_be_switched_off(tmp_path):
+    """An explicit ``router_load_release`` override wins over the mapping."""
+    cfg = DPOConfig.from_trl(
+        _trl_dpo_args(tmp_path, router_aux_loss_coef=0.5),
+        privacy_noise_multiplier=0.8,
+        clipping_norm=1.0,
+        router_load_release="off",
+    )
+    assert cfg.router_load_release == "off"
+
+
+@pytest.mark.skipif(
+    "router_aux_loss_coef" not in _DPO_FIELDS,
+    reason="TRL does not expose router_aux_loss_coef",
+)
+def test_negative_router_aux_loss_is_dropped_with_a_warning(tmp_path):
+    with pytest.warns(RuntimeWarning, match="router_aux_loss_coef"):
+        cfg = DPOConfig.from_trl(
+            _trl_dpo_args(tmp_path, router_aux_loss_coef=-0.5),
+            privacy_noise_multiplier=0.8,
+            clipping_norm=1.0,
+        )
+    assert cfg.router_load_release == "off"
 
 
 @pytest.mark.skipif(
@@ -153,7 +189,7 @@ def test_trl_default_router_aux_loss_is_dropped_silently(tmp_path):
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "off"
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 
@@ -170,7 +206,7 @@ def test_router_aux_loss_switched_off_is_dropped_silently(tmp_path):
             privacy_noise_multiplier=0.8,
             clipping_norm=1.0,
         )
-    assert cfg is not None
+    assert cfg.router_load_release == "off"
     assert not [w for w in caught if "router_aux_loss_coef" in str(w.message)]
 
 

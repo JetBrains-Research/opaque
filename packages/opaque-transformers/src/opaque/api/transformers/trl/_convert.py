@@ -13,12 +13,15 @@ to SFT and DPO, and the two-layer dispatcher :func:`_convert_trl_config`.
 
 from __future__ import annotations
 
+import logging
 import tempfile
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from ..trainer._convert import (  # noqa: F401  (_reject_if_truthy re-exported)
     _apply_manifest,
     _get_dataclass_field_values,
+    _is_default,
     _reject_if_truthy,
 )
 from ..trainer._hf_convert import (
@@ -66,14 +69,58 @@ def _reject_pad_token(value: Any) -> str | None:
     return None
 
 
-def _drop_router_aux_loss(value: Any) -> str | None:
-    if not value:
-        return None  # already 0 — nothing is being withheld.
-    return (
-        "the MoE router load-balancing loss is a batch-level statistic with no "
-        "per-example gradient to clip, so it cannot enter opaque's DP "
-        "objective; training proceeds as if the coefficient were 0.0"
-    )
+log = logging.getLogger(__name__)
+
+
+def _router_aux_loss_transform(
+    config_name: str, mode: str
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Map a user-set ``router_aux_loss_coef`` onto the router-load release.
+
+    TRL's batch-level MoE load-balancing loss has no per-example gradient to
+    clip; opaque realises the same objective through a differentially
+    private release of the batch router load (``router_load_release``).  A
+    coefficient the user set to a positive value therefore converts to
+    ``router_load_release=mode`` with the coefficient forwarded as
+    ``router_aux_loss_coef``; TRL's own default and ``0`` ask for nothing and
+    stay silent, a negative value is dropped with a warning.  The trainer
+    rejects the release on a model family without a router; pass
+    ``router_load_release="off"`` to the converter to opt out.
+    """
+
+    def transform(source: dict[str, Any]) -> dict[str, Any]:
+        value = source.get("router_aux_loss_coef")
+        if value is None:
+            return {}
+        trl = _import_trl()
+        default = (
+            getattr(trl, config_name)
+            .__dataclass_fields__["router_aux_loss_coef"]
+            .default
+        )
+        if _is_default(value, default) or value == 0:
+            return {}
+        if value < 0:
+            warnings.warn(
+                f"opaque: dropping trl_{config_name.lower()}.router_aux_loss_coef="
+                f"{value!r} — a negative MoE load-balancing coefficient has no "
+                "opaque equivalent and is being discarded.",
+                RuntimeWarning,
+                stacklevel=4,
+            )
+            return {}
+        log.info(
+            "trl %s.router_aux_loss_coef=%g maps to router_load_release=%r with "
+            "router_aux_loss_coef=%g (the MoE load-balancing objective at a "
+            "differentially private estimate of the batch router load).",
+            config_name,
+            value,
+            mode,
+            value,
+        )
+        return {"router_load_release": mode, "router_aux_loss_coef": float(value)}
+
+    return transform
 
 
 def _convert_trl_config(
