@@ -28,6 +28,7 @@ class _InstrumentedAotEagerCompiler:
             fn,
             backend=aot_autograd(fw_compiler=fw_compiler),
             fullgraph=True,
+            dynamic=True,
         )
 
         def invoke(*args, **kwargs):
@@ -55,8 +56,8 @@ def _assert_aux_close(actual, expected) -> None:
     assert actual.batch_size == expected.batch_size
 
 
-def test_fixed_chunk_kernel_bounds_strict_variants_by_chunk_size_with_aux():
-    """Strict chunk variants handle full/remainder chunks and match eager."""
+def test_fixed_chunk_kernel_reuses_dynamic_graph_across_chunk_sizes_with_aux():
+    """Dynamic strict graphs handle full/remainder chunks and match eager."""
     torch._dynamo.reset()
     compiler = _InstrumentedAotEagerCompiler()
     compiled_fn, compiled_state = clipped_grad(
@@ -95,7 +96,8 @@ def test_fixed_chunk_kernel_bounds_strict_variants_by_chunk_size_with_aux():
         _assert_aux_close(compiled_aux, eager_aux)
 
     assert compiler.compile_calls == 1
-    assert 1 <= len(compiler.frames) <= 3
+    # Symbolic dimensions specialize at size one on supported PyTorch versions.
+    assert 1 <= len(compiler.frames) <= 2
     assert {diagnostic_shape[0] for _, diagnostic_shape in compiler.chunk_shapes} == {
         2,
         3,

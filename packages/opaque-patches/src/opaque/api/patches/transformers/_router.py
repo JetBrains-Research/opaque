@@ -98,7 +98,7 @@ def apply_transformers_model_patches(
     performance: bool = True,
     compat: bool = True,
     kernels: bool | None = None,
-    fused_linear_cross_entropy: bool = False,
+    fused_linear_cross_entropy: bool | None = None,
     **kwargs,
 ) -> None:
     """Apply Liger-style global + instance patching for kernels and compat wrappers.
@@ -106,7 +106,7 @@ def apply_transformers_model_patches(
     Three umbrella flags drive the per-concern kwargs:
 
     - ``performance`` — memory-efficiency patches that run on any host
-      (currently ``kv_cache``).
+      (``kv_cache`` and the conditional fused-linear-CE wrapper).
     - ``compat`` — vmap-safety wrappers (``eager_attention``, ``batchify``).
     - ``kernels`` — "use accelerated kernels" (``rope``, ``rms_norm``,
       ``activation``, ``cross_entropy``, ``grouped_moe``). Defaults to
@@ -116,10 +116,9 @@ def apply_transformers_model_patches(
       off-CUDA, while the portable ones (grouped-GEMM MoE on ``torch._grouped_mm``,
       chunked CE) run on any host.
 
-    ``fused_linear_cross_entropy`` (the fused lm_head+CE kernel) is promoted out
-    of ``**kwargs`` because it defaults to ``False`` rather than inheriting from
-    ``kernels``: the fused forward returns ``logits=None``, incompatible with
-    callers that read logits.
+    ``fused_linear_cross_entropy`` is promoted out of ``**kwargs`` and inherits
+    from ``performance`` when unset. Its wrapper delegates to the original
+    forward unless the caller explicitly requests a loss-only result.
     """
     if kernels is None:
         kernels = performance

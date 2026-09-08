@@ -55,6 +55,8 @@ class _DummyForCausalLM:
 
 def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
     model = _DummyForCausalLM(hidden_size=32, vocab_size=64)
+    model.config.logit_scale = 0.25
+    model.config.logits_scaling = 2.0
     labels = torch.randint(0, model.vocab_size, (2, 8), device="cuda")
     input_ids = torch.randint(0, model.vocab_size, (2, 8), device="cuda")
 
@@ -74,12 +76,15 @@ def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
         logit_softcapping,
         label_smoothing,
         use_token_scaling=False,
+        logit_scale=1.0,
     ):
         captured["hidden_dtype"] = hidden_states.dtype
         captured["weight_dtype"] = weight.dtype
         captured["ignore_index"] = ignore_index
         captured["softcap"] = logit_softcapping
         captured["label_smoothing"] = label_smoothing
+        captured["logit_scale"] = logit_scale
+        captured["weight"] = weight
         captured["label_shape"] = tuple(labels_.shape)
         return hidden_states.new_tensor(12.0, dtype=torch.float32)
 
@@ -92,7 +97,7 @@ def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
         model,
         input_ids=input_ids,
         labels=labels,
-        opaque_fused_loss_only=True,
+        loss_only=True,
         return_dict=False,
         label_smoothing=0.1,
         ignore_index=-100,
@@ -100,6 +105,8 @@ def test_fused_for_causal_lm_forwards_label_smoothing(monkeypatch):
 
     assert called["original"] is False
     assert captured["label_smoothing"] == pytest.approx(0.1)
+    assert captured["logit_scale"] == pytest.approx(0.125)
+    assert captured["weight"] is model.lm_head.weight
     assert captured["ignore_index"] == -100
     assert captured["softcap"] == 0
     assert captured["hidden_dtype"] == torch.bfloat16

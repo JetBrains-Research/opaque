@@ -146,9 +146,8 @@ except ModuleNotFoundError as import_error:
         gathered = torch.gather(log_probs, dim=-1, index=safe.unsqueeze(-1)).squeeze(-1)
         return gathered.masked_fill(ignore, 0.0)
 
-    # Chunked custom-autograd CE streams the log-sum-exp over vocab chunks
-    # instead of materializing the full ``(tokens, vocab)`` logits, so
-    # large-vocab CE fits in memory on MPS/CPU and stays ``vmap(grad)``-safe.
+    # Chunked custom-autograd CE streams the log-sum-exp over bounded token and
+    # vocabulary tiles, so large CE fits on MPS/CPU and stays vmap(grad)-safe.
     from ._linear_ce_chunked import linear_cross_entropy_chunked
 
     def opaque_linear_cross_entropy_loss(
