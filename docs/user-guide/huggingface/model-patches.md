@@ -42,7 +42,6 @@ apply_model_patches(
     performance=True,                         # kv_cache (pure-Python; always-on)
     kernels=True,                             # CUDA + Triton group (rope, rms_norm, …)
     peft=True,                                # LoRA fusion when adapters detected
-    fused_linear_cross_entropy=False,         # opt-in (fused forward returns logits=None)
 )
 ```
 
@@ -57,10 +56,10 @@ graph.
 | Flag | Default | Effect |
 |---|---|---|
 | `compat` | `True` | vmap-safety wrappers — `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. |
-| `performance` | `True` | Memory-efficiency patches that run on any host (currently `kv_cache`). |
+| `performance` | `True` | Memory-efficiency patches that run on any host (`kv_cache` and the conditional fused-linear-CE wrapper). |
 | `kernels` | `performance` | CUDA + Triton kernel group — `rope`, `rms_norm`, `activation`, `cross_entropy`.  Forced `False` when CUDA + Triton aren't importable, so `performance=True` keeps `kv_cache` on CPU / MPS hosts. |
 | `peft` | `True` | LoRA / PEFT module fusion (`opaque_lora_*`). |
-| `fused_linear_cross_entropy` | `False` | Promoted kernel kwarg — direct patch callers opt in to the conditional forward; only calls carrying its loss-only marker return `logits=None`. |
+| `fused_linear_cross_entropy` | `performance` | Conditional fused LM-head loss wrapper. Set `False` to disable; only calls with `loss_only=True` return `logits=None`. |
 
 Each umbrella forwards to per-concern boolean kwargs in `**kwargs`,
 so you can override individual patches without flipping the whole
@@ -297,12 +296,12 @@ with 128K vocab, this avoids the ~2 GB `logits = hidden_states @
 lm_head.T` allocation that the non-fused path produces per forward
 pass.
 
-The fused forward wrapper is opt-in through
-`apply_model_patches(model, fused_linear_cross_entropy=True)`. Once installed,
-it returns `logits=None` only when the caller sets
-`opaque_fused_loss_only=True`; calls leave the marker false whenever logits are
-consumed by metrics, preprocessing, generation, or a custom loss. Unsupported
-loss options fall back to the model-native logits path.
+The fused forward wrapper is installed with the normal `performance` patch
+bucket. It delegates to the original model forward unless the caller sets
+`loss_only=True`; that loss-only branch may return `logits=None`. Unsupported
+loss options also fall back to the model-native logits path. Set
+`fused_linear_cross_entropy=False` on `apply_model_patches` to disable the
+wrapper.
 
 Cohere's multiplicative and Granite's divisive logit scaling are passed as one
 scalar into the tiled computation. Scaling occurs before optional softcapping,
@@ -455,7 +454,6 @@ per-concern keys discussed above:
 args = TrainingArguments(
     use_performance_kernels=True,
     performance_kernels_config={
-        "fused_linear_cross_entropy": True,   # force-install (False opts out)
         "chunked_linear_cross_entropy": 2048, # vocabulary columns per tile
         "kv_cache": False,                    # for HF DynamicCache-dependent models
     },

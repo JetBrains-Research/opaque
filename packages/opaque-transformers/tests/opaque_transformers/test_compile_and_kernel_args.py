@@ -306,7 +306,7 @@ def test_use_performance_kernels_default_keeps_kv_cache_and_compat_on(
     assert calls[0]["kwargs"]["performance"] is True
     assert calls[0]["kwargs"]["kernels"] is False
     assert calls[0]["kwargs"]["compat"] is True
-    assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
+    assert "fused_linear_cross_entropy" not in calls[0]["kwargs"]
 
 
 def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatch):

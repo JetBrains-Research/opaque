@@ -31,8 +31,8 @@ class _FusedAwareModel(torch.nn.Module):
         self.linear = torch.nn.Linear(4, 2)
         self.fused_requests: list[bool] = []
 
-    def forward(self, x, labels=None, opaque_fused_loss_only=False):
-        self.fused_requests.append(opaque_fused_loss_only)
+    def forward(self, x, labels=None, loss_only=False):
+        self.fused_requests.append(loss_only)
         logits = self.linear(x)
         loss = (
             torch.nn.functional.cross_entropy(logits, labels)
@@ -41,7 +41,7 @@ class _FusedAwareModel(torch.nn.Module):
         )
         return {
             "loss": loss,
-            "logits": None if opaque_fused_loss_only else logits,
+            "logits": None if loss_only else logits,
         }
 
 
@@ -193,7 +193,7 @@ def test_supported_causal_lm_installs_inert_fused_wrapper_automatically(tmp_path
         input_ids=input_ids,
         labels=input_ids,
         return_dict=True,
-        opaque_fused_loss_only=True,
+        loss_only=True,
     )
 
     assert trainer._fused_forward_uses_marker is True
@@ -228,7 +228,7 @@ def test_model_native_per_example_loss_requests_fused_loss_only(tmp_path):
 
     def fmodel(params, **inputs):
         del params
-        requests.append(inputs.get("opaque_fused_loss_only", False))
+        requests.append(inputs.get("loss_only", False))
         logits = torch.tensor([2.0, -1.0])
         return {"loss": logits.sum(), "logits": logits}
 
@@ -253,7 +253,7 @@ def test_custom_per_example_loss_keeps_logits_available(tmp_path):
 
     def fmodel(params, **inputs):
         del params
-        requests.append(inputs.get("opaque_fused_loss_only", False))
+        requests.append(inputs.get("loss_only", False))
         logits = torch.tensor([2.0, -1.0])
         return {"loss": logits.sum(), "logits": logits}
 

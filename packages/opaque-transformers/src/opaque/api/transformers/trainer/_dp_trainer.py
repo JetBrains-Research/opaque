@@ -797,8 +797,8 @@ class DPTrainer:
         collator / checkpoint hooks.  ``use_performance_kernels`` (default
         ``False``) gates the CUDA + Triton kernel group (``rope``,
         ``rms_norm``, ``activation``, ``cross_entropy``).  The
-        ``performance`` bucket — currently ``kv_cache`` — is always
-        enabled here because ``DynamicCache`` allocation leaks vmap refs
+        ``performance`` bucket — ``kv_cache`` and the conditional fused-CE
+        wrapper — is always enabled here because ``DynamicCache`` allocation leaks vmap refs
         and inflates training memory regardless of host;
         ``performance_kernels_config={"kv_cache": False}`` opts out.
 
@@ -816,11 +816,6 @@ class DPTrainer:
             return
 
         kwargs = dict(self.args.performance_kernels_config or {})
-        # The wrapper is inert unless a caller explicitly marks a loss-only
-        # forward, so DPTrainer can install it automatically while preserving an
-        # explicit False opt-out. Direct apply_model_patches callers remain
-        # opt-in through that API's own default.
-        kwargs.setdefault("fused_linear_cross_entropy", True)
         apply_model_patches(
             self._model,
             compat=bool(self.args.use_compat_patches),
@@ -835,7 +830,7 @@ class DPTrainer:
             except (TypeError, ValueError):
                 return False
             return any(
-                parameter.name == "opaque_fused_loss_only"
+                parameter.name == "loss_only"
                 or (
                     allow_var_kwargs and parameter.kind is inspect.Parameter.VAR_KEYWORD
                 )
@@ -846,7 +841,7 @@ class DPTrainer:
         # module carries the actual fused forward. Require both facts so an
         # unsupported custom model never receives an unknown marker.
         self._fused_forward_uses_marker = bool(
-            kwargs["fused_linear_cross_entropy"]
+            kwargs.get("fused_linear_cross_entropy") is not False
             and accepts_marker(self._model, allow_var_kwargs=True)
             and any(
                 accepts_marker(module, allow_var_kwargs=False)
@@ -2390,7 +2385,7 @@ class DPTrainer:
             and self._compute_loss_func is None
             and self._fused_forward_uses_marker
         ):
-            inputs = {**inputs, "opaque_fused_loss_only": True}
+            inputs = {**inputs, "loss_only": True}
 
         output = fmodel(params, **inputs)
         # Output is required to be dict-like (``ModelOutput`` /
@@ -2640,7 +2635,7 @@ class DPTrainer:
         # above.
         forward_inputs = {**model_inputs, **labels_kwargs}
         if prediction_loss_only and has_labels and self._fused_forward_uses_marker:
-            forward_inputs["opaque_fused_loss_only"] = True
+            forward_inputs["loss_only"] = True
         with torch.no_grad():
             was_training = self._model.training
             if was_training:

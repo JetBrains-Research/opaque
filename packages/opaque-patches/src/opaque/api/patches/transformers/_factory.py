@@ -248,11 +248,9 @@ def make_apply_model_patches(
         ``moe`` installs the vmap-safe experts forward (DP-SGD needs it);
         ``grouped_moe`` only chooses its grouped-GEMM fast path (kernel-fused
         Triton on CUDA / ``torch._grouped_mm`` on MPS-CPU) vs the dense compat
-        path, so a dense run keeps a correct, vmap-safe MoE. ``fused_linear_cross_entropy``
-        defaults to ``False`` because the fused path returns
-        ``logits=None``, which is incompatible with callers that read
-        logits (e.g. SFTTrainer with ``compute_metrics`` /
-        ``preprocess_logits_for_metrics``).
+        path, so a dense run keeps a correct, vmap-safe MoE.
+        ``fused_linear_cross_entropy`` inherits from ``performance`` and installs
+        a wrapper whose optimized branch requires a per-call loss-only marker.
     """
     activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
@@ -349,13 +347,10 @@ def make_apply_model_patches(
         #   - ``cross_entropy`` (defaults from ``kernels``): installs
         #     ``Opaque_CrossEntropyLoss`` via ``loss_function``. Operates
         #     on materialized logits; the model still returns them.
-        #   - ``fused_linear_cross_entropy`` (defaults to ``False``):
-        #     replaces ``forward`` with ``Opaque_LinearCrossEntropyLoss``,
-        #     which skips ``lm_head`` materialization and returns
-        #     ``logits=None`` on the fast path. Incompatible with callers
-        #     that read ``outputs.logits`` (compute_metrics,
-        #     preprocess_logits_for_metrics, generation eval); enable
-        #     only when loss is the only consumer of the forward output.
+        #   - ``fused_linear_cross_entropy`` (defaults from ``performance``):
+        #     installs a conditional forward. Marker-false calls delegate to the
+        #     original model; loss-only calls skip ``lm_head`` materialization and
+        #     return ``logits=None``.
         causal_lm_class = classes.get("causal_lm")
         causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
         if (
@@ -376,9 +371,12 @@ def make_apply_model_patches(
             chunked_linear_ce = _normalize_chunked_linear_cross_entropy(
                 chunked_linear_ce
             )
+        enable_fused_linear_ce = kwargs.get("fused_linear_cross_entropy")
+        if enable_fused_linear_ce is None:
+            enable_fused_linear_ce = performance
         if (
             (fused_linear_cross_entropy or chunked_linear_ce)
-            and kwargs.get("fused_linear_cross_entropy", False)
+            and enable_fused_linear_ce
             and causal_lm_obj is not None
             and _fused_linear_ce_supports_class(causal_lm_obj)
         ):

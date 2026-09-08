@@ -6,11 +6,11 @@ DPTrainer drives opaque-patches via two split umbrellas:
   ``batchify``, vmap-safe masking / collator / checkpoint hooks).
 * ``use_performance_kernels`` → ``kernels`` (CUDA + Triton kernel group:
   ``rope``, ``rms_norm``, ``activation``, and ``cross_entropy``).
-* ``fused_linear_cross_entropy`` installs automatically under ``DPTrainer``
-  but activates only for calls known to be loss-only; explicit ``False`` opts out.
+* ``fused_linear_cross_entropy`` inherits from the always-on ``performance``
+  bucket; the trainer activates it only for calls known to be loss-only.
 
-The ``performance`` bucket — currently only ``kv_cache`` — stays on by
-default regardless of ``use_performance_kernels``: ``kv_cache`` is a pure
+The ``performance`` bucket stays on by default regardless of
+``use_performance_kernels``: ``kv_cache`` is a pure
 Python patch that disables HF's ``DynamicCache`` allocation, which
 otherwise leaks vmap references and inflates training memory.  Users who
 want to keep the cache (e.g. for an HF model whose forward depends on
@@ -18,9 +18,7 @@ it) opt out explicitly via ``performance_kernels_config={"kv_cache":
 False}``.
 
 ``performance_kernels_config`` is a flat ``dict[str, bool | int]`` forwarded
-without key translation. `DPTrainer` supplies the automatic
-``fused_linear_cross_entropy=True`` default only when that key is absent.
-Supported keys mirror the opaque-patches surface:
+without key translation. Supported keys mirror the opaque-patches surface:
 ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
 ``fused_linear_cross_entropy``, ``chunked_linear_cross_entropy``, ``kv_cache``,
 ``eager_attention``, ``batchify``. The chunked setting accepts a positive

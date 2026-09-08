@@ -175,7 +175,7 @@ def _fused_linear_ce_loss_is_supported(
 def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = False):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
-    When a loss-only caller sets ``opaque_fused_loss_only=True`` and labels are
+    When a loss-only caller sets ``loss_only=True`` and labels are
     provided, skips ``lm_head`` and computes loss from
     ``hidden_states @ lm_head.weight.T`` (CCE), unless ``loss_function`` would
     need unsupported options — then defers to the original forward (e.g.
@@ -196,11 +196,12 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
         return_dict=None,
         cache_position=None,
         logits_to_keep: int | torch.Tensor = 0,
-        opaque_fused_loss_only: bool = False,
+        loss_only: bool = False,
         **kwargs,
     ):
-        # No labels → inference → use original forward
-        if labels is None:
+        # The wrapper is inert unless this call explicitly permits a loss-only
+        # result. Inference and logits-consuming labeled calls stay model-native.
+        if labels is None or not loss_only:
             return original(
                 self,
                 input_ids=input_ids,
@@ -276,11 +277,10 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
         # CUDA + half precision routes to the Triton kernel; any other host
         # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
         # log-sum-exp over vocab chunks (no full-logit materialization). The
-        # fused path returns ``logits=None`` — but ``fused_linear_cross_entropy``
-        # is opt-in (default off) precisely because of that. The SFT trainer
-        # passes an explicit bool for its loss-only vs metrics paths.
+        # The wrapper is installed with the performance patch bucket, but only
+        # an explicit loss-only call may return ``logits=None``.
         use_fused_ce = (
-            opaque_fused_loss_only
+            loss_only
             and _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs)
             and (
                 (

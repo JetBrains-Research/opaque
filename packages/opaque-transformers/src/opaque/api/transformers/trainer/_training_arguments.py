@@ -438,10 +438,9 @@ class TrainingArguments:
     # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
     # Supported keys: ``rope``, ``rms_norm``, ``activation``,
     # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
-    # ``eager_attention``, ``batchify``. For DPTrainer, an absent
-    # ``fused_linear_cross_entropy`` installs the conditional wrapper
-    # automatically; True force-installs it and False opts out. Only calls the
-    # trainer proves are loss-only activate its logits-free branch.
+    # ``eager_attention``, ``batchify``. The conditional fused-linear-CE wrapper
+    # inherits from the model patcher's ``performance`` bucket; False opts out.
+    # Only calls the trainer proves are loss-only activate its optimized branch.
     performance_kernels_config: dict[str, Any] | str | None = None
     # Whether ``opaque.patches.apply_model_patches`` should apply compat
     # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe

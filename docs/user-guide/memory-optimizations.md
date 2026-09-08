@@ -170,10 +170,9 @@ paths on your workload.
 ### Fused linear cross-entropy
 
 Computes the loss directly from hidden states and the `lm_head` weight matrix,
-never materializing the full `(batch*seq, vocab)` logits tensor. Install the
-conditional wrapper with
-`apply_model_patches(model, fused_linear_cross_entropy=True)`, then pass
-`opaque_fused_loss_only=True` only for forwards where logits have no consumer.
+never materializing the full `(batch*seq, vocab)` logits tensor. The normal
+`performance` patch bucket installs the conditional wrapper; pass
+`loss_only=True` only for forwards where logits have no consumer.
 
 The fused branch returns `logits=None`; calls that need logits for metrics,
 preprocessing, generation, or a custom loss leave the marker false. Unsupported
@@ -187,11 +186,7 @@ portable chunked backend. Its peak probability-tile memory scales with
 loss-only path and vocabulary-column width through:
 
 ```python
-apply_model_patches(
-    model,
-    fused_linear_cross_entropy=True,
-    chunked_linear_cross_entropy=2048,
-)
+apply_model_patches(model, chunked_linear_cross_entropy=2048)
 ```
 
 The fused flag enables the logits-free path; for the chunk-width setting,
@@ -271,9 +266,8 @@ parameter-efficient method to reduce the trainable parameter count.
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).
 
-**OOM with fused linear CE not active:** Install the wrapper with
-`apply_model_patches(model, fused_linear_cross_entropy=True)` and pass
-`opaque_fused_loss_only=True` only when logits have no consumer. Otherwise, the
+**OOM with fused linear CE not active:** Ensure the `performance` patch bucket
+is enabled and pass `loss_only=True` only when logits have no consumer. Otherwise, the
 full `(batch*seq, vocab)` tensor is materialized — about 2 GB per sample at 128K
 vocabulary — so reduce batch size if logits are required.
 
