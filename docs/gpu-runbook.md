@@ -108,12 +108,16 @@ The whole campaign is a two-arm comparison. Everything else is a variation.
   --num-epochs 2 --weight-decay 0 \
   --noise-multiplier 0 \
   --eval-bpb --eval-batch-size 16 \
-  --seed 42 --run-name rot-s42
+  --seed 42 --wandb-run-name rot-s42
 
 # FROZEN arm (published LoRA-XS) — identical but for p_e
 .venv/bin/python examples/train_causal_lm.py \
-  ... --lora-xse-p-e 0 ... --run-name frz-s42
+  ... --lora-xse-p-e 0 ... --wandb-run-name frz-s42
 ```
+
+Note `--wandb-run-name`, not `--run-name`: the latter belongs to
+`deploy/zenml/run.py`, not the trainer, and argparse rejects it. `WANDB_NAME` or
+`RUN_NAME` in the environment work as alternatives.
 
 `p_e = 0.3125` at `r = 16` gives `r_e = floor(0.3125 × 16) = 5` explore directions
 and `r_keep = 11`. **`r_e = floor(p_e · r)`**, so at r=8 the same p_e yields 2, an
@@ -378,7 +382,7 @@ for s in 42 43 44; do
     --lora-method lora-xs --lora-r 16 --lora-alpha 16 --lora-xse-p-e 0 \
     --optimizer sgd --sgd-momentum 0.9 --learning-rate 5e-2 \
     --num-epochs 6 --weight-decay 0 --noise-multiplier 0 \
-    --eval-bpb --eval-batch-size 16 --seed $s --run-name q-norot-mom-e6b-s$s
+    --eval-bpb --eval-batch-size 16 --seed $s --wandb-run-name q-norot-mom-e6b-s$s
 done
 ```
 
