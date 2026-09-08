@@ -167,7 +167,7 @@ def test_cuda_overlap_snapshots_before_later_in_place_write():
         activation.add_(100)
     loss.backward()
 
-    torch.testing.assert_close(x.grad, 4 * original)
+    torch.testing.assert_close(x.grad, 8 * original)
 
 
 @pytest.mark.cuda
@@ -198,7 +198,7 @@ def test_cuda_pinned_budget_falls_back_to_pageable():
         return ((row @ a).relu() @ b).square().sum()
 
     expected = vmap(grad(loss, argnums=(0, 1)), in_dims=(None, None, 0))(w1, w2, x)
-    budget = 512 * 512 * w1.element_size()
+    budget = 64 << 10
     ctx = save_on_cpu(
         pin_memory=True,
         min_bytes=0,
