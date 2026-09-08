@@ -42,7 +42,6 @@ apply_model_patches(
     performance=True,                         # kv_cache (pure-Python; always-on)
     kernels=True,                             # CUDA + Triton group (rope, rms_norm, …)
     peft=True,                                # LoRA fusion when adapters detected
-    fused_linear_cross_entropy=False,         # opt-in (fused forward returns logits=None)
 )
 ```
 
@@ -57,10 +56,10 @@ graph.
 | Flag | Default | Effect |
 |---|---|---|
 | `compat` | `True` | vmap-safety wrappers — `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. |
-| `performance` | `True` | Memory-efficiency patches that run on any host (currently `kv_cache`). |
+| `performance` | `True` | Memory-efficiency patches that run on any host (`kv_cache` and the conditional fused-linear-CE wrapper). |
 | `kernels` | `performance` | CUDA + Triton kernel group — `rope`, `rms_norm`, `activation`, `cross_entropy`.  Forced `False` when CUDA + Triton aren't importable, so `performance=True` keeps `kv_cache` on CPU / MPS hosts. |
 | `peft` | `True` | LoRA / PEFT module fusion (`opaque_lora_*`). |
-| `fused_linear_cross_entropy` | `False` | Promoted kernel kwarg — opt-in because the fused forward returns `logits=None`, which is incompatible with callers that read `outputs.logits`. |
+| `fused_linear_cross_entropy` | `performance` | Conditional fused LM-head loss wrapper. Set `False` to disable; only calls with `loss_only=True` return `logits=None`. |
 
 Each umbrella forwards to per-concern boolean kwargs in `**kwargs`,
 so you can override individual patches without flipping the whole
@@ -348,15 +347,17 @@ with 128K vocab, this avoids the ~2 GB `logits = hidden_states @
 lm_head.T` allocation that the non-fused path produces per forward
 pass.
 
-The patched `XForCausalLM.forward` returns `logits=None` on the
-fast path, which is incompatible with callers that read
-`outputs.logits` — `compute_metrics`,
-`preprocess_logits_for_metrics`, and generation eval all need the
-materialised tensor.  The patch is **opt-in** for this reason:
-enable via `apply_model_patches(model,
-fused_linear_cross_entropy=True)` when loss is the only consumer of
-the forward output.  `examples/train_dpsgd.py` and
-`examples/train_dpftrl.py` enable it.
+The fused forward wrapper is installed with the normal `performance` patch
+bucket. It delegates to the original model forward unless the caller sets
+`loss_only=True`; that loss-only branch may return `logits=None`. Unsupported
+loss options also fall back to the model-native logits path. Set
+`fused_linear_cross_entropy=False` on `apply_model_patches` to disable the
+wrapper.
+
+Cohere's multiplicative and Granite's divisive logit scaling are passed as one
+scalar into the tiled computation. Scaling occurs before optional softcapping,
+and backward applies the chain rule to the original (including trainable or
+tied) head weight without allocating a transformed full-weight copy.
 
 `cross_entropy=True` (default when `kernels=True`) still installs
 the non-fused chunked CE via `loss_function`, which operates on
@@ -493,7 +494,7 @@ the patch APIs directly:
 |---|---|---|
 | `use_compat_patches` | `True` | Routed to `compat`.  Set `False` for custom models that don't need vmap-safety shims. |
 | `use_performance_kernels` | `False` | Routed to `kernels`.  Auto-`False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `None` | Flat configuration forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs. Per-concern values are normally booleans; `chunked_linear_cross_entropy` also accepts a positive integer tile width. |
+| `performance_kernels_config` | `None` | Flat configuration forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs. Per-concern values are normally booleans; `chunked_linear_cross_entropy` also accepts a positive maximum vocabulary tile width while token tiling remains automatic. |
 | `router_fp32` | `False` | Routed to `router_fp32` (the fp32-logit router swap for MoE families). |
 | `packed_sequences` | `None` | Sets the packed-sequence policy of the mask builder; `None` keeps the probe unless `router_load_release` is on, where it behaves as `False`. |
 
@@ -509,7 +510,6 @@ per-concern keys discussed above:
 args = TrainingArguments(
     use_performance_kernels=True,
     performance_kernels_config={
-        "fused_linear_cross_entropy": True,   # opt-in
         "chunked_linear_cross_entropy": 2048, # vocabulary columns per tile
         "kv_cache": False,                    # for HF DynamicCache-dependent models
     },

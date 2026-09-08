@@ -46,6 +46,92 @@ def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(*new_shape)
 
 
+def _mask_for_query_group(
+    attention_mask: torch.Tensor | None,
+    query: torch.Tensor,
+    query_head_start: int,
+    query_head_end: int,
+) -> torch.Tensor | None:
+    if (
+        attention_mask is not None
+        and attention_mask.ndim >= query.ndim
+        and attention_mask.shape[-3] == query.shape[-3]
+    ):
+        return attention_mask[..., query_head_start:query_head_end, :, :]
+    return attention_mask
+
+
+def _kv_group(
+    states: torch.Tensor,
+    group_index: int,
+    num_key_value_groups: int,
+) -> torch.Tensor:
+    state = states[..., group_index : group_index + 1, :, :]
+    return state.expand(
+        *state.shape[:-3], num_key_value_groups, state.shape[-2], state.shape[-1]
+    )
+
+
+def _grouped_sdpa(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    dropout: float,
+    scaling: float | None,
+    is_causal: bool = False,
+) -> torch.Tensor:
+    num_key_value_groups = query.shape[-3] // key.shape[-3]
+    if num_key_value_groups == 1:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=dropout,
+            scale=scaling,
+            is_causal=is_causal,
+        )
+
+    output_groups = []
+    for key_value_head in range(key.shape[-3]):
+        query_head_start = key_value_head * num_key_value_groups
+        query_head_end = query_head_start + num_key_value_groups
+        output_groups.append(
+            torch.nn.functional.scaled_dot_product_attention(
+                query[..., query_head_start:query_head_end, :, :],
+                _kv_group(key, key_value_head, num_key_value_groups),
+                _kv_group(value, key_value_head, num_key_value_groups),
+                attn_mask=_mask_for_query_group(
+                    attention_mask, query, query_head_start, query_head_end
+                ),
+                dropout_p=dropout,
+                scale=scaling,
+                is_causal=is_causal,
+            )
+        )
+    return torch.cat(output_groups, dim=-3)
+
+
+def _can_use_native_gqa(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    dropout: float,
+    is_causal: bool,
+) -> bool:
+    if query.device.type != "cuda" or torch._C._functorch.is_batchedtensor(query):
+        return False
+    params = torch.backends.cuda.SDPAParams(
+        query, key, value, attention_mask, dropout, is_causal, True
+    )
+    return (
+        torch.backends.cuda.flash_sdp_enabled()
+        and torch.backends.cuda.can_use_flash_attention(params)
+    )
+
+
 def _apply_attention_mask(
     attn_weights: torch.Tensor,
     attention_mask: torch.Tensor,
@@ -80,6 +166,81 @@ def _chunked_sliding_window_mask(
     return mask
 
 
+def vmap_sdpa_attention_forward(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    dropout: float = 0.0,
+    scaling: float | None = None,
+    is_causal: bool | None = None,
+    position_bias: torch.Tensor | None = None,
+    **kwargs,
+) -> tuple[torch.Tensor, None]:
+    """Run SDPA without flattening expanded grouped-query K/V heads."""
+    num_key_value_groups = query.shape[-3] // key.shape[-3]
+    if num_key_value_groups == 1:
+        from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+        return sdpa_attention_forward(
+            module,
+            query,
+            key,
+            value,
+            attention_mask,
+            dropout=dropout,
+            scaling=scaling,
+            is_causal=is_causal,
+            position_bias=position_bias,
+            **kwargs,
+        )
+
+    query_length = query.shape[-2]
+    key_value_length = key.shape[-2]
+    is_causal = (
+        is_causal if is_causal is not None else getattr(module, "is_causal", True)
+    )
+    is_causal = query_length > 1 and attention_mask is None and is_causal
+
+    if is_causal and key_value_length > query_length:
+        key = key[..., :query_length, :]
+        value = value[..., :query_length, :]
+        if position_bias is not None:
+            position_bias = position_bias[..., :query_length]
+
+    if position_bias is not None:
+        from transformers.integrations.sdpa_attention import create_position_bias_mask
+
+        attention_mask = create_position_bias_mask(
+            position_bias, attention_mask, is_causal, query, key
+        )
+        is_causal = False
+
+    if _can_use_native_gqa(query, key, value, attention_mask, dropout, bool(is_causal)):
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=dropout,
+            scale=scaling,
+            is_causal=is_causal,
+            enable_gqa=True,
+        )
+    else:
+        attn_output = _grouped_sdpa(
+            query,
+            key,
+            value,
+            attention_mask,
+            dropout,
+            scaling,
+            bool(is_causal),
+        )
+    return attn_output.transpose(-3, -2).contiguous(), None
+
+
 def _compact_sliding_window_sdpa(
     module: torch.nn.Module,
     query: torch.Tensor,
@@ -90,8 +251,6 @@ def _compact_sliding_window_sdpa(
     scaling: float | None,
 ) -> torch.Tensor:
     """Run a no-padding sliding-window prefill in bounded query chunks."""
-    key_states = vmap_repeat_kv(key, module.num_key_value_groups)
-    value_states = vmap_repeat_kv(value, module.num_key_value_groups)
     output_chunks = []
     for query_start in range(0, query.shape[-2], _SDPA_QUERY_CHUNK):
         query_end = min(query_start + _SDPA_QUERY_CHUNK, query.shape[-2])
@@ -105,13 +264,13 @@ def _compact_sliding_window_sdpa(
             query.device,
         )
         output_chunks.append(
-            torch.nn.functional.scaled_dot_product_attention(
+            _grouped_sdpa(
                 query[..., query_start:query_end, :],
-                key_states[..., key_start:query_end, :],
-                value_states[..., key_start:query_end, :],
-                attn_mask=mask,
-                dropout_p=dropout,
-                scale=scaling,
+                key[..., key_start:query_end, :],
+                value[..., key_start:query_end, :],
+                mask,
+                dropout,
+                scaling,
             )
         )
     return torch.cat(output_chunks, dim=-2)
@@ -143,9 +302,7 @@ def vmap_sdpa_attention_forward_sliding_window(
         )
         return output.transpose(-3, -2).contiguous(), None
 
-    from transformers.integrations.sdpa_attention import sdpa_attention_forward
-
-    return sdpa_attention_forward(
+    return vmap_sdpa_attention_forward(
         module,
         query,
         key,
@@ -156,6 +313,53 @@ def vmap_sdpa_attention_forward_sliding_window(
         position_bias=position_bias,
         **kwargs,
     )
+
+
+def _grouped_eager_attention(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    scaling: float,
+    dropout: float,
+    softcap: float | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    num_key_value_groups = query.shape[-3] // key.shape[-3]
+    output_groups = []
+    weight_groups = []
+    for key_value_head in range(key.shape[-3]):
+        query_head_start = key_value_head * num_key_value_groups
+        query_head_end = query_head_start + num_key_value_groups
+        query_group = query[..., query_head_start:query_head_end, :, :]
+        key_group = _kv_group(key, key_value_head, num_key_value_groups)
+        value_group = _kv_group(value, key_value_head, num_key_value_groups)
+        attn_weights = torch.matmul(query_group, key_group.transpose(-2, -1))
+        attn_weights = attn_weights * scaling
+        if softcap is not None:
+            attn_weights = torch.tanh(attn_weights / softcap) * softcap
+
+        group_mask = _mask_for_query_group(
+            attention_mask, query, query_head_start, query_head_end
+        )
+        if group_mask is not None:
+            attn_weights = _apply_attention_mask(
+                attn_weights,
+                group_mask,
+                query_group.shape[-2],
+                key_group.shape[-2],
+            )
+
+        attn_weights = torch.nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(query.dtype)
+        attn_weights = torch.nn.functional.dropout(
+            attn_weights, p=dropout, training=module.training
+        )
+        output_groups.append(torch.matmul(attn_weights, value_group))
+        weight_groups.append(attn_weights)
+
+    return torch.cat(output_groups, dim=-3), torch.cat(weight_groups, dim=-3)
 
 
 def vmap_eager_attention_forward(
@@ -177,32 +381,10 @@ def vmap_eager_attention_forward(
     Under vmap (3D): query shape (num_heads, seq_len, head_dim)
                      returns (seq_len, num_heads, head_dim)
     """
-    key_states = vmap_repeat_kv(key, module.num_key_value_groups)
-    value_states = vmap_repeat_kv(value, module.num_key_value_groups)
-
-    # query shape: (..., num_heads, seq_len, head_dim)
-    # key_states shape: (..., num_heads, seq_len, head_dim)
-    attn_weights = torch.matmul(query, key_states.transpose(-2, -1)) * scaling
-
-    if attention_mask is not None:
-        q_len = query.shape[-2]
-        kv_len = key_states.shape[-2]
-        attn_weights = _apply_attention_mask(
-            attn_weights, attention_mask, q_len, kv_len
-        )
-
-    attn_weights = torch.nn.functional.softmax(
-        attn_weights, dim=-1, dtype=torch.float32
-    ).to(query.dtype)
-    attn_weights = torch.nn.functional.dropout(
-        attn_weights, p=dropout, training=module.training
+    attn_output, attn_weights = _grouped_eager_attention(
+        module, query, key, value, attention_mask, scaling, dropout
     )
-
-    attn_output = torch.matmul(attn_weights, value_states)
-    # Transpose to move seq_len before num_heads: (..., num_heads, seq_len, head_dim) -> (..., seq_len, num_heads, head_dim)
-    attn_output = attn_output.transpose(-3, -2).contiguous()
-
-    return attn_output, attn_weights
+    return attn_output.transpose(-3, -2).contiguous(), attn_weights
 
 
 def vmap_eager_attention_forward_gemma2(
@@ -226,39 +408,18 @@ def vmap_eager_attention_forward_gemma2(
     Under vmap (3D): query shape (num_heads, seq_len, head_dim)
                      returns (seq_len, num_heads, head_dim)
     """
-    key_states = vmap_repeat_kv(key, module.num_key_value_groups)
-    value_states = vmap_repeat_kv(value, module.num_key_value_groups)
-
-    # query shape: (..., num_heads, seq_len, head_dim)
-    # key_states shape: (..., num_heads, seq_len, head_dim)
     scaling = query.shape[-1] ** -0.5 if scaling is None else scaling
-    attn_weights = torch.matmul(query, key_states.transpose(-2, -1)) * scaling
-
-    # Apply softcap (Gemma2-specific)
-    if softcap is not None:
-        attn_weights = attn_weights / softcap
-        attn_weights = torch.tanh(attn_weights)
-        attn_weights = attn_weights * softcap
-
-    if attention_mask is not None:
-        q_len = query.shape[-2]
-        kv_len = key_states.shape[-2]
-        attn_weights = _apply_attention_mask(
-            attn_weights, attention_mask, q_len, kv_len
-        )
-
-    attn_weights = torch.nn.functional.softmax(
-        attn_weights, dim=-1, dtype=torch.float32
-    ).to(query.dtype)
-    attn_weights = torch.nn.functional.dropout(
-        attn_weights, p=dropout, training=module.training
+    attn_output, attn_weights = _grouped_eager_attention(
+        module,
+        query,
+        key,
+        value,
+        attention_mask,
+        scaling,
+        dropout,
+        softcap,
     )
-
-    attn_output = torch.matmul(attn_weights, value_states)
-    # Transpose to move seq_len before num_heads: (..., num_heads, seq_len, head_dim) -> (..., seq_len, num_heads, head_dim)
-    attn_output = attn_output.transpose(-3, -2).contiguous()
-
-    return attn_output, attn_weights
+    return attn_output.transpose(-3, -2).contiguous(), attn_weights
 
 
 def _gemma2_mask_chunk(
@@ -333,33 +494,55 @@ def _gemma2_softcap_probabilities(
 
 
 class _ChunkedGemma2Attention(torch.autograd.Function):
-    """Softcapped attention without retaining a full query-by-key matrix."""
+    """Softcapped GQA without retaining expanded K/V or full score matrices."""
 
     generate_vmap_rule = True
 
     @staticmethod
     def forward(
-        query, key, value, attention_mask, scaling, softcap, is_causal, sliding_window
+        query,
+        key,
+        value,
+        attention_mask,
+        scaling,
+        softcap,
+        is_causal,
+        sliding_window,
+        num_key_value_groups,
     ):
         output_chunks = []
         for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
             query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
-            key_start, key_end, _, _, _, probabilities = _gemma2_softcap_probabilities(
-                query,
-                key,
-                attention_mask,
-                scaling,
-                softcap,
-                is_causal,
-                query_start,
-                query_end,
-                sliding_window,
-            )
-            output_chunks.append(
-                torch.matmul(
-                    probabilities.to(query.dtype), value[..., key_start:key_end, :]
+            output_groups = []
+            for key_value_head in range(key.shape[-3]):
+                query_head_start = key_value_head * num_key_value_groups
+                query_head_end = query_head_start + num_key_value_groups
+                query_group = query[..., query_head_start:query_head_end, :, :]
+                key_group = _kv_group(key, key_value_head, num_key_value_groups)
+                value_group = _kv_group(value, key_value_head, num_key_value_groups)
+                group_mask = _mask_for_query_group(
+                    attention_mask, query, query_head_start, query_head_end
                 )
-            )
+                key_start, key_end, _, _, _, probabilities = (
+                    _gemma2_softcap_probabilities(
+                        query_group,
+                        key_group,
+                        group_mask,
+                        scaling,
+                        softcap,
+                        is_causal,
+                        query_start,
+                        query_end,
+                        sliding_window,
+                    )
+                )
+                output_groups.append(
+                    torch.matmul(
+                        probabilities.to(query.dtype),
+                        value_group[..., key_start:key_end, :],
+                    )
+                )
+            output_chunks.append(torch.cat(output_groups, dim=-3))
         return torch.cat(output_chunks, dim=-2)
 
     @staticmethod
@@ -374,6 +557,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
             softcap,
             is_causal,
             sliding_window,
+            num_key_value_groups,
         ) = inputs
         if attention_mask is None:
             ctx.save_for_backward(query, key, value)
@@ -384,6 +568,7 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
         ctx.softcap = float(softcap)
         ctx.is_causal = is_causal
         ctx.sliding_window = sliding_window
+        ctx.num_key_value_groups = num_key_value_groups
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -398,11 +583,27 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
         grad_value = torch.zeros_like(value)
         for query_start in range(0, query.shape[-2], _GEMMA2_QUERY_CHUNK):
             query_end = min(query_start + _GEMMA2_QUERY_CHUNK, query.shape[-2])
-            key_start, key_end, query_chunk, key_chunk, capped_logits, probabilities = (
-                _gemma2_softcap_probabilities(
-                    query,
-                    key,
-                    attention_mask,
+            grad_query_groups = []
+            for key_value_head in range(key.shape[-3]):
+                query_head_start = key_value_head * ctx.num_key_value_groups
+                query_head_end = query_head_start + ctx.num_key_value_groups
+                query_group = query[..., query_head_start:query_head_end, :, :]
+                key_group = _kv_group(key, key_value_head, ctx.num_key_value_groups)
+                value_group = _kv_group(value, key_value_head, ctx.num_key_value_groups)
+                group_mask = _mask_for_query_group(
+                    attention_mask, query, query_head_start, query_head_end
+                )
+                (
+                    key_start,
+                    key_end,
+                    query_chunk,
+                    key_chunk,
+                    capped_logits,
+                    probabilities,
+                ) = _gemma2_softcap_probabilities(
+                    query_group,
+                    key_group,
+                    group_mask,
                     ctx.scaling,
                     ctx.softcap,
                     ctx.is_causal,
@@ -410,42 +611,54 @@ class _ChunkedGemma2Attention(torch.autograd.Function):
                     query_end,
                     ctx.sliding_window,
                 )
-            )
-            grad_output_chunk = grad_output[..., query_start:query_end, :]
-            probabilities_input_dtype = probabilities.to(query.dtype)
+                grad_output_chunk = grad_output[
+                    ...,
+                    query_head_start:query_head_end,
+                    query_start:query_end,
+                    :,
+                ]
+                probabilities_input_dtype = probabilities.to(query.dtype)
 
-            grad_value[..., key_start:key_end, :].add_(
-                torch.matmul(
+                grad_value_group = torch.matmul(
                     probabilities_input_dtype.transpose(-2, -1), grad_output_chunk
                 )
-            )
-            grad_probabilities = torch.matmul(
-                grad_output_chunk, value[..., key_start:key_end, :].transpose(-2, -1)
-            ).to(probabilities.dtype)
-            grad_softmax_input = probabilities * (
-                grad_probabilities
-                - (grad_probabilities * probabilities).sum(dim=-1, keepdim=True)
-            )
-            grad_capped_logits = grad_softmax_input.to(capped_logits.dtype)
-            if attention_mask is not None and attention_mask.dtype == torch.bool:
-                mask = _gemma2_mask_chunk(
-                    attention_mask, query_start, query_end, key_start, key_end
+                grad_value[
+                    ..., key_value_head : key_value_head + 1, key_start:key_end, :
+                ].add_(grad_value_group.sum(dim=-3, keepdim=True))
+                grad_probabilities = torch.matmul(
+                    grad_output_chunk,
+                    value_group[..., key_start:key_end, :].transpose(-2, -1),
+                ).to(probabilities.dtype)
+                grad_softmax_input = probabilities * (
+                    grad_probabilities
+                    - (grad_probabilities * probabilities).sum(dim=-1, keepdim=True)
                 )
-                grad_capped_logits = grad_capped_logits.masked_fill(~mask, 0.0)
-            grad_logits = grad_capped_logits * (
-                1.0 - (capped_logits / ctx.softcap) ** 2
-            )
-            grad_logits = grad_logits * ctx.scaling
+                grad_capped_logits = grad_softmax_input.to(capped_logits.dtype)
+                if group_mask is not None and group_mask.dtype == torch.bool:
+                    mask = _gemma2_mask_chunk(
+                        group_mask, query_start, query_end, key_start, key_end
+                    )
+                    grad_capped_logits = grad_capped_logits.masked_fill(~mask, 0.0)
+                grad_logits = grad_capped_logits * (
+                    1.0 - (capped_logits / ctx.softcap) ** 2
+                )
+                grad_logits = grad_logits * ctx.scaling
 
-            grad_query_chunks.append(torch.matmul(grad_logits, key_chunk))
-            grad_key[..., key_start:key_end, :].add_(
-                torch.matmul(grad_logits.transpose(-2, -1), query_chunk)
-            )
+                grad_query_groups.append(torch.matmul(grad_logits, key_chunk))
+                grad_key_group = torch.matmul(
+                    grad_logits.transpose(-2, -1), query_chunk
+                )
+                grad_key[
+                    ..., key_value_head : key_value_head + 1, key_start:key_end, :
+                ].add_(grad_key_group.sum(dim=-3, keepdim=True))
+
+            grad_query_chunks.append(torch.cat(grad_query_groups, dim=-3))
 
         return (
             torch.cat(grad_query_chunks, dim=-2),
             grad_key,
             grad_value,
+            None,
             None,
             None,
             None,
@@ -479,17 +692,16 @@ def vmap_sdpa_attention_forward_gemma2(
             value = value[..., : query.shape[-2], :]
 
         if not module.training or dropout == 0.0:
-            key_states = vmap_repeat_kv(key, module.num_key_value_groups)
-            value_states = vmap_repeat_kv(value, module.num_key_value_groups)
             attn_output = _ChunkedGemma2Attention.apply(
                 query,
-                key_states,
-                value_states,
+                key,
+                value,
                 attention_mask,
                 scaling,
                 softcap,
                 is_causal,
                 sliding_window,
+                query.shape[-3] // key.shape[-3],
             )
             return attn_output.transpose(-3, -2).contiguous(), None
 
@@ -514,9 +726,7 @@ def vmap_sdpa_attention_forward_gemma2(
             **kwargs,
         )
 
-    from transformers.integrations.sdpa_attention import sdpa_attention_forward
-
-    return sdpa_attention_forward(
+    return vmap_sdpa_attention_forward(
         module,
         query,
         key,

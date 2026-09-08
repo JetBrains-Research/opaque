@@ -2,12 +2,12 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import torch
 from torch.autograd.profiler import record_function
 
-from opaque.api.engine.clipping._clipped_fun import ClippingStats
+from opaque.api.engine.clipping._clipped_fun import ClippingStats, _RuntimeClipState
 from opaque.api.engine.clipping._clipped_grad import (
     ClippedGradAux,
     _validate_static_args,
@@ -413,6 +413,18 @@ def adaptive_clipped_grad(
             _batch_size=0.0,
         )
 
+    inner_return_aux = return_aux
+    inner_fn, _ = clipped_grad(
+        loss_fn,
+        argnums=argnums,
+        has_aux=has_aux,
+        clipping_norm=initial_clipping_norm,
+        return_aux=inner_return_aux,
+        return_stats=not inner_return_aux,
+        pre_clipping_transform=pre_clipping_transform,
+        **clipped_grad_kwargs,
+    )
+
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
         """Compute clipped gradients with adaptive threshold.
 
@@ -488,26 +500,15 @@ def adaptive_clipped_grad(
                 return (grads, stats), new_state
             return grads, new_state
 
-        # Compute gradients with current threshold
-        # Force grad_norms computation to update the threshold
+        # Compute gradients with the current threshold. The engine transform is
+        # constructed once; its tensor-only chunk kernel receives the changing
+        # threshold as data so compilation does not specialize on its value.
         user_wants_return_aux = return_aux
-        inner_return_aux = user_wants_return_aux
-        clipped_result = cast(
-            "tuple[Callable, Any]",
-            clipped_grad(
-                loss_fn,
-                argnums=argnums,
-                has_aux=has_aux,
-                clipping_norm=state._next_clipping_norm,
-                return_aux=inner_return_aux,
-                return_stats=not inner_return_aux,
-                pre_clipping_transform=pre_clipping_transform,
-                **clipped_grad_kwargs,
-            ),
+        result, _ = inner_fn(
+            *args,
+            state=_RuntimeClipState(state._next_clipping_norm),
+            **kwargs,
         )
-        inner_fn, inner_state = clipped_result
-
-        result, _ = inner_fn(*args, state=inner_state, **kwargs)
 
         # Extract gradients and auxiliary output
         aux = None

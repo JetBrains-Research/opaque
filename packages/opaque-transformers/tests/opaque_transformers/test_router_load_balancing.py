@@ -19,6 +19,9 @@ import pytest
 
 pytest.importorskip("transformers")
 pytest.importorskip("datasets")
+# Mellum landed in Transformers 5.8; the minimum-dependency lane resolves
+# lower, where the top-level ``MellumConfig`` import below does not exist.
+pytest.importorskip("transformers.models.mellum")
 
 import torch
 from datasets import Dataset
@@ -250,9 +253,11 @@ def _walk(obj, path: str = ""):
 def test_off_keeps_the_plain_path(tmp_path):
     trainer = _trainer(tmp_path, router_load_release="off")
     assert trainer._router_load is None
-    assert "opaque_router_logits" not in str(
-        __import__("inspect").signature(MellumForCausalLM.forward)
-    )
+    # The chunked forward installs with the performance bucket, so its
+    # ``opaque_router_logits`` parameter exists regardless.  What the plain
+    # path guarantees is that the trainer never requests router logits.
+    assert trainer._router_load_forward_kwargs() == {}
+    assert trainer._router_load_forward_kwargs(return_logits=True) == {}
     assert packed_sequences() is None
     with _active_context(trainer) as ctx:
         assert PROBE_NAME not in ctx.trainable_params
@@ -315,9 +320,9 @@ def test_loss_value_is_ce_and_gradient_is_ce_plus_alpha_surrogate(tmp_path):
             )
 
         def ce_loss(trainable, ex):
-            return ctx.fmodel(
-                {**ctx.frozen_params, **trainable}, **ex, opaque_fused_loss_only=True
-            )["loss"]
+            return ctx.fmodel({**ctx.frozen_params, **trainable}, **ex, loss_only=True)[
+                "loss"
+            ]
 
         def surrogate(trainable, ex):
             out = ctx.fmodel(
@@ -337,10 +342,25 @@ def test_loss_value_is_ce_and_gradient_is_ce_plus_alpha_surrogate(tmp_path):
             dp_loss(ctx.trainable_params, example),
             ce_loss(ctx.trainable_params, example),
         )
-        # Gradient of the model leaves: grad CE + alpha grad S.
-        g_dp = torch.func.grad(dp_loss)(ctx.trainable_params, example)
-        g_ce = torch.func.grad(ce_loss)(ctx.trainable_params, example)
-        g_s = torch.func.grad(surrogate)(ctx.trainable_params, example)
+
+        # Gradient of the model leaves: grad CE + alpha grad S.  Taken
+        # through ``vmap(grad(...))`` over a one-example batch, which is the
+        # transform the trainer actually applies; a bare ``grad`` over the
+        # chunked LM-head loss hits a functorch interaction in the kernel
+        # (its ``setup_context`` unpacks a three-tuple that the grad-only
+        # interpreter delivers unwrapped) that is unrelated to this feature.
+        def per_example(fn):
+            batched = {k: v[None] for k, v in example.items()}
+            return {
+                name: g[0]
+                for name, g in torch.func.vmap(torch.func.grad(fn), in_dims=(None, 0))(
+                    ctx.trainable_params, batched
+                ).items()
+            }
+
+        g_dp = per_example(dp_loss)
+        g_ce = per_example(ce_loss)
+        g_s = per_example(surrogate)
         for name in ctx.trainable_params:
             if name == PROBE_NAME:
                 continue
@@ -755,9 +775,18 @@ def test_family_without_a_router_raises(tmp_path):
 
 
 def test_missing_chunked_forward_raises(tmp_path, monkeypatch):
+    # A model whose forward does not declare ``opaque_router_logits`` cannot
+    # serve the release.  Stubbing ``apply_model_patches`` is not enough to
+    # produce one: the chunked forward is installed on the class by the first
+    # model built in the process and stays installed, so the guard is driven
+    # through the detector it consults.
     import opaque.patches
+    from opaque.api.transformers.trainer import _dp_trainer as dpt
 
     monkeypatch.setattr(opaque.patches, "apply_model_patches", lambda *a, **k: None)
+    monkeypatch.setattr(
+        dpt, "_has_named_router_logits_parameter", lambda _forward: False
+    )
     with pytest.raises(ConfigurationError, match="opaque_router_logits"):
         _trainer(tmp_path, router_load_release="monitor")
 

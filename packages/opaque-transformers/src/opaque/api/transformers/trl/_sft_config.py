@@ -100,10 +100,9 @@ class SFTConfig(TrainingArguments):
     #: Opaque-specific (no TRL analogue): enable the model-level Triton kernels
     #: (``rope`` / ``rms_norm`` / ``activation`` / non-fused ``cross_entropy``)
     #: by default — they cut per-sample-gradient memory/compute under the vmap DP
-    #: path. CUDA + Triton only; no-op on CPU/MPS. The
-    #: ``fused_linear_cross_entropy`` kernel stays opt-in (it returns
-    #: ``logits=None``, incompatible with the eager nll/dft loss + telemetry).
-    #: Opt out with ``use_performance_kernels=False``.
+    #: path. CUDA + Triton only; no-op on CPU/MPS. The conditional fused-linear
+    #: CE wrapper is installed automatically; SFT activates it only for eligible
+    #: logits-free NLL calls, while eager objectives and telemetry retain logits.
     use_performance_kernels: bool = True
 
     def __post_init__(self) -> None:

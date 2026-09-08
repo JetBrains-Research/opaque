@@ -26,8 +26,7 @@ from ._utils import (
     torch_gpu_device,
     triton_cast,
 )
-
-_WEIGHT_TRAINABLE_META_INDEX = 4
+from .rms_norm import _rms_norm_weight_grad_triton
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -152,6 +151,8 @@ def _fused_add_rms_norm_backward_kernel(
     offset,
     rows_per_program: tl.constexpr,
     casting_mode: tl.constexpr,
+    HAS_WEIGHT: tl.constexpr,
+    COMPUTE_DW: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     has_dS_out: tl.constexpr,
 ):
@@ -161,10 +162,11 @@ def _fused_add_rms_norm_backward_kernel(
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
 
-    dW_row = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
-
-    W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0.0)
-    W_row = W_row + offset
+    if COMPUTE_DW:
+        dW_row = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+    if HAS_WEIGHT:
+        W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0.0)
+        W_row = W_row + offset
 
     # int64 stride math — same int32-overflow guard as the forward kernel.
     dy_stride64 = triton_cast(dY_row_stride, tl.int64)
@@ -185,18 +187,19 @@ def _fused_add_rms_norm_backward_kernel(
 
         X_row = X_row.to(tl.float32)
 
-        if casting_mode == 0:
-            dW_row += dY_row * (X_row * rstd_row).to(X_dtype)
-        else:
-            dW_row += dY_row * (X_row * rstd_row)
+        if COMPUTE_DW:
+            if casting_mode == 0:
+                dW_row += dY_row * (X_row * rstd_row).to(X_dtype)
+            else:
+                dW_row += dY_row * (X_row * rstd_row)
 
         if casting_mode == 0:
-            m = (dY_row * W_row).to(tl.float32)
+            m = (dY_row * W_row).to(tl.float32) if HAS_WEIGHT else dY_row.to(tl.float32)
         elif casting_mode == 1:
             dY_row = dY_row.to(tl.float32)
-            m = dY_row * W_row
+            m = dY_row * W_row if HAS_WEIGHT else dY_row
         else:
-            m = dY_row * W_row
+            m = dY_row * W_row if HAS_WEIGHT else dY_row
 
         dot = tl.sum(m * X_row, axis=0)
         c = -(1.0 / n_cols) * rstd_row * rstd_row * rstd_row * dot
@@ -209,7 +212,8 @@ def _fused_add_rms_norm_backward_kernel(
 
         tl.store(dx_base + col_offsets, dX_row.to(X_dtype), mask=mask)
 
-    tl.store(dW_ptr + row_block_id * dW_row_stride + col_offsets, dW_row, mask=mask)
+    if COMPUTE_DW:
+        tl.store(dW_ptr + row_block_id * dW_row_stride + col_offsets, dW_row, mask=mask)
 
 
 def _fused_add_rms_norm_forward_triton(
@@ -285,6 +289,7 @@ def _fused_add_rms_norm_backward_triton(
     BLOCK_SIZE: int,
     num_warps: int,
     in_place: bool,
+    compute_dw: bool,
 ):
     shape = dY.shape
     dim = shape[-1]
@@ -299,7 +304,6 @@ def _fused_add_rms_norm_backward_triton(
     has_dS = dS_out is not None
     # dY is unused when has_dS_out=False
     dS_out_2d = dS_out.contiguous().view(-1, dim) if has_dS else dY
-
     S = S.contiguous().view(-1, dim)
 
     if S.device.type == "cuda":
@@ -307,13 +311,17 @@ def _fused_add_rms_norm_backward_triton(
     else:
         sm_count = 1
 
-    _dW = torch.empty((sm_count, n_cols), dtype=torch.float32, device=W.device)
+    _dW = (
+        torch.empty((sm_count, n_cols), dtype=torch.float32, device=W.device)
+        if compute_dw
+        else None
+    )
     rows_per_program = math.ceil(n_rows / sm_count)
     grid = (sm_count,)
 
     dX = dY if in_place else torch.empty_like(dY)
-
     W_contig = W.contiguous()
+    dW_ptr = _dW if _dW is not None else dY
     x_dtype_triton = _TORCH_TO_TRITON_DTYPES[S.dtype]
 
     with torch_gpu_device(S.device):
@@ -331,35 +339,43 @@ def _fused_add_rms_norm_backward_triton(
             W_contig.stride(0),
             RSTD,
             RSTD.stride(0),
-            _dW,
-            _dW.stride(0),
+            dW_ptr,
+            _dW.stride(0) if _dW is not None else 0,
             n_rows,
             n_cols,
             offset,
             rows_per_program,
             casting_mode,
+            HAS_WEIGHT=True,
+            COMPUTE_DW=compute_dw,
             BLOCK_SIZE=BLOCK_SIZE,
             num_warps=num_warps,
             has_dS_out=has_dS,
         )
 
     dComb = dX.view(*shape)
-    dW = _dW.sum(dim=0).to(W.dtype)
+    dW = _dW.sum(dim=0).to(W.dtype) if _dW is not None else None
     return dComb, dW
 
 
 class _FusedAddRMSNormBackward(torch.autograd.Function):
     @staticmethod
-    def forward(dY, dS_out, S, W, RSTD, meta_i, offset_tensor):
-        casting_mode = int(meta_i[0].item())
-        BLOCK_SIZE = int(meta_i[1].item())
-        num_warps = int(meta_i[2].item())
-        in_place = bool(meta_i[3].item())
-        offset = float(offset_tensor.item())
-        dS = dS_out
-        return _fused_add_rms_norm_backward_triton(
+    def forward(
+        dY,
+        dS_out,
+        S,
+        W,
+        RSTD,
+        offset,
+        casting_mode,
+        BLOCK_SIZE,
+        num_warps,
+        in_place,
+        compute_dw,
+    ):
+        dComb, dW = _fused_add_rms_norm_backward_triton(
             dY,
-            dS,
+            dS_out,
             S,
             W,
             RSTD,
@@ -368,7 +384,9 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
             BLOCK_SIZE,
             num_warps,
             in_place,
+            compute_dw,
         )
+        return dComb, dW if dW is not None else W.new_empty(0)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -379,15 +397,30 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
         raise NotImplementedError("Double backward not supported for FusedAddRMSNorm")
 
     @staticmethod
-    def vmap(info, in_dims, dY, dS_out, S, W, RSTD, meta_i, offset_tensor):
+    def vmap(
+        info,
+        in_dims,
+        dY,
+        dS_out,
+        S,
+        W,
+        RSTD,
+        offset,
+        casting_mode,
+        BLOCK_SIZE,
+        num_warps,
+        in_place,
+        compute_dw,
+    ):
         del info
-        dy_b, ds_b, s_b, w_b, r_b, m_b, o_b = in_dims
-        if m_b is not None or o_b is not None:
-            raise ConfigurationError(*("meta_i and offset_tensor must not be vmapped",))
+        dy_b, ds_b, s_b, w_b, r_b, *static_dims = in_dims
+        if any(dim is not None for dim in static_dims):
+            raise ConfigurationError(*("Fused RMSNorm metadata must not be vmapped",))
         if w_b is not None:
             raise ConfigurationError(*("W must not be vmapped",))
         if dy_b != 0 or s_b != 0 or r_b != 0:
             raise ConfigurationError(*("dY, S, RSTD must be vmapped at dim 0",))
+
         H = S.shape[-1]
         head_dy = dY.shape[:-1]
         B = dY.shape[0]
@@ -406,49 +439,36 @@ class _FusedAddRMSNormBackward(torch.autograd.Function):
             dS_m = dS_out.reshape(-1, H)
         S_m = S.reshape(-1, H)
         R_m = RSTD.reshape(-1)
-        casting_mode = int(meta_i[0].item())
-
-        # Missing flag defaults to trainable: a spurious per-example dW only
-        # costs memory; a spurious batch-sum dW leaks across examples.
-        w_trainable = (
-            bool(meta_i[_WEIGHT_TRAINABLE_META_INDEX].item())
-            if meta_i.numel() > _WEIGHT_TRAINABLE_META_INDEX
-            else True
-        )
         dW_out = None
-        if w_trainable:
-            # Per-example dW: the Triton call sums dW over the merged (B*T, H)
-            # batch, which would hand every example the batch-sum gradient.
-            # Must run before the Triton call — in_place overwrites dY.
-            T_flat = dY_m.shape[0] // B
-            dY_3d = dY_m.view(B, T_flat, H)
-            S_3d = S_m.view(B, T_flat, H)
-            R_3d = R_m.view(B, T_flat)
-            s_normed = S_3d.float() * R_3d.unsqueeze(-1)  # (B, T_flat, H)
-            if casting_mode == 0:  # llama: cast normed S back to S dtype
-                dW_per = (dY_3d * s_normed.to(S_3d.dtype)).float().sum(dim=1)
-            else:  # gemma / none: accumulate in float32
-                dW_per = (dY_3d.float() * s_normed).sum(dim=1)
-            dW_out = dW_per.to(W.dtype)  # (B, H)
+        if compute_dw:
+            dW_out = _rms_norm_weight_grad_triton(
+                dY,
+                S,
+                RSTD,
+                W,
+                B,
+                casting_mode,
+                BLOCK_SIZE,
+                num_warps,
+            )
 
-        dComb, dW_summed = _fused_add_rms_norm_backward_triton(
+        dComb, _ = _fused_add_rms_norm_backward_triton(
             dY_m,
             dS_m,
             S_m,
             W,
             R_m,
-            float(offset_tensor.item()),
+            offset,
             casting_mode,
-            int(meta_i[1].item()),
-            int(meta_i[2].item()),
-            bool(meta_i[3].item()),
+            BLOCK_SIZE,
+            num_warps,
+            in_place,
+            False,
         )
         dComb_out = dComb.view(*head_dy, H)
         if dW_out is not None:
             return (dComb_out, dW_out), (dy_b, 0)
-        # W frozen: zeros, not the kernel's batch-sum — if ever consumed,
-        # zeros stall training visibly instead of leaking across examples.
-        return (dComb_out, torch.zeros_like(dW_summed)), (dy_b, None)
+        return (dComb_out, W.new_empty(0)), (dy_b, None)
 
 
 class Opaque_FusedAddRMSNorm(torch.autograd.Function):
@@ -466,25 +486,17 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         _X, _R, W, _eps, offset, casting_mode, in_place = inputs
-        cm = _casting_mode_int(casting_mode)
         _, S, RSTD = output
         dim = S.shape[-1]
-        S2d = S.view(-1, dim)
 
         ctx.mark_non_differentiable(RSTD)
-        bs, nw = calculate_settings(dim)
         ctx.original_shape = S.shape
-        # meta_i[4]: W trainability — under vmap(grad()) frozen weights arrive
-        # detached, so this tells the vmap rule whether per-example dW is needed.
-        ctx.meta_i = torch.tensor(
-            [cm, bs, nw, int(in_place), int(W.requires_grad)],
-            device=S.device,
-            dtype=torch.int64,
-        )
-        ctx.offset_tensor = torch.tensor(
-            float(offset), device=S.device, dtype=torch.float32
-        )
-        ctx.save_for_backward(S2d, W.contiguous(), RSTD.reshape(-1))
+        ctx.offset = float(offset)
+        ctx.casting_mode = _casting_mode_int(casting_mode)
+        ctx.block_size, ctx.num_warps = calculate_settings(dim)
+        ctx.in_place = bool(in_place)
+        ctx.compute_dw = W.requires_grad
+        ctx.save_for_backward(S.view(-1, dim), W.contiguous(), RSTD.reshape(-1))
 
     @staticmethod
     def backward(ctx, grad_Y, grad_S, _grad_RSTD):
@@ -503,11 +515,23 @@ class Opaque_FusedAddRMSNorm(torch.autograd.Function):
             S_s,
             W,
             RSTD,
-            ctx.meta_i,
-            ctx.offset_tensor,
+            ctx.offset,
+            ctx.casting_mode,
+            ctx.block_size,
+            ctx.num_warps,
+            ctx.in_place,
+            ctx.compute_dw,
         )
         dComb = dComb.view(ctx.original_shape)
-        return dComb, dComb, dW, None, None, None, None
+        return (
+            dComb,
+            dComb,
+            dW if ctx.compute_dw else None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     @staticmethod
     def vmap(info, in_dims, X, R, W, eps, offset, casting_mode, in_place):

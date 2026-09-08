@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-import torch._dynamo.exc
 import torchopt
 from datasets import Dataset
 from torch import Tensor
@@ -250,44 +249,17 @@ def _rank_local_sampler_state(
     return local_state
 
 
-def _compile_with_fullgraph_fallback(
-    fn: Callable, *, backend: str, mode: str
+def _compile_strict_chunk(
+    fn: Callable, *, backend: str | Callable, mode: str
 ) -> Callable:
-    """Compile ``fn`` with ``fullgraph=True``; on first-call failure,
-    log a warning and lazily recompile with ``fullgraph=False``.
-
-    ``torch.compile`` is lazy — the compile failure (graph break under
-    ``fullgraph=True``) surfaces only when the compiled function is
-    actually executed.  This wrapper catches that first-execution
-    Dynamo failure, records the fallback, and forwards subsequent calls
-    to the more permissive variant.  Non-Dynamo exceptions
-    (``torch.OutOfMemoryError`` and friends) are runtime failures of
-    the step, not compile failures: they propagate untouched so the
-    trainer's OOM handling sees them first-hand.  ``fullgraph=True``
-    first catches silent eager-fallback regressions the user explicitly
-    opted into compiling against.
-    """
-    full = torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
-    fallback: Callable | None = None
-
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        nonlocal fallback
-        if fallback is not None:
-            return fallback(*args, **kwargs)
-        try:
-            return full(*args, **kwargs)
-        except torch._dynamo.exc.TorchDynamoException as e:
-            log.warning(
-                "torch.compile fullgraph=True failed (%s: %s); "
-                "falling back to fullgraph=False for subsequent steps.",
-                type(e).__name__,
-                e,
-            )
-            fallback = torch.compile(fn, backend=backend, mode=mode, fullgraph=False)
-            return fallback(*args, **kwargs)
-
-    return wrapper
+    """Compile one tensor-only gradient chunk as a strict dynamic graph."""
+    return torch.compile(
+        fn,
+        backend=backend,
+        mode=mode,
+        fullgraph=True,
+        dynamic=True,
+    )
 
 
 @dataclasses.dataclass
@@ -555,6 +527,18 @@ class DPTrainer:
         # which doesn't change after construction.
         self._is_peft: bool = _is_peft_model(model)
         self.args = args
+        if args.torch_compile and bool(
+            getattr(model, "is_gradient_checkpointing", False)
+        ):
+            raise ConfigurationError(
+                *(
+                    "torch_compile=True is incompatible with a model that already "
+                    "has gradient checkpointing enabled: checkpointed functional "
+                    "transforms use saved-tensor hooks that AOTAutograd cannot safely "
+                    "compose with torch.compile(vmap(grad(...))). Disable gradient "
+                    "checkpointing on the model or disable torch compilation.",
+                )
+            )
         # Router-load release runtime; populated by ``_setup_training`` when
         # ``router_load_release != "off"`` and cleared when ``train()`` returns.
         self._router_load: RouterLoadRuntime | None = None
@@ -901,8 +885,8 @@ class DPTrainer:
         collator / checkpoint hooks.  ``use_performance_kernels`` (default
         ``False``) gates the CUDA + Triton kernel group (``rope``,
         ``rms_norm``, ``activation``, ``cross_entropy``).  The
-        ``performance`` bucket — currently ``kv_cache`` — is always
-        enabled here because ``DynamicCache`` allocation leaks vmap refs
+        ``performance`` bucket — ``kv_cache`` and the conditional fused-CE
+        wrapper — is always enabled here because ``DynamicCache`` allocation leaks vmap refs
         and inflates training memory regardless of host;
         ``performance_kernels_config={"kv_cache": False}`` opts out.
 
@@ -916,6 +900,7 @@ class DPTrainer:
         # process-level policy alone); resolved here, installed by
         # ``_train_once`` for the duration of a run and restored afterwards.
         self._packed_sequences_policy: bool | None = None
+        self._fused_forward_uses_marker = False
         try:
             from opaque.patches import apply_model_patches
         except ImportError:
@@ -979,6 +964,31 @@ class DPTrainer:
             self._packed_sequences_policy = bool(a.packed_sequences)
         elif a.packed_sequences is not None:
             self._packed_sequences_policy = bool(a.packed_sequences)
+
+        def accepts_marker(module: Any, *, allow_var_kwargs: bool) -> bool:
+            try:
+                parameters = inspect.signature(module.forward).parameters.values()
+            except (TypeError, ValueError):
+                return False
+            return any(
+                parameter.name == "loss_only"
+                or (
+                    allow_var_kwargs and parameter.kind is inspect.Parameter.VAR_KEYWORD
+                )
+                for parameter in parameters
+            )
+
+        # A PEFT wrapper commonly accepts **kwargs while only its nested causal-LM
+        # module carries the actual fused forward. Require both facts so an
+        # unsupported custom model never receives an unknown marker.
+        self._fused_forward_uses_marker = bool(
+            kwargs.get("fused_linear_cross_entropy") is not False
+            and accepts_marker(self._model, allow_var_kwargs=True)
+            and any(
+                accepts_marker(module, allow_var_kwargs=False)
+                for module in self._model.modules()
+            )
+        )
 
     def _setup_precision(self) -> None:
         """Resolve compute precision (TF32, bf16 autocast).
@@ -1470,6 +1480,34 @@ class DPTrainer:
         """
         return isinstance(err, torch.OutOfMemoryError)
 
+    def _synchronize_grad_failure(self, error: Exception | None) -> None:
+        """Raise rank-symmetrically before gradient collectives after a failure."""
+        if not self._ddp.is_distributed:
+            if error is not None:
+                raise error
+            return
+
+        local_oom = isinstance(error, RuntimeError) and self._is_retryable_oom(error)
+        flags = torch.tensor(
+            [
+                1.0 if local_oom else 0.0,
+                1.0 if error is not None and not local_oom else 0.0,
+            ],
+            device=self._device,
+        )
+        torch.distributed.all_reduce(flags, op=torch.distributed.ReduceOp.MAX)
+        if flags[1].item() > 0.0:
+            if error is not None and not local_oom:
+                raise error
+            raise RuntimeError(  # noqa: TRY003 - preserve rank symmetry
+                "collective gradient computation failed on a sibling rank"
+            )
+        if flags[0].item() > 0.0:
+            raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
+                "collective microbatch retry (a rank OOM'd in grad_fn; "
+                "whole cluster steps down to a smaller microbatch)."
+            )
+
     def _cluster_needs_step_down(self, local_oom: bool) -> bool:
         """Whether any rank OOM'd this attempt (cluster-wide MAX all-reduce).
 
@@ -1589,8 +1627,8 @@ class DPTrainer:
         # ``LOSS_MAPPING`` dispatch (causal-LM gets ``ForCausalLMLoss``,
         # classification gets ``ForSequenceClassificationLoss``, …).
         # Subclasses override :meth:`compute_per_example_loss` for
-        # domain-specific losses; ``_build_per_example_loss`` here just
-        # wraps it with autocast / torch.compile.
+        # domain-specific losses; ``_build_per_example_loss`` adapts that
+        # method to the functional per-example calling convention.
         # Subclasses that override ``compute_per_example_loss_and_metrics`` emit
         # per-example telemetry; the loss closure then returns ``(loss, aux)`` and
         # the grad fn is built with ``has_aux=True``. Detected by override (no
@@ -2651,17 +2689,12 @@ class DPTrainer:
         # post-step metric bookkeeping below stays outside the scope.
         # ``sp.mark`` records the elapsed time since the previous mark.
         with self._perf_tracker.train(batch_size=step_batch_size) as sp:
-            # Clipped gradients (with optional CPU offload).  Under DDP an OOM
-            # here must become a *collective* event: if it propagated as a
-            # plain per-rank exception, the OOM'ing rank would skip the
-            # ``sum_gradients_`` AllReduce below while its siblings issued it,
-            # deadlocking the process group (or, worse, meeting a later
-            # mismatched collective). So we catch a retryable OOM, all-reduce a
-            # MAX flag across ranks, and if ANY rank OOM'd raise a uniform
-            # retryable OOM on EVERY rank — the cluster bails this attempt at
-            # the same step and ``_train_dispatch`` steps the whole cluster
-            # down to a smaller microbatch in lockstep.
-            local_oom_step = False
+            # Clipped gradients (with optional CPU offload). Any rank-local
+            # failure must become a collective event before the gradient
+            # AllReduce below. This includes lazy strict-compilation failures:
+            # a rank with an empty Poisson draw skips the compiled kernel while
+            # a non-empty sibling may fail during its first compilation.
+            local_grad_error: Exception | None = None
             grads = aux = None
             try:
                 # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
@@ -2672,30 +2705,9 @@ class DPTrainer:
                         *batch_args,
                         state=ctx.clip_state,
                     )
-            except RuntimeError as _grad_err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(_grad_err)):
-                    raise
-                local_oom_step = True
-
-            if self._ddp.is_distributed:
-                _oom_flag = torch.tensor(
-                    [1.0 if local_oom_step else 0.0], device=self._device
-                )
-                torch.distributed.all_reduce(
-                    _oom_flag, op=torch.distributed.ReduceOp.MAX
-                )
-                if _oom_flag.item() > 0.0:
-                    # Free any partial grads this rank did materialise, then
-                    # raise an identical retryable OOM on every rank so
-                    # ``_train_dispatch`` halves the microbatch cluster-wide.
-                    # Must be ``torch.OutOfMemoryError`` (not a plain
-                    # ``RuntimeError``) so ``_is_retryable_oom`` classifies it
-                    # as retryable on the non-OOM ranks too.
-                    grads = aux = None
-                    raise torch.OutOfMemoryError(  # noqa: TRY003 - preserve PyTorch OOM type
-                        "collective microbatch retry (a rank OOM'd in grad_fn; "
-                        "whole cluster steps down to a smaller microbatch)."
-                    )
+            except Exception as grad_error:
+                local_grad_error = grad_error
+            self._synchronize_grad_failure(local_grad_error)
 
             # DDP collectives between clipping and noise.
             # 1. ``sum_gradients_`` — AllReduce SUM the clipped per-example sum;
@@ -2942,6 +2954,12 @@ class DPTrainer:
         # the kwarg but the trainer-side rebuild below corrects that.
         if smoothing > 0.0:
             inputs = {**inputs, "label_smoothing": smoothing}
+        if (
+            not return_logits
+            and self._compute_loss_func is None
+            and self._fused_forward_uses_marker
+        ):
+            inputs = {**inputs, "loss_only": True}
 
         output = fmodel(
             params, **inputs, **self._router_load_forward_kwargs(return_logits)
@@ -3198,6 +3216,9 @@ class DPTrainer:
         # path; users who want ``compute_loss_func`` honoured at eval set
         # ``include_for_metrics=["loss"]`` to take the per-example path
         # above.
+        forward_inputs = {**model_inputs, **labels_kwargs}
+        if prediction_loss_only and has_labels and self._fused_forward_uses_marker:
+            forward_inputs["loss_only"] = True
         with torch.no_grad():
             was_training = self._model.training
             if was_training:
@@ -3205,11 +3226,9 @@ class DPTrainer:
             try:
                 if self._ctx is not None:
                     merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
-                    output = self._ctx.fmodel(
-                        merged, **{**model_inputs, **labels_kwargs}
-                    )
+                    output = self._ctx.fmodel(merged, **forward_inputs)
                 else:
-                    output = model(**{**model_inputs, **labels_kwargs})
+                    output = model(**forward_inputs)
             finally:
                 if was_training:
                     self._model.train()
@@ -3321,12 +3340,14 @@ class DPTrainer:
         if per_device_eval_bs:
             log.info("  Batch size = %d", per_device_eval_bs)
 
+        telemetry = _eval._EvaluationTelemetry(self._device)
         accumulator = _eval._PredictionAccumulator(
             prediction_loss_only=ploss_only,
             eval_accumulation_steps=a.eval_accumulation_steps,
             eval_do_concat_batches=bool(a.eval_do_concat_batches),
             include_inputs=include_inputs,
             include_losses=include_losses,
+            telemetry=telemetry,
         )
         if a.eval_accumulation_steps:
             log.info(
@@ -3351,106 +3372,109 @@ class DPTrainer:
         # before collectives.
         local_oom = False
 
-        for batch in dataloader:
-            bs = _eval.find_batch_size(batch) or 0
-            if bs == 0:
-                continue
-            self._pending_eval_aux = None
-            try:
-                with self._perf_tracker.eval(batch_size=bs):
-                    loss, logits, labels = self.prediction_step(
-                        self._model,
-                        batch,
-                        prediction_loss_only=ploss_only,
-                        ignore_keys=ignore_keys,
-                    )
-            except RuntimeError as err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
-                    raise
-                local_oom = True
+        with self._perf_tracker.eval(batch_size=num_examples):
+            for batch in dataloader:
+                bs = _eval.find_batch_size(batch) or 0
+                if bs == 0:
+                    continue
                 self._pending_eval_aux = None
-                break
-            try:
-                step_aux = self._pending_eval_aux
-                self._pending_eval_aux = None
-                if step_aux:
-                    for name, value in step_aux.items():
-                        eval_aux_chunks.setdefault(name, []).append(value.detach())
-
-                # Per-batch progress hook (HF parity); progress callbacks rely
-                # on this firing once per eval batch.
-                self._control = self._callback_handler.on_prediction_step(
-                    self.args,
-                    self.state,
-                    self._control,
-                )
-
-                # ``loss`` is scalar (default forward) or 1-D per-example
-                # (when ``'loss' in include_for_metrics`` triggers the
-                # vmap'd eval closure).  The model's per-example CE is already
-                # the mean over real (non-``-100``) tokens, so:
-                #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
-                #     the total CE; dividing the running sum by the running
-                #     ``loss_samples`` count gives per-real-token mean CE.
-                #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
-                #     example i's total CE; summing then dividing by the total
-                #     real-token count gives the same per-token mean.
-                # When labels aren't exposed (rare), or the trainer opted out
-                # of token weighting (``_eval_token_weighted_loss=False``),
-                # fall back to the plain per-example mean.
-                if loss is not None:
-                    if labels is not None and self._eval_token_weighted_loss:
-                        # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
-                        # position 0 via the internal shift); the per-token-mean
-                        # weighting denominator must match that count.
-                        shifted = labels[..., 1:]
-                        token_mask = shifted != _IGNORE_INDEX
-                        if loss.ndim > 0:
-                            # per-example: weight each by its real-token count
-                            per_example_real = token_mask.sum(
-                                dim=tuple(range(1, shifted.ndim))
-                            ).to(loss.dtype)
-                            total_loss += float((loss * per_example_real).sum().item())
-                            loss_samples += int(per_example_real.sum().item())
-                        else:
-                            # scalar: weight by real-token count in the whole batch
-                            real_tokens = int(token_mask.sum().item())
-                            total_loss += float(loss.item()) * real_tokens
-                            loss_samples += real_tokens
-                    else:
-                        # labels not exposed, or token weighting opted out:
-                        # plain per-example mean
-                        total_loss += (
-                            float(loss.sum().item())
-                            if loss.ndim > 0
-                            else float(loss.item()) * bs
+                try:
+                    with telemetry.model():
+                        loss, logits, labels = self.prediction_step(
+                            self._model,
+                            batch,
+                            prediction_loss_only=ploss_only,
+                            ignore_keys=ignore_keys,
                         )
-                        loss_samples += bs
-                total_samples += bs
+                except RuntimeError as err:
+                    if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                        raise
+                    local_oom = True
+                    self._pending_eval_aux = None
+                    break
+                try:
+                    step_aux = self._pending_eval_aux
+                    self._pending_eval_aux = None
+                    if step_aux:
+                        for name, value in step_aux.items():
+                            eval_aux_chunks.setdefault(name, []).append(value.detach())
 
-                if logits is not None and self._preprocess_logits is not None:
-                    logits_for_hook: Tensor | tuple[Tensor, ...]
-                    logits_for_hook = (
-                        logits[0]
-                        if isinstance(logits, tuple) and len(logits) == 1
-                        else logits
+                    # Per-batch progress hook (HF parity); progress callbacks rely
+                    # on this firing once per eval batch.
+                    self._control = self._callback_handler.on_prediction_step(
+                        self.args,
+                        self.state,
+                        self._control,
                     )
-                    logits = self._preprocess_logits(logits_for_hook, labels)
 
-                main_input = batch.get(main_input_name) if include_inputs else None
-                accumulator.add(
-                    loss=loss,
-                    logits=logits,
-                    labels=labels,
-                    inputs=main_input,
-                    batch_size=bs,
-                )
-            except RuntimeError as err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
-                    raise
-                local_oom = True
-                self._pending_eval_aux = None
-                break
+                    # ``loss`` is scalar (default forward) or 1-D per-example
+                    # (when ``'loss' in include_for_metrics`` triggers the
+                    # vmap'd eval closure).  The model's per-example CE is already
+                    # the mean over real (non-``-100``) tokens, so:
+                    #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
+                    #     the total CE; dividing the running sum by the running
+                    #     ``loss_samples`` count gives per-real-token mean CE.
+                    #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
+                    #     example i's total CE; summing then dividing by the total
+                    #     real-token count gives the same per-token mean.
+                    # When labels aren't exposed (rare), or the trainer opted out
+                    # of token weighting (``_eval_token_weighted_loss=False``),
+                    # fall back to the plain per-example mean.
+                    if loss is not None:
+                        if labels is not None and self._eval_token_weighted_loss:
+                            # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
+                            # position 0 via the internal shift); the per-token-mean
+                            # weighting denominator must match that count.
+                            shifted = labels[..., 1:]
+                            token_mask = shifted != _IGNORE_INDEX
+                            if loss.ndim > 0:
+                                # per-example: weight each by its real-token count
+                                per_example_real = token_mask.sum(
+                                    dim=tuple(range(1, shifted.ndim))
+                                ).to(loss.dtype)
+                                total_loss += float(
+                                    (loss * per_example_real).sum().item()
+                                )
+                                loss_samples += int(per_example_real.sum().item())
+                            else:
+                                # scalar: weight by real-token count in the whole batch
+                                real_tokens = int(token_mask.sum().item())
+                                total_loss += float(loss.item()) * real_tokens
+                                loss_samples += real_tokens
+                        else:
+                            # labels not exposed, or token weighting opted out:
+                            # plain per-example mean
+                            total_loss += (
+                                float(loss.sum().item())
+                                if loss.ndim > 0
+                                else float(loss.item()) * bs
+                            )
+                            loss_samples += bs
+                    total_samples += bs
+
+                    if logits is not None and self._preprocess_logits is not None:
+                        logits_for_hook: Tensor | tuple[Tensor, ...]
+                        logits_for_hook = (
+                            logits[0]
+                            if isinstance(logits, tuple) and len(logits) == 1
+                            else logits
+                        )
+                        logits = self._preprocess_logits(logits_for_hook, labels)
+
+                    main_input = batch.get(main_input_name) if include_inputs else None
+                    accumulator.add(
+                        loss=loss,
+                        logits=logits,
+                        labels=labels,
+                        inputs=main_input,
+                        batch_size=bs,
+                    )
+                except RuntimeError as err:
+                    if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                        raise
+                    local_oom = True
+                    self._pending_eval_aux = None
+                    break
 
         # Cluster-wide OOM check before end-of-loop collectives. Ranks that
         # finished their shard wait here for siblings still iterating; a
@@ -3472,13 +3496,16 @@ class DPTrainer:
         if self._ddp.is_distributed:
             from opaque.api.engine.distributed._state import reduce_scalar
 
-            total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
-            loss_samples = int(
-                reduce_scalar(loss_samples, op="sum", device=self._device)
-            )
-            total_samples = int(
-                reduce_scalar(total_samples, op="sum", device=self._device)
-            )
+            with telemetry.phase("gather"):
+                total_loss = reduce_scalar(
+                    float(total_loss), op="sum", device=self._device
+                )
+                loss_samples = int(
+                    reduce_scalar(loss_samples, op="sum", device=self._device)
+                )
+                total_samples = int(
+                    reduce_scalar(total_samples, op="sum", device=self._device)
+                )
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
@@ -3495,7 +3522,8 @@ class DPTrainer:
                 if eval_aux_chunks
                 else None
             )
-            gathered_eval_aux = gather_pytree(local_eval_aux)
+            with telemetry.phase("gather"):
+                gathered_eval_aux = gather_pytree(local_eval_aux)
         else:
             gathered_eval_aux = {
                 name: torch.cat(chunks) for name, chunks in eval_aux_chunks.items()
@@ -3534,7 +3562,8 @@ class DPTrainer:
                 inputs=inputs_arr,
                 losses=losses_tensor,
             )
-            user_metrics = self._compute_metrics(ep)
+            with telemetry.phase("metric"):
+                user_metrics = self._compute_metrics(ep)
             if user_metrics:
                 metrics.update(user_metrics)
         # Empty-dataset path: HF silently skips ``compute_metrics``;
@@ -3542,13 +3571,11 @@ class DPTrainer:
         # when total_samples == 0).  Caller-level evaluate/predict
         # wrappers add throughput metrics.
 
-        # Opaque per-step performance metrics for the eval pass.
-        # ``last`` is the most recent batch's StepPerf (post-warmup);
-        # we surface ``step_time_sec`` / ``memory_*`` as new fields.
-        # ``samples_per_second`` is emitted here too but the caller's
-        # later ``speed_metrics`` update overwrites it with the
-        # wall-clock aggregate — HF parity wins on the colliding key,
-        # everything else is added by us.
+        metrics.update(telemetry.to_dict())
+
+        # The eval performance stage now spans the complete prediction loop,
+        # rather than synchronizing and retaining only the last batch record.
+        # Caller-level ``speed_metrics`` still owns aggregate throughput keys.
         if self._perf_tracker.eval.last is not None:
             metrics.update(self._perf_tracker.eval.last.to_dict())
 
@@ -4110,8 +4137,8 @@ class DPTrainer:
         when ``with_metrics``, the richer ``compute_per_example_loss_and_metrics``)
         to ``clipped_grad``'s positional contract
         ``(trainable_params, *batch_args) -> scalar_loss``. The training-loop
-        concerns — bf16 autocast and ``torch.compile`` — wrap around the user's
-        per-example loss math here so subclasses don't have to reimplement them.
+        concerns — bf16 autocast and chunk-level ``torch.compile`` — wrap around
+        the resulting gradient transform so subclasses need not implement them.
 
         Args:
             fmodel: Functional model from
@@ -4154,9 +4181,9 @@ class DPTrainer:
             inputs = dict(zip(keys, batch_args, strict=True))
             return _call(merged, inputs)
 
-        # ``torch.compile`` is applied to the DP *grad transform* in
-        # ``_create_grad_fn`` (``torch.compile`` wrapping ``vmap(grad(loss))`` +
-        # clip), NOT to this inner loss.  Compiling the loss and then applying
+        # ``torch.compile`` is injected into the tensor-only microbatch kernel
+        # in ``_create_grad_fn`` (``vmap(grad(loss))`` + clip + reduction), NOT
+        # applied to this inner loss. Compiling the loss and then applying
         # ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)`` pattern
         # — dynamo raises "Unsupported functorch tracing attempt" and silently
         # falls back to eager, so it bought nothing (verified: 1.05x vs 2.0x).
@@ -4773,20 +4800,14 @@ class DPTrainer:
             return contextlib.nullcontext()
         return torch.autocast(device_type=self._device.type, dtype=self._amp_dtype)
 
-    def _grad_compiler(self) -> Callable[[Callable], Callable] | None:
-        """Return a ``fn -> compiled_fn`` transform for the DP grad step, or None.
+    def _grad_compiler(self) -> Callable | None:
+        """Return a strict compiler for the tensor-only gradient chunk.
 
-        Applied by :meth:`_create_grad_fn` to the ``grad_fn`` (the
-        ``vmap(grad)+clip`` *transform*) it builds — compiling the transform
-        (functorch *inside* ``torch.compile``) is the supported, fusing pattern
-        (~2x + lower peak memory on MPS, verified).  Compiling the inner loss and
-        applying ``vmap(grad)`` outside is the unsupported ``grad(compiled_fn)``
-        pattern that silently no-ops to eager.
-
-        The returned compiler tries ``fullgraph=True`` first (graph breaks
-        surface as a warning, then lazily downgrade to ``fullgraph=False``).
-        The stateful ``adaptive`` / ``auto`` clip updates may graph-break; the
-        fallback keeps them correct, fusing the model fwd/bwd around the glue.
+        The clipping factories keep variable-size microbatch orchestration,
+        diagnostics, and state updates eager.  The injected compiler sees only
+        ``vmap(grad_and_value)`` plus per-example clipping and reduction, with a
+        symbolic leading chunk dimension. This avoids specializing on realized
+        Poisson or remainder batch sizes; PyTorch may retain a size-one variant.
         """
         a = self.args
         if not a.torch_compile:
@@ -4802,14 +4823,16 @@ class DPTrainer:
         backend = a.torch_compile_backend or caps.recommended_compile_backend
         mode = a.torch_compile_mode or "default"
         log.info(
-            "torch.compile enabled on the DP grad transform: backend=%s mode=%s "
+            "torch.compile enabled on strict DP gradient chunks: backend=%s mode=%s "
             "device=%s (inductor → Triton on CUDA, Metal on MPS).",
             backend,
             mode,
             self._device.type,
         )
-        return lambda fn: _compile_with_fullgraph_fallback(
-            fn, backend=backend, mode=mode
+        return lambda fn: _compile_strict_chunk(
+            fn,
+            backend=backend,
+            mode=mode,
         )
 
     def _create_grad_fn(
@@ -4826,8 +4849,9 @@ class DPTrainer:
     ) -> tuple[Callable[..., Any], Any]:
         """Create the clipped gradient function based on clipping mode.
 
-        ``loss_fn`` stays eager; the resulting ``vmap(grad)+clip`` transform is
-        what gets ``torch.compile``'d (see :meth:`_grad_compiler`).
+        ``loss_fn`` stays eager as a Python callable.  When compilation is
+        enabled, the clipping factory compiles its tensor-only per-microbatch
+        ``vmap(grad)+clip+reduce`` kernel and keeps orchestration/state eager.
 
         When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
@@ -4836,6 +4860,7 @@ class DPTrainer:
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
         auto_gamma = float(ca.get("gamma", 0.01))
+        compiler = self._grad_compiler()
 
         if a.clipping_mode == "adaptive":
             grad_fn, state = adaptive_clipped_grad(
@@ -4850,6 +4875,7 @@ class DPTrainer:
                 return_aux=True,
                 key=quantile_noise_key,
                 normalize_by=expected_batch_size,
+                _chunk_compiler=compiler,
             )
         elif a.clipping_mode == "auto":
             grad_fn, state = auto_clipped_grad(
@@ -4862,6 +4888,7 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
+                _chunk_compiler=compiler,
             )
         else:
             grad_fn, state = clipped_grad(
@@ -4873,14 +4900,8 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
+                _chunk_compiler=compiler,
             )
-        # ``torch.compile`` the transform (vmap(grad)+clip) *outside* the
-        # constructor — the caller's job, like autocast.  Compiling the inner
-        # loss instead and applying vmap(grad) outside is the unsupported
-        # ``grad(compiled_fn)`` pattern that silently no-ops to eager.
-        compiler = self._grad_compiler()
-        if compiler is not None:
-            grad_fn = compiler(grad_fn)
         return grad_fn, state
 
     def _build_mechanism(

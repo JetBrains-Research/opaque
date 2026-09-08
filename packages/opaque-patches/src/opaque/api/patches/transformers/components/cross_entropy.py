@@ -123,6 +123,7 @@ _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.llama.modeling_llama", "LlamaForCausalLM"),
     ("transformers.models.mistral.modeling_mistral", "MistralForCausalLM"),
     ("transformers.models.ministral.modeling_ministral", "MinistralForCausalLM"),
+    ("transformers.models.mellum.modeling_mellum", "MellumForCausalLM"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2ForCausalLM"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3ForCausalLM"),
     ("transformers.models.smollm3.modeling_smollm3", "SmolLM3ForCausalLM"),
@@ -137,6 +138,14 @@ _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.gemma3.modeling_gemma3", "Gemma3ForCausalLM"),
     ("transformers.models.exaone4.modeling_exaone4", "Exaone4ForCausalLM"),
 ]
+
+
+def _fused_linear_ce_supports_class(target_cls: type[nn.Module]) -> bool:
+    """Whether the generic fused forward matches this causal-LM structure."""
+    identity = (target_cls.__module__, target_cls.__name__)
+    return identity in _FUSED_CE_CAUSAL_LM or not target_cls.__module__.startswith(
+        "transformers.models."
+    )
 
 
 def _fused_linear_ce_loss_is_supported(
@@ -166,7 +175,7 @@ def _fused_linear_ce_loss_is_supported(
 def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = False):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
-    When a loss-only caller sets ``opaque_fused_loss_only=True`` and labels are
+    When a loss-only caller sets ``loss_only=True`` and labels are
     provided, skips ``lm_head`` and computes loss from
     ``hidden_states @ lm_head.weight.T`` (CCE), unless ``loss_function`` would
     need unsupported options — then defers to the original forward (e.g.
@@ -200,12 +209,15 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
         return_dict=None,
         cache_position=None,
         logits_to_keep: int | torch.Tensor = 0,
-        opaque_fused_loss_only: bool = False,
+        loss_only: bool = False,
         opaque_router_logits: bool = False,
         **kwargs,
     ):
-        # No labels → inference → use original forward
-        if labels is None:
+        # The wrapper is inert unless this call explicitly permits a loss-only
+        # result. Inference and logits-consuming labeled calls stay model-native.
+        # ``opaque_router_logits`` is itself a loss-only request (it returns the
+        # router logits in place of the LM-head logits), so it permits the path.
+        if labels is None or not (loss_only or opaque_router_logits):
             if opaque_router_logits:
                 kwargs.setdefault("output_router_logits", True)
             return original(
@@ -230,7 +242,7 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
             # Router logits requested for a per-example (DP) objective: keep the
             # fused / chunked loss path and hand the logits back untouched.
             output_router_logits = False
-            opaque_fused_loss_only = True
+            loss_only = True
             backbone_kwargs = {**kwargs, "output_router_logits": True}
         else:
             output_router_logits = kwargs.get("output_router_logits")
@@ -292,12 +304,11 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
         # CUDA + half precision routes to the Triton kernel; any other host
         # (MPS/CPU) routes to the pure-PyTorch chunked kernel, which streams the
-        # log-sum-exp over vocab chunks (no full-logit materialization). The
-        # fused path returns ``logits=None`` — but ``fused_linear_cross_entropy``
-        # is opt-in (default off) precisely because of that. The SFT trainer
-        # passes an explicit bool for its loss-only vs metrics paths.
+        # log-sum-exp over bounded token/vocabulary tiles. The wrapper is
+        # installed with the performance patch bucket, but only
+        # an explicit loss-only call may return ``logits=None``.
         use_fused_ce = (
-            opaque_fused_loss_only
+            loss_only
             and _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs)
             and (
                 (
@@ -323,17 +334,18 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
             weight = self.lm_head.weight
 
-            # Cohere-style multiplicative logit scaling: logits * scale
-            logit_scale = getattr(self.config, "logit_scale", None)
-            if logit_scale is not None and logit_scale != 1.0:
-                weight = weight * logit_scale
-
-            # Granite divisive scaling: logits / logits_scaling
-            # Applied to weight before kernel (same as Cohere) so autograd
-            # correctly chains the gradient back to the original weight.
-            logits_scaling = getattr(self.config, "logits_scaling", None)
-            if logits_scaling is not None and logits_scaling != 1.0:
-                weight = weight / logits_scaling
+            # Keep family scaling scalar so a large transformed head is never
+            # materialized. The kernels apply it to each logits tile and include
+            # it in the hidden/head gradient chain rule.
+            configured_logit_scale = getattr(self.config, "logit_scale", None)
+            configured_logits_scaling = getattr(self.config, "logits_scaling", None)
+            logit_scale = float(
+                1.0 if configured_logit_scale is None else configured_logit_scale
+            )
+            logits_scaling = float(
+                1.0 if configured_logits_scaling is None else configured_logits_scaling
+            )
+            logit_scale /= logits_scaling
 
             # Gemma2 softcapping: softcap * tanh(logits / softcap)
             softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
@@ -349,6 +361,7 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
                 softcap,
                 label_smoothing,
                 False,  # use_token_scaling: plain CE for the LM-head loss
+                logit_scale,
             )
             if use_chunked_ce:
                 chunk_vocab = (

@@ -5,10 +5,11 @@
 A pure-PyTorch, chunked, custom-autograd replacement for the Triton
 ``Opaque_LinearCrossEntropyLoss``. It never materializes the full
 ``(tokens, vocab)`` logit matrix — the forward streams an online log-sum-exp
-over vocab chunks and the backward recomputes each chunk — so peak memory on
-MPS/CPU (where Triton is unavailable) stays bounded by one ``(tokens, chunk)``
-tile instead of the whole vocab. Linear projections retain the input precision
-used by eager ``matmul`` while LSE and probability arithmetic run in FP32.
+over two-dimensional token/vocabulary tiles and the backward recomputes each
+tile — so peak temporary memory on MPS/CPU (where Triton is unavailable) stays
+within a private device-aware workspace budget. Linear projections retain the
+input precision used by eager ``matmul`` while LSE and probability arithmetic
+run in FP32.
 
 Composes with ``vmap(grad(...))`` via ``generate_vmap_rule`` so the DP-SGD
 per-example path works identically to the Triton kernel, and supports the same
@@ -26,16 +27,134 @@ forward activations and defeats the streaming.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
 
-# Vocab columns materialized per chunk by default. Callers can lower this for
-# large DP-vmap microbatches, where the physical tile also includes examples.
+_MIB = 1024**2
+_CPU_WORKSPACE_BYTES = 512 * _MIB
+_MPS_FALLBACK_WORKSPACE_BYTES = 512 * _MIB
+_MPS_MAX_WORKSPACE_BYTES = 1024 * _MIB
+_MPS_FREE_MEMORY_FRACTION = 0.125
 _CHUNK_VOCAB = 16384
+_TILE_LIVE_VALUES = 6
+_INVALID_CHUNK_VOCAB = "chunk_vocab must be positive"
 
 
-def _num_chunks(vocab: int, chunk_vocab: int | None = None) -> int:
-    width = _CHUNK_VOCAB if chunk_vocab is None else chunk_vocab
-    return max(1, (vocab + width - 1) // width)
+@dataclass(frozen=True)
+class _TilePlan:
+    tokens: int
+    vocab: int
+    estimated_bytes: int
+    budget_bytes: int
+    batch_factor: int
+
+
+def _workspace_budget_bytes(device: torch.device) -> int:
+    """Return a conservative, hard-capped temporary-workspace budget."""
+    if device.type != "mps":
+        return _CPU_WORKSPACE_BYTES
+
+    try:
+        free_bytes = max(
+            0,
+            int(torch.mps.recommended_max_memory())
+            - int(torch.mps.driver_allocated_memory()),
+        )
+    except (AttributeError, RuntimeError, TypeError):
+        return _MPS_FALLBACK_WORKSPACE_BYTES
+    return max(
+        1,
+        min(_MPS_MAX_WORKSPACE_BYTES, int(free_bytes * _MPS_FREE_MEMORY_FRACTION)),
+    )
+
+
+def _estimate_tile_bytes(
+    tokens: int,
+    vocab: int,
+    hidden: int,
+    itemsize: int,
+    *,
+    cast_hidden: bool,
+    cast_weight: bool,
+) -> int:
+    """Conservatively estimate avoidable live storage for one 2-D tile."""
+    tile = tokens * vocab * itemsize * _TILE_LIVE_VALUES
+    hidden_work = tokens * hidden * itemsize * (1 + int(cast_hidden))
+    weight_work = vocab * hidden * itemsize * int(cast_weight)
+    return tile + hidden_work + weight_work
+
+
+def _vmap_batch_factor(tensor: torch.Tensor) -> int:
+    """Return the product of hidden physical vmap dimensions."""
+    functorch = getattr(torch._C, "_functorch", None)
+    if functorch is None:
+        return 1
+    factor = 1
+    current = tensor
+    while True:
+        if functorch.is_gradtrackingtensor(current):
+            current = functorch.get_unwrapped(current)
+        elif functorch.is_batchedtensor(current):
+            batch_dim = functorch.maybe_get_bdim(current)
+            current = functorch.get_unwrapped(current)
+            factor *= current.shape[batch_dim]
+        else:
+            return factor
+
+
+def _tile_plan(
+    e: torch.Tensor,
+    weight: torch.Tensor,
+    chunk_vocab: int | None = None,
+    *,
+    budget_bytes: int | None = None,
+) -> _TilePlan:
+    """Choose token/vocabulary tiles that fit the private workspace budget."""
+    if chunk_vocab is not None and chunk_vocab <= 0:
+        raise ValueError(_INVALID_CHUNK_VOCAB)
+    tokens = e.shape[0]
+    vocab, hidden = weight.shape
+    vocab_cap = min(vocab, _CHUNK_VOCAB if chunk_vocab is None else chunk_vocab)
+    budget = _workspace_budget_bytes(e.device) if budget_bytes is None else budget_bytes
+    batch_factor = _vmap_batch_factor(e)
+    tile_budget = max(1, budget // batch_factor)
+    compute_dtype = _compute_dtype(e, weight)
+    itemsize = torch.empty((), dtype=compute_dtype).element_size()
+    mixed_dtypes = e.dtype != weight.dtype
+    cast_hidden = mixed_dtypes and e.dtype != compute_dtype
+    cast_weight = mixed_dtypes and weight.dtype != compute_dtype
+
+    vocab_tile = max(1, vocab_cap)
+    while (
+        vocab_tile > 1
+        and _estimate_tile_bytes(
+            1,
+            vocab_tile,
+            hidden,
+            itemsize,
+            cast_hidden=cast_hidden,
+            cast_weight=cast_weight,
+        )
+        > tile_budget
+    ):
+        vocab_tile = max(1, vocab_tile // 2)
+
+    fixed_per_token = hidden * itemsize * (1 + int(cast_hidden))
+    bytes_per_token = vocab_tile * itemsize * _TILE_LIVE_VALUES + fixed_per_token
+    fixed_weight = vocab_tile * hidden * itemsize * int(cast_weight)
+    available = max(bytes_per_token, tile_budget - fixed_weight)
+    token_tile = max(1, available // max(bytes_per_token, 1))
+    token_tile = min(max(tokens, 1), token_tile)
+    estimated = batch_factor * _estimate_tile_bytes(
+        token_tile,
+        vocab_tile,
+        hidden,
+        itemsize,
+        cast_hidden=cast_hidden,
+        cast_weight=cast_weight,
+    )
+    return _TilePlan(token_tile, vocab_tile, estimated, budget, batch_factor)
 
 
 def _softcap(logits: torch.Tensor, softcap: float | None) -> torch.Tensor:
@@ -64,50 +183,76 @@ def _stream_lse(
     weight,
     targets,
     softcap,
-    chunks,
+    token_tile,
+    vocab_tile,
+    logit_scale,
     need_logit_target=True,
     need_sum_logits=False,
 ):
-    """One streamed pass over vocab chunks.
+    """One streamed pass over token and vocabulary tiles.
 
-    Returns ``(lse, logit_target, sum_logits)`` each shaped ``(N,)`` — the
-    log-sum-exp, the (softcapped) logit at each row's target, and the row sum of
-    all (softcapped) logits. ``logit_target`` / ``sum_logits`` are ``None``
-    unless requested: each is a per-chunk accumulator, and computing one that
-    isn't needed still pins every chunk's logits in the functorch ``vmap(grad)``
-    graph (the backward only needs the bare ``lse``). No ``(N, V)`` tensor lives
-    past a single chunk.
+    Returns ``(lse, logit_target, sum_logits)`` each shaped ``(N,)``. Tile
+    results are concatenated instead of assigned into a shared buffer so the
+    generated vmap rule can add an outer per-example dimension safely.
     """
     N = e.shape[0]
     V = weight.shape[0]
-    Vc = (V + chunks - 1) // chunks
-    # Match eager linear precision, then stream CE statistics in >= fp32.
     cdt = _compute_dtype(e, weight)
-    m = torch.full((N,), float("-inf"), dtype=cdt, device=e.device)
-    s = torch.zeros(N, dtype=cdt, device=e.device)
-    logit_target = (
-        torch.zeros(N, dtype=cdt, device=e.device) if need_logit_target else None
-    )
-    sum_logits = torch.zeros(N, dtype=cdt, device=e.device) if need_sum_logits else None
+    if N == 0:
+        empty = torch.empty(0, dtype=cdt, device=e.device)
+        return (
+            empty,
+            empty if need_logit_target else None,
+            empty if need_sum_logits else None,
+        )
+
+    lse_parts: list[torch.Tensor] = []
+    target_parts: list[torch.Tensor] | None = [] if need_logit_target else None
+    sum_parts: list[torch.Tensor] | None = [] if need_sum_logits else None
     zero = torch.zeros((), dtype=cdt, device=e.device)
-    for c in range(chunks):
-        lo, hi = c * Vc, min((c + 1) * Vc, V)
-        if lo >= hi:
-            break
-        lc = _softcap(_linear_chunk(e, weight[lo:hi]), softcap)  # (N, hi-lo)
-        cmax = torch.maximum(m, lc.max(-1).values)
-        s = s * torch.exp(m - cmax) + torch.exp(lc - cmax[:, None]).sum(-1)
-        m = cmax
-        if need_sum_logits:
-            sum_logits = sum_logits + lc.sum(-1)
+    cast_hidden = e.dtype != weight.dtype and e.dtype != cdt
+
+    for blo in range(0, N, token_tile):
+        bhi = min(blo + token_tile, N)
+        et = e[blo:bhi]
+        tt = targets[blo:bhi]
+        ef = et.to(cdt) if cast_hidden else et
+        rows = bhi - blo
+        m = torch.full((rows,), float("-inf"), dtype=cdt, device=e.device)
+        s = torch.zeros(rows, dtype=cdt, device=e.device)
+        logit_target = (
+            torch.zeros(rows, dtype=cdt, device=e.device) if need_logit_target else None
+        )
+        sum_logits = (
+            torch.zeros(rows, dtype=cdt, device=e.device) if need_sum_logits else None
+        )
+
+        for lo in range(0, V, vocab_tile):
+            hi = min(lo + vocab_tile, V)
+            lc = _softcap(_linear_chunk(ef, weight[lo:hi]) * logit_scale, softcap)
+            cmax = torch.maximum(m, lc.max(-1).values)
+            s = s * torch.exp(m - cmax) + torch.exp(lc - cmax[:, None]).sum(-1)
+            m = cmax
+            if need_sum_logits:
+                sum_logits = sum_logits + lc.sum(-1)
+            if need_logit_target:
+                sel = (tt >= lo) & (tt < hi)
+                idx = (tt - lo).clamp(0, hi - lo - 1)
+                logit_target = logit_target + torch.where(
+                    sel, lc.gather(1, idx[:, None]).squeeze(1), zero
+                )
+
+        lse_parts.append(m + torch.log(s))
         if need_logit_target:
-            sel = (targets >= lo) & (targets < hi)
-            idx = (targets - lo).clamp(0, hi - lo - 1)
-            logit_target = logit_target + torch.where(
-                sel, lc.gather(1, idx[:, None]).squeeze(1), zero
-            )
-    lse = m + torch.log(s)
-    return lse, logit_target, sum_logits
+            target_parts.append(logit_target)
+        if need_sum_logits:
+            sum_parts.append(sum_logits)
+
+    return (
+        torch.cat(lse_parts),
+        torch.cat(target_parts) if need_logit_target else None,
+        torch.cat(sum_parts) if need_sum_logits else None,
+    )
 
 
 def _per_token_loss(lse, logit_target, sum_logits, vocab, label_smoothing):
@@ -130,15 +275,22 @@ class _ChunkedLinearCE(torch.autograd.Function):
 
     generate_vmap_rule = True
 
+    @classmethod
+    def apply(cls, *args):
+        """Return per-token loss while retaining internal statistics outputs."""
+        return super().apply(*args)[0]
+
     @staticmethod
     def forward(
         e,
         weight,
         targets,
-        logit_softcapping=0,
-        label_smoothing=0.0,
-        use_token_scaling=False,
-        chunk_vocab=None,
+        logit_softcapping,
+        label_smoothing,
+        use_token_scaling,
+        logit_scale,
+        token_tile,
+        vocab_tile,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
         lse, logit_target, sum_logits = _stream_lse(
@@ -146,7 +298,9 @@ class _ChunkedLinearCE(torch.autograd.Function):
             weight,
             targets,
             softcap,
-            _num_chunks(weight.shape[0], chunk_vocab),
+            token_tile,
+            vocab_tile,
+            logit_scale,
             need_sum_logits=float(label_smoothing) != 0.0,
         )
         loss = _per_token_loss(
@@ -154,8 +308,11 @@ class _ChunkedLinearCE(torch.autograd.Function):
         )
         if use_token_scaling:
             # Detached confidence p_t = softmax(logits)[target] (DFT).
-            loss = torch.exp(logit_target - lse).detach() * loss
-        return loss
+            token_weight = torch.exp(logit_target - lse).detach()
+            loss = token_weight * loss
+        else:
+            token_weight = lse.new_empty(0)
+        return loss, lse, token_weight
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -166,74 +323,96 @@ class _ChunkedLinearCE(torch.autograd.Function):
             logit_softcapping,
             label_smoothing,
             use_token_scaling,
-            chunk_vocab,
+            logit_scale,
+            token_tile,
+            vocab_tile,
         ) = inputs
-        ctx.save_for_backward(e, weight, targets)
+        _, lse, token_weight = output
+        ctx.mark_non_differentiable(lse, token_weight)
+        ctx.save_for_backward(e, weight, targets, lse, token_weight)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.label_smoothing = float(label_smoothing)
         ctx.use_token_scaling = bool(use_token_scaling)
-        ctx.chunk_vocab = chunk_vocab
+        ctx.logit_scale = float(logit_scale)
+        ctx.token_tile = token_tile
+        ctx.vocab_tile = vocab_tile
 
     @staticmethod
-    def backward(ctx, grad_loss):
-        e, weight, targets = ctx.saved_tensors
+    def backward(ctx, grad_loss, _grad_lse, _grad_token_weight):
+        e, weight, targets, lse, token_weight = ctx.saved_tensors
         softcap = ctx.softcap
         eps = ctx.label_smoothing
         compute_dc = ctx.needs_input_grad[1]
+        N = e.shape[0]
         V = weight.shape[0]
-        chunks = _num_chunks(V, ctx.chunk_vocab)
-        Vc = (V + chunks - 1) // chunks
-
-        lse, logit_target, _ = _stream_lse(
-            e,
-            weight,
-            targets,
-            softcap,
-            chunks,
-            need_logit_target=ctx.use_token_scaling,
-        )
         cdt = _compute_dtype(e, weight)
         row = grad_loss.to(cdt)
         if ctx.use_token_scaling:
-            row = row * torch.exp(logit_target - lse).detach()
+            row = row * token_weight
 
-        # CE derivatives are FP32, then cross the same cast boundary as eager
-        # BF16 logits before each linear backward matmul.
         low_precision_linear = (
             e.dtype in {torch.float16, torch.bfloat16} and weight.dtype == e.dtype
         )
-        ef = e if low_precision_linear else e.to(cdt)
-        grad_e = torch.zeros_like(e, dtype=cdt)
-        # Accumulate per-vocab-chunk weight grads out-of-place and concat: under
-        # vmap the weight is shared (unbatched) while gl@e is per-example, so an
-        # in-place slice-assign into a (V, D) buffer is illegal — cat over the
-        # vocab dim keeps each piece batched correctly.
-        w_chunks: list[torch.Tensor] | None = [] if compute_dc else None
-        for c in range(chunks):
-            lo, hi = c * Vc, min((c + 1) * Vc, V)
-            if lo >= hi:
-                break
-            wc = weight[lo:hi] if low_precision_linear else weight[lo:hi].to(cdt)
-            lc = _softcap(_linear_chunk(ef, wc), softcap)
-            p = torch.exp(lc - lse[:, None])  # softmax chunk
-            sel = (targets >= lo) & (targets < hi)
-            idx = (targets - lo).clamp(0, hi - lo - 1)
-            # q_v = (1-eps)*onehot + eps/V ; dloss/dlogit = p - q
-            if eps:
-                p.sub_(eps / V)
-            target_mass = sel[:, None].to(p.dtype) * (1.0 - eps)
-            p.scatter_add_(1, idx[:, None], -target_mass)
-            gl = p
-            if softcap is not None:
-                gl.mul_(1.0 - (lc / softcap) ** 2)  # tanh-cap chain rule
-            gl.mul_(row[:, None])
-            linear_grad = gl.to(e.dtype) if low_precision_linear else gl
-            grad_e = grad_e + (linear_grad @ wc).to(cdt)
-            if compute_dc:
-                w_chunks.append(linear_grad.t() @ ef)
-        grad_e = grad_e.to(e.dtype)
-        grad_w = torch.cat(w_chunks, dim=0).to(weight.dtype) if compute_dc else None
-        return grad_e, grad_w, None, None, None, None, None
+        vocab_ranges = [
+            (lo, min(lo + ctx.vocab_tile, V)) for lo in range(0, V, ctx.vocab_tile)
+        ]
+        w_chunks: list[torch.Tensor | None] | None = (
+            [None] * len(vocab_ranges) if compute_dc else None
+        )
+        grad_e_parts: list[torch.Tensor] = []
+
+        for blo in range(0, N, ctx.token_tile):
+            bhi = min(blo + ctx.token_tile, N)
+            et = e[blo:bhi]
+            tt = targets[blo:bhi]
+            lt = lse[blo:bhi]
+            rt = row[blo:bhi]
+            ef = et if low_precision_linear else et.to(cdt)
+            grad_et: torch.Tensor | None = None
+
+            for vi, (lo, hi) in enumerate(vocab_ranges):
+                wc = weight[lo:hi] if low_precision_linear else weight[lo:hi].to(cdt)
+                lc = _softcap(_linear_chunk(ef, wc) * ctx.logit_scale, softcap)
+                p = torch.exp(lc - lt[:, None])
+                sel = (tt >= lo) & (tt < hi)
+                idx = (tt - lo).clamp(0, hi - lo - 1)
+                if eps:
+                    p.sub_(eps / V)
+                target_mass = sel[:, None].to(p.dtype) * (1.0 - eps)
+                p.scatter_add_(1, idx[:, None], -target_mass)
+                gl = p
+                if softcap is not None:
+                    gl.mul_(1.0 - (lc / softcap) ** 2)
+                gl.mul_(ctx.logit_scale)
+                gl.mul_(rt[:, None])
+                linear_grad = gl.to(e.dtype) if low_precision_linear else gl
+
+                if grad_et is None:
+                    grad_et = (linear_grad @ wc).to(cdt)
+                elif low_precision_linear:
+                    grad_et.add_((linear_grad @ wc).to(cdt))
+                else:
+                    grad_et = torch.addmm(grad_et, linear_grad, wc)
+
+                if compute_dc:
+                    contribution = (linear_grad.t() @ ef).to(cdt)
+                    previous = w_chunks[vi]
+                    if previous is None:
+                        w_chunks[vi] = contribution
+                    elif low_precision_linear:
+                        w_chunks[vi] = previous + contribution
+                    else:
+                        w_chunks[vi] = torch.addmm(previous, linear_grad.t(), ef)
+
+            grad_e_parts.append(grad_et)
+
+        if N == 0:
+            grad_e = torch.zeros_like(e)
+            grad_w = weight * e.sum().to(weight.dtype) if compute_dc else None
+        else:
+            grad_e = torch.cat(grad_e_parts).to(e.dtype)
+            grad_w = torch.cat(w_chunks, dim=0).to(weight.dtype) if compute_dc else None
+        return grad_e, grad_w, None, None, None, None, None, None, None
 
 
 def linear_nll_sum_chunked(
@@ -244,6 +423,7 @@ def linear_nll_sum_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    logit_scale=1.0,
     chunk_vocab=None,
 ):
     """Unreduced NLL sum over non-ignored tokens.
@@ -254,6 +434,7 @@ def linear_nll_sum_chunked(
     """
     e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
     targets = labels[..., 1:].contiguous().flatten()  # (N,)
+    plan = _tile_plan(e, weight, chunk_vocab)
     nll = _ChunkedLinearCE.apply(
         e,
         weight,
@@ -261,7 +442,9 @@ def linear_nll_sum_chunked(
         logit_softcapping,
         label_smoothing,
         use_token_scaling,
-        chunk_vocab,
+        logit_scale,
+        plan.tokens,
+        plan.vocab,
     )
     valid = targets != ignore_index
     return torch.where(valid, nll, nll.new_zeros(())).sum()
@@ -275,6 +458,7 @@ def linear_cross_entropy_chunked(
     logit_softcapping=0,
     label_smoothing=0.0,
     use_token_scaling=False,
+    logit_scale=1.0,
     chunk_vocab=None,
 ):
     """Mean-reduced chunked linear CE — matches ``opaque_linear_cross_entropy_loss``.
@@ -289,6 +473,7 @@ def linear_cross_entropy_chunked(
         logit_softcapping,
         label_smoothing,
         use_token_scaling,
+        logit_scale,
         chunk_vocab,
     )
     targets = labels[..., 1:].contiguous().flatten()

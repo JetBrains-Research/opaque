@@ -29,6 +29,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
+import opaque.api.patches.kernels.linear_cross_entropy as linear_ce_mod
 from opaque.api.patches.kernels.linear_cross_entropy import (
     Opaque_LinearCrossEntropyLoss,
     opaque_linear_cross_entropy_loss,
@@ -110,11 +111,10 @@ def opaque_linear_ce(
 
     Kernel returns nll_sum (unreduced). We reduce here to match
     the PyTorch reference (F.cross_entropy with reduction='mean').
-    Scaling is applied to weight before calling (not inside kernel),
-    so autograd correctly propagates gradients to original weight.
+    Scaling is passed into the tiled kernel without transforming the full
+    weight tensor.
     """
-    if scaling != 0:
-        weight = weight / scaling
+    logit_scale = 1.0 if scaling == 0 else 1.0 / scaling
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
         hidden_states,
         weight,
@@ -123,6 +123,7 @@ def opaque_linear_ce(
         softcap,
         label_smoothing,
         False,  # use_token_scaling
+        logit_scale,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -408,6 +409,54 @@ class TestLinearCEBackward:
             atol=ATOL_BACKWARD,
             label="weight.grad",
         )
+
+
+@pytest.mark.parametrize("vmapped", [False, True], ids=["direct", "vmap"])
+@pytest.mark.parametrize("use_token_scaling", [False, True], ids=["plain", "scaled"])
+@pytest.mark.parametrize("has_ignored", [False, True], ids=["all-valid", "ignored"])
+def test_backward_reuses_forward_statistics(
+    monkeypatch, vmapped, use_token_scaling, has_ignored
+):
+    torch.manual_seed(46)
+    b, t, d, vocab = 2, 6, 16, 256
+    hidden = torch.randn(b, t, d, device="cuda", dtype=torch.bfloat16)
+    weight = torch.randn(vocab, d, device="cuda", dtype=torch.bfloat16)
+    labels = torch.randint(0, vocab, (b, t), device="cuda")
+    if has_ignored:
+        labels[:, 2] = -100
+
+    forward_calls = 0
+    valid_calls = 0
+    original_forward = linear_ce_mod._forward_impl
+    original_valids = linear_ce_mod._build_flat_valids
+
+    def recording_forward(*args, **kwargs):
+        nonlocal forward_calls
+        forward_calls += 1
+        return original_forward(*args, **kwargs)
+
+    def recording_valids(*args, **kwargs):
+        nonlocal valid_calls
+        valid_calls += 1
+        return original_valids(*args, **kwargs)
+
+    monkeypatch.setattr(linear_ce_mod, "_forward_impl", recording_forward)
+    monkeypatch.setattr(linear_ce_mod, "_build_flat_valids", recording_valids)
+
+    def loss(h, w, lab):
+        return Opaque_LinearCrossEntropyLoss.apply(
+            h, w, lab, -100, 0, 0.0, use_token_scaling
+        )
+
+    if vmapped:
+        vmap(grad(loss, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    else:
+        hidden.requires_grad_(True)
+        weight.requires_grad_(True)
+        torch.autograd.grad(loss(hidden, weight, labels), (hidden, weight))
+
+    assert forward_calls == 1
+    assert valid_calls == 1
 
 
 # ============================================================================
@@ -951,14 +1000,21 @@ class TestLinearCESoftcapping:
             dtype=torch.bfloat16,
             requires_grad=True,
         )
-        weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        weight_pt = torch.randn(
+            vocab,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
-        loss_pt = pytorch_linear_ce(hidden_pt, weight, labels, scaling=scaling)
+        loss_pt = pytorch_linear_ce(hidden_pt, weight_pt, labels, scaling=scaling)
         loss_pt.backward()
 
         hidden_op = hidden_pt.detach().clone().requires_grad_(True)
-        loss_op = opaque_linear_ce(hidden_op, weight, labels, scaling=scaling)
+        weight_op = weight_pt.detach().clone().requires_grad_(True)
+        loss_op = opaque_linear_ce(hidden_op, weight_op, labels, scaling=scaling)
         loss_op.backward()
 
         print(f"\nLinear CE logit scaling backward (V={vocab}):")
@@ -969,11 +1025,24 @@ class TestLinearCESoftcapping:
             atol=ATOL_BACKWARD,
             label="hidden_states.grad",
         )
+        assert_precision(
+            weight_op.grad.float(),
+            weight_pt.grad.float(),
+            rtol=RTOL_BACKWARD,
+            atol=ATOL_BACKWARD,
+            label="weight.grad",
+        )
 
-    def test_softcapping_vmap_grad(self, assert_precision, mellum_config):
-        """Softcapping with vmap(grad) matches PyTorch reference at mellum scale."""
+    @pytest.mark.parametrize(
+        ("softcap", "scaling"),
+        [(30.0, 0.0), (0.0, 8.0)],
+        ids=["softcap", "logit-scaling"],
+    )
+    def test_logit_transform_vmap_grad(
+        self, assert_precision, mellum_config, softcap, scaling
+    ):
+        """Logit transforms under vmap(grad) match PyTorch at mellum scale."""
         torch.manual_seed(42)
-        softcap = 30.0
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
         hidden_dim = mellum_config["hidden_dim"]
@@ -992,15 +1061,15 @@ class TestLinearCESoftcapping:
         labels = torch.randint(0, vocab, (vmap_batch, batch, seq_len), device="cuda")
 
         def f_pt(h, t):
-            return pytorch_linear_ce(h, weight, t, softcap=softcap)
+            return pytorch_linear_ce(h, weight, t, softcap=softcap, scaling=scaling)
 
         def f_op(h, t):
-            return opaque_linear_ce(h, weight, t, softcap=softcap)
+            return opaque_linear_ce(h, weight, t, softcap=softcap, scaling=scaling)
 
         grads_pt = vmap(grad(f_pt, argnums=0), in_dims=(0, 0))(hidden, labels)
         grads_op = vmap(grad(f_op, argnums=0), in_dims=(0, 0))(hidden, labels)
 
-        print(f"\nLinear CE softcapping vmap(grad) (V={vocab}):")
+        print(f"\nLinear CE transformed-logit vmap(grad) (V={vocab}):")
         assert_precision(
             grads_op.float(),
             grads_pt.float(),
@@ -1041,6 +1110,7 @@ class TestLinearCEWrapper:
             0,
             0.0,
             False,  # use_token_scaling
+            1.0,
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)

@@ -451,10 +451,9 @@ class TrainingArguments:
     # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
     # Supported keys: ``rope``, ``rms_norm``, ``activation``,
     # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
-    # ``eager_attention``, ``batchify``.  ``fused_linear_cross_entropy``
-    # is opt-in because the fused forward returns ``logits=None``, which
-    # is incompatible with ``compute_metrics`` /
-    # ``preprocess_logits_for_metrics``.
+    # ``eager_attention``, ``batchify``. The conditional fused-linear-CE wrapper
+    # inherits from the model patcher's ``performance`` bucket; False opts out.
+    # Only calls the trainer proves are loss-only activate its optimized branch.
     performance_kernels_config: dict[str, Any] | str | None = None
     # Whether ``opaque.patches.apply_model_patches`` should apply compat
     # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe
@@ -950,6 +949,18 @@ class TrainingArguments:
                     "Pass an explicit microbatch_size (e.g. "
                     "--microbatch-size 4) and disable "
                     "--auto-find-microbatch-size, or disable --torch-compile.",
+                )
+            )
+
+        if self.torch_compile and self.gradient_checkpointing:
+            raise ConfigurationError(
+                *(
+                    "torch_compile=True is incompatible with "
+                    "gradient_checkpointing=True: Opaque's vmap-safe, "
+                    "non-reentrant checkpoint path uses saved-tensor hooks, "
+                    "which AOTAutograd cannot safely compose with "
+                    "torch.compile(vmap(grad(...))). Disable either "
+                    "gradient checkpointing or torch compilation.",
                 )
             )
 

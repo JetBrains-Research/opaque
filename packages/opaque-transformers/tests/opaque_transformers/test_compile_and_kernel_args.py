@@ -13,11 +13,11 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from torch._dynamo.testing import CompileCounterWithBackend
 from transformers import PretrainedConfig, PreTrainedModel
 
-from opaque.api.transformers.trainer._dp_trainer import (
-    _compile_with_fullgraph_fallback,
-)
+from opaque.api.transformers.trainer._distributed import DDPState
+from opaque.api.transformers.trainer._dp_trainer import _compile_strict_chunk
 from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
@@ -51,6 +51,20 @@ def _tiny_trainer(tmp_path, **arg_overrides) -> tuple[DPTrainer, nn.Module]:
         eval_dataset=None,
     )
     return trainer, model
+
+
+class _TinyLM(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.embed = nn.Embedding(16, 4)
+        self.head = nn.Linear(4, 16)
+
+    def forward(self, input_ids, **_):
+        logits = self.head(self.embed(input_ids))
+        loss = nn.functional.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]), input_ids.reshape(-1)
+        )
+        return {"loss": loss, "logits": logits}
 
 
 class _UnregisteredConfig(PretrainedConfig):
@@ -95,6 +109,38 @@ def test_torch_compile_true_accepted(tmp_path):
     assert trainer.args.torch_compile is True
 
 
+def test_torch_compile_runs_poisson_training_strictly(tmp_path):
+    generator = torch.Generator().manual_seed(0)
+    dataset = [
+        {"input_ids": torch.randint(0, 16, (4,), generator=generator)}
+        for _ in range(32)
+    ]
+
+    def collate(batch):
+        return {"input_ids": torch.stack([example["input_ids"] for example in batch])}
+
+    args = _args(
+        tmp_path,
+        per_device_train_batch_size=3,
+        max_steps=3,
+        torch_compile=True,
+        torch_compile_backend="aot_eager",
+        report_to=[],
+        logging_strategy="no",
+        disable_tqdm=True,
+    )
+    trainer = DPTrainer(
+        model=_TinyLM(),
+        args=args,
+        train_dataset=dataset,
+        data_collator=collate,
+    )
+
+    result = trainer.train()
+
+    assert result.global_step == 3
+
+
 def test_torch_compile_with_backend_and_mode(tmp_path):
     trainer, _ = _tiny_trainer(
         tmp_path,
@@ -128,135 +174,131 @@ def test_torch_compile_with_explicit_no_autofind_accepted(tmp_path):
     assert trainer.args.auto_find_microbatch_size is False
 
 
-# ----------------------------------------------------------------------------
-# fullgraph fallback control flow (_compile_with_fullgraph_fallback)
-# ----------------------------------------------------------------------------
+def test_torch_compile_with_gradient_checkpointing_rejected(tmp_path):
+    with pytest.raises(
+        ConfigurationError, match=r"torch_compile.*gradient_checkpointing"
+    ):
+        _args(tmp_path, torch_compile=True, gradient_checkpointing=True)
 
 
-class _FakeCompiled:
-    """Fake ``torch.compile`` artifact: records calls, can raise."""
+def test_torch_compile_rejects_model_with_checkpointing_already_enabled(tmp_path):
+    model = _TinyLM()
+    model.is_gradient_checkpointing = True
 
-    def __init__(self, fullgraph: bool, error: BaseException | None = None):
-        self.fullgraph = fullgraph
-        self.error = error
-        self.calls = 0
-
-    def __call__(self, *_args, **_kwargs):
-        self.calls += 1
-        if self.error is not None:
-            raise self.error
-        return "ok"
-
-
-def _patch_compile(
-    monkeypatch, errors: list[BaseException | None] | None = None
-) -> list[_FakeCompiled]:
-    """Patch ``torch.compile`` to staged fakes raising ``errors[i]``."""
-    made: list[_FakeCompiled] = []
-    pending = list(errors or [])
-
-    def fake_compile(fn, *, backend, mode, fullgraph):
-        stage = _FakeCompiled(
-            fullgraph=fullgraph, error=pending.pop(0) if pending else None
+    with pytest.raises(ConfigurationError, match="already has gradient checkpointing"):
+        DPTrainer(
+            model=model,
+            args=_args(tmp_path, torch_compile=True),
+            train_dataset=[{"input_ids": torch.zeros(4, dtype=torch.long)}],
         )
-        made.append(stage)
-        return stage
+
+
+# ----------------------------------------------------------------------------
+# strict chunk compilation
+# ----------------------------------------------------------------------------
+
+
+def test_strict_chunk_compiler_requests_dynamic_fullgraph(monkeypatch):
+    compile_calls = []
+
+    def fake_compile(fn, *, backend, mode, fullgraph, dynamic):
+        compile_calls.append((fn, backend, mode, fullgraph, dynamic))
+        return fn
 
     monkeypatch.setattr(torch, "compile", fake_compile)
-    return made
+
+    def chunk(params, x, y):
+        return params + x.sum() + y.sum()
+
+    compiled = _compile_strict_chunk(
+        chunk,
+        backend="aot_eager",
+        mode="default",
+    )
+    torch.testing.assert_close(
+        compiled(torch.tensor(1.0), torch.ones(3), torch.ones(3)),
+        torch.tensor(7.0),
+    )
+    assert compile_calls == [(chunk, "aot_eager", "default", True, True)]
 
 
-def _grad_step(x):  # placeholder body; never executed by the fakes
-    return x
+def test_strict_chunk_compiler_reuses_dynamic_graph_across_batch_sizes():
+    torch._dynamo.reset()
+    backend = CompileCounterWithBackend("aot_eager")
+
+    def chunk(x):
+        return x.sin().sum(dim=0)
+
+    compiled = _compile_strict_chunk(chunk, backend=backend, mode="default")
+    generator = torch.Generator().manual_seed(0)
+    for batch_size in (4, 2, 3, 1):
+        x = torch.randn(batch_size, 5, generator=generator)
+        torch.testing.assert_close(compiled(x), chunk(x))
+
+    # Symbolic dimensions specialize at size one on supported PyTorch versions.
+    assert 1 <= backend.frame_count <= 2
 
 
-_DYNAMO_FAILURES = {
-    "unsupported": lambda: torch._dynamo.exc.Unsupported("graph break"),
-    "backend-compiler-failed": lambda: torch._dynamo.exc.BackendCompilerFailed(
-        _grad_step, RuntimeError("inductor failed"), None
-    ),
-    "dynamo-exception": lambda: torch._dynamo.exc.TorchDynamoException(
-        "compile failure"
-    ),
-}
+def test_strict_chunk_compiler_propagates_lazy_compile_failure(monkeypatch):
+    failure = torch._dynamo.exc.Unsupported("graph break")
+
+    def fake_compile(fn, *, backend, mode, fullgraph, dynamic):
+        def compiled(*args, **kwargs):
+            raise failure
+
+        return compiled
+
+    monkeypatch.setattr(torch, "compile", fake_compile)
+    compiled = _compile_strict_chunk(
+        lambda x: x,
+        backend="aot_eager",
+        mode="default",
+    )
+    with pytest.raises(torch._dynamo.exc.Unsupported, match="graph break"):
+        compiled(torch.ones(2))
 
 
-@pytest.mark.parametrize("failure", list(_DYNAMO_FAILURES), ids=list(_DYNAMO_FAILURES))
-def test_fullgraph_fallback_triggers_on_dynamo_failures(monkeypatch, failure):
-    """Dynamo failures recompile with ``fullgraph=False`` once, then reuse it."""
-    made = _patch_compile(monkeypatch, [_DYNAMO_FAILURES[failure]()])
-    compiled = _compile_with_fullgraph_fallback(
-        _grad_step, backend="aot_eager", mode="default"
+def _make_fake_distributed(trainer):
+    trainer._ddp = DDPState(
+        is_distributed=True,
+        rank=0,
+        local_rank=0,
+        world_size=2,
+        backend="gloo",
+        device=torch.device("cpu"),
     )
 
-    assert compiled(1) == "ok"
-    assert [stage.fullgraph for stage in made] == [True, False]
-    assert made[0].calls == 1
 
-    compiled(2)
-    compiled(3)
-    assert len(made) == 2
-    assert made[1].calls == 3
+def test_sibling_compile_failure_raises_before_gradient_collective(
+    tmp_path, monkeypatch
+):
+    trainer, _ = _tiny_trainer(tmp_path)
+    _make_fake_distributed(trainer)
+
+    def sibling_failed(flags, *, op):
+        flags[1] = 1.0
+
+    monkeypatch.setattr(torch.distributed, "all_reduce", sibling_failed)
+
+    with pytest.raises(RuntimeError, match="failed on a sibling rank"):
+        trainer._synchronize_grad_failure(None)
 
 
-def test_fullgraph_oom_propagates_without_recompile(monkeypatch):
-    """OOM is a runtime failure, not a compile failure: it propagates as-is."""
-    made = _patch_compile(
-        monkeypatch, [torch.OutOfMemoryError("CUDA out of memory (simulated)")]
+def test_local_compile_failure_is_synchronized_then_reraised(tmp_path, monkeypatch):
+    trainer, _ = _tiny_trainer(tmp_path)
+    _make_fake_distributed(trainer)
+    calls = []
+    monkeypatch.setattr(
+        torch.distributed,
+        "all_reduce",
+        lambda flags, *, op: calls.append(flags.clone()),
     )
-    compiled = _compile_with_fullgraph_fallback(
-        _grad_step, backend="inductor", mode="default"
-    )
+    failure = torch._dynamo.exc.Unsupported("strict graph failed")
 
-    with pytest.raises(torch.OutOfMemoryError, match="simulated"):
-        compiled(1)
+    with pytest.raises(torch._dynamo.exc.Unsupported, match="strict graph failed"):
+        trainer._synchronize_grad_failure(failure)
 
-    assert len(made) == 1
-    assert made[0].calls == 1
-
-
-@pytest.mark.parametrize(
-    ("error", "exc_type"),
-    [
-        (RuntimeError("kernel launch failed mid-step"), RuntimeError),
-        (ValueError("shape mismatch in the loss closure"), ValueError),
-        (ConfigurationError("unsupported trainer configuration"), ConfigurationError),
-    ],
-    ids=["runtime", "value", "configuration"],
-)
-def test_non_compile_failure_propagates_without_recompile(monkeypatch, error, exc_type):
-    """Non-Dynamo failures propagate without fallback compilation or retry."""
-    made = _patch_compile(monkeypatch, [error])
-    compiled = _compile_with_fullgraph_fallback(
-        _grad_step, backend="inductor", mode="default"
-    )
-
-    with pytest.raises(exc_type, match=str(error)):
-        compiled(1)
-
-    assert len(made) == 1
-    assert made[0].calls == 1
-
-
-def test_oom_during_fallback_recompile_propagates(monkeypatch):
-    """OOM during the ``fullgraph=False`` re-run propagates, chaining the
-    original Dynamo error as ``__context__``."""
-    made = _patch_compile(
-        monkeypatch,
-        [
-            torch._dynamo.exc.Unsupported("graph break"),
-            torch.OutOfMemoryError("CUDA out of memory (simulated)"),
-        ],
-    )
-    compiled = _compile_with_fullgraph_fallback(
-        _grad_step, backend="inductor", mode="default"
-    )
-
-    with pytest.raises(torch.OutOfMemoryError, match="simulated") as excinfo:
-        compiled(1)
-
-    assert [stage.fullgraph for stage in made] == [True, False]
-    assert isinstance(excinfo.value.__context__, torch._dynamo.exc.Unsupported)
+    assert calls[0].tolist() == [0.0, 1.0]
 
 
 # ----------------------------------------------------------------------------
@@ -282,6 +324,7 @@ def test_use_performance_kernels_default_keeps_kv_cache_and_compat_on(
     assert calls[0]["kwargs"]["performance"] is True
     assert calls[0]["kwargs"]["kernels"] is False
     assert calls[0]["kwargs"]["compat"] is True
+    assert "fused_linear_cross_entropy" not in calls[0]["kwargs"]
 
 
 def test_use_performance_kernels_true_enables_kernels_group(tmp_path, monkeypatch):
@@ -331,6 +374,24 @@ def test_performance_kernels_config_forwards_opaque_keys_as_is(tmp_path, monkeyp
     assert calls[0]["kwargs"]["rms_norm"] is True
     assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is True
     assert calls[0]["kwargs"]["chunked_linear_cross_entropy"] == 2048
+
+
+def test_performance_kernels_config_can_disable_automatic_fused_loss(
+    tmp_path, monkeypatch
+):
+    calls: list[dict] = []
+
+    def _spy(model, **kwargs):
+        calls.append({"kwargs": kwargs})
+
+    monkeypatch.setattr("opaque.patches.apply_model_patches", _spy)
+
+    trainer, _model = _tiny_trainer(
+        tmp_path,
+        performance_kernels_config={"fused_linear_cross_entropy": False},
+    )
+    assert calls[0]["kwargs"]["fused_linear_cross_entropy"] is False
+    assert trainer._fused_forward_uses_marker is False
 
 
 def test_performance_kernels_config_can_disable_kv_cache(tmp_path, monkeypatch):

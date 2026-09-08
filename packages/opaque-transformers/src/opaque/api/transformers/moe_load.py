@@ -604,7 +604,7 @@ def filter_factors(
         c_inv = _inverse_coefficients(strategy, n_steps, n)
         g = torch.from_numpy(np.convolve(f.numpy(), c_inv.numpy())[:n])
     phi = torch.sqrt(torch.cumsum(g**2, dim=0) * (num_experts - 1) / num_experts)
-    if n_steps > n and n >= _STABILISATION_MIN_ROWS:
+    if n_steps > n >= _STABILISATION_MIN_ROWS:
         tail = phi[-n // 10 :]
         spread = float((tail.max() - tail.min()) / tail[-1].clamp_min(1e-300))
         if spread > _STABILISATION_TOL:

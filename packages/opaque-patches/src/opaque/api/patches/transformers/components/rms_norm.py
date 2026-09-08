@@ -16,7 +16,7 @@ def _make_rms_norm_forward(
         from opaque.api.patches.kernels.rms_norm import Opaque_RMSNorm
 
         eps = getattr(self, "variance_epsilon", None) or getattr(self, "eps", 1e-6)
-        return Opaque_RMSNorm.apply(
+        normalized, _, _ = Opaque_RMSNorm.apply(
             hidden_states,
             self.weight,
             float(eps),
@@ -25,6 +25,7 @@ def _make_rms_norm_forward(
             in_place_bwd,
             None,
         )
+        return normalized
 
     return forward
 

@@ -17,6 +17,7 @@ thing that must hold) without requiring an inductor C toolchain in CI.
 
 import pytest
 import torch
+from torch._dynamo.testing import CompileCounterWithBackend
 
 from opaque.api.engine.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
@@ -72,6 +73,42 @@ def test_compiled_transform_matches_eager(mode):
         f"{mode}: compiled grad differs from eager by "
         f"{(grads_e - grads_c).abs().max().item():.2e} — DP sensitivity not preserved"
     )
+
+
+def test_adaptive_chunk_compiles_once_across_threshold_updates():
+    params, x, y = _data()
+    backend = CompileCounterWithBackend("aot_eager")
+
+    def compiler(fn):
+        return torch.compile(fn, backend=backend, fullgraph=True)
+
+    common = {
+        "argnums": 0,
+        "batch_argnums": (1, 2),
+        "normalize_by": 8,
+        "return_aux": True,
+        "microbatch_size": 4,
+    }
+    eager_fn, eager_state = adaptive_clipped_grad(
+        _loss, initial_clipping_norm=1.0, key=key(0), **common
+    )
+    compiled_fn, compiled_state = adaptive_clipped_grad(
+        _loss,
+        initial_clipping_norm=1.0,
+        key=key(0),
+        _chunk_compiler=compiler,
+        **common,
+    )
+
+    for _ in range(3):
+        eager_out, eager_state = eager_fn(params, x, y, state=eager_state)
+        compiled_out, compiled_state = compiled_fn(params, x, y, state=compiled_state)
+        torch.testing.assert_close(
+            compiled_out[0].pytree, eager_out[0].pytree, rtol=0, atol=0
+        )
+        assert compiled_state == eager_state
+
+    assert backend.frame_count == 1
 
 
 @pytest.mark.parametrize("mode", ["fixed", "auto", "adaptive"])

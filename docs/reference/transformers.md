@@ -93,6 +93,19 @@ is the caller's loop.
 
 `predict` returns the full `EvaluationResult` and fires `on_predict`.
 
+Prediction payloads are offloaded in bounded chunks. On CUDA, a dedicated
+transfer stream and at most two pinned staging chunks overlap device-to-host
+copies with subsequent model work; completed chunks move to pageable host
+memory. Completed CPU chunks merge as a balanced tree, and each merge/final
+assembly allocates and pads its destination once instead of rebuilding a growing
+prefix for every batch.
+
+Evaluation metrics include aggregate `{prefix}_model_time_sec`,
+`{prefix}_gather_time_sec`, `{prefix}_transfer_time_sec`,
+`{prefix}_finalization_time_sec`, and `{prefix}_metric_time_sec` phase timings.
+They also report `{prefix}_transfer_bytes`, `{prefix}_transfer_overlap_sec`, and
+`{prefix}_transfer_overlap_ratio`; overlap is zero on non-CUDA devices.
+
 ### End-of-train metrics
 
 `train()` returns `TrainOutput(global_step, training_loss, metrics)`.
@@ -190,7 +203,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `use_compat_patches` | `bool` | `True` | vmap-safety patches (eager-attention, batchify, vmap-safe masking / collator / checkpoint hooks). |
 | `use_performance_kernels` | `bool` | `False` | CUDA + Triton kernel group.  Auto-`False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat dict forwarded as-is to `apply_model_patches` / `apply_runtime_patches`. Keys include `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `chunked_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. `chunked_linear_cross_entropy` accepts `True`, a positive vocabulary tile width, or `False`/`0` to disable it. |
+| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat patch overrides. Keys include `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `chunked_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. `chunked_linear_cross_entropy` accepts `True` for automatic 2-D tiling, a positive maximum vocabulary tile width, or `False`/`0` to disable it. |
 
 ### Compute and precision
 
@@ -201,9 +214,9 @@ Dataclass surface.  Every field listed here exists on
 | `bf16` | `bool` | `False` | bf16 autocast on the loss closure. |
 | `bf16_full_eval` | `bool` | `False` | Cast model to bf16 for eval scope only. |
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
-| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit.  Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` for vmap-safety. |
+| `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit. Opaque automatically uses the vmap-safe non-reentrant path. Incompatible with `torch_compile`. |
 | `gradient_checkpointing_kwargs` | `dict \| str \| None` | `None` | Forwarded to `model.gradient_checkpointing_enable(...)`. |
-| `torch_compile` | `bool` | `False` | Wrap the per-example loss closure with `torch.compile`.  Tries `fullgraph=True` first; falls back with a warning. |
+| `torch_compile` | `bool` | `False` | Compile each tensor-only microbatch gradient/clipping kernel with `fullgraph=True`. |
 | `torch_compile_backend` | `str \| None` | `None` | Defaults to `"inductor"` when compile is on. |
 | `torch_compile_mode` | `str \| None` | `None` | One of `{"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}`. |
 
@@ -213,7 +226,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `per_device_train_batch_size` | `int` | `8` | Per-rank logical Poisson batch size. |
 | `per_device_eval_batch_size` | `int \| None` | `None` | Eval batch size (fixed, not Poisson). When `None`, defaults to `microbatch_size` when configured, otherwise `per_device_train_batch_size`. |
-| `eval_accumulation_steps` | `int \| None` | `None` | Move eval tensors to CPU every N batches. `None` offloads every batch, minimizing device prediction memory; larger windows reduce transfer calls but retain up to N batches on device. Complete predictions remain in CPU memory for final metrics. |
+| `eval_accumulation_steps` | `int \| None` | `None` | Move eval tensors to CPU every N batches. `None` offloads every batch, minimizing device prediction memory; larger windows reduce transfer calls but retain up to N batches on device. CUDA copies use a bounded asynchronous pinned staging queue; complete predictions remain in pageable CPU memory for final metrics. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
 | `auto_find_microbatch_size` | `bool` | `False` | On train OOM, halve the microbatch and retry; on eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
 

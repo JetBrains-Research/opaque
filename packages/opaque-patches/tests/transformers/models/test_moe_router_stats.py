@@ -25,6 +25,9 @@ pytest.importorskip("transformers")
 
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.patches.kernels.moe import _grouped_route_available
+from opaque.api.patches.transformers.components.cross_entropy import (
+    _make_fused_ce_causal_lm_forward,
+)
 from opaque.api.patches.transformers.components.moe import _make_moe_experts_forward
 from opaque.api.patches.transformers.components.moe_stats import (
     centred_load,
@@ -461,9 +464,18 @@ def _per_example_forward(model):
 
 class TestRouterLogitsForward:
     def test_named_parameter_only_with_fused_linear_cross_entropy(self, device):
+        # The parameter exists because the chunked / fused CE forward is
+        # installed, and it is named rather than absorbed by ``**kwargs`` so
+        # that callers can detect it with ``inspect.signature``.  The wrapper
+        # itself is what adds it: an unwrapped causal-LM forward has no such
+        # parameter, and wrapping one does.
+        def native(self, input_ids=None, labels=None, **kwargs): ...
+
+        assert "opaque_router_logits" not in inspect.signature(native).parameters
+        wrapped = _make_fused_ce_causal_lm_forward(native)
+        assert "opaque_router_logits" in inspect.signature(wrapped).parameters
+
         model, _ = _tiny_mellum(device)
-        params = inspect.signature(model.forward).parameters
-        assert "opaque_router_logits" not in params
         with _restored_class_forwards(model):
             apply_model_patches(model, fused_linear_cross_entropy=True)
             params = inspect.signature(model.forward).parameters
@@ -489,7 +501,7 @@ class TestRouterLogitsForward:
                 return out.loss, stacked
 
             def loss_only(tr, ids, m, lbl):
-                return forward(tr, ids, m, lbl, opaque_fused_loss_only=True).loss
+                return forward(tr, ids, m, lbl, loss_only=True).loss
 
             def default(tr, ids, m, lbl):
                 out = forward(tr, ids, m, lbl)

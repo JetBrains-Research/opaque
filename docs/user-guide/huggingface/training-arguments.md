@@ -233,8 +233,8 @@ and the [cost table](../../mechanisms/dp-sgd/moe-load-balancing.md#cost-table).
 |---|---|---|
 | `bf16` | `False` | bf16 autocast on the per-example loss closure. |
 | `bf16_full_eval` | `False` | Cast the model to bf16 for the eval scope only. |
-| `gradient_checkpointing` | `False` | Pair with `gradient_checkpointing_kwargs={"use_reentrant": False}` — reentrant checkpointing doesn't compose with vmap. |
-| `torch_compile` | `False` | Compiles the per-example loss closure (not the model). Tries `fullgraph=True` first; falls back with a warning. |
+| `gradient_checkpointing` | `False` | Opaque automatically uses the vmap-safe non-reentrant path; no checkpointing kwargs are required. Incompatible with `torch_compile`. |
+| `torch_compile` | `False` | Compiles the tensor-only per-microbatch `vmap(grad)+clip+reduce` kernel with `fullgraph=True`. |
 
 ## Patches and kernels
 
@@ -363,7 +363,7 @@ these for you). For reference, the notable ones:
 | `tpu_num_cores`, `mp_parameters` | TPU/XLA and SageMaker MP are not supported execution backends | CUDA / CPU only |
 | `fp16`, `fp16_full_eval`, `fp16_opt_level`, `half_precision_backend`, `fp16_backend` | fp16 dynamic loss scaling adds a per-example unscale-before-clip step for no benefit on bf16-capable hardware | `bf16=True` (native bf16 autocast; no loss scaler) |
 | `optim="adamw_8bit"` / paged / Apex-fused | No functional torchopt equivalent | A supported `optim` name (see the optimizer table) |
-| `batch_eval_metrics` | Streaming metric reduction not implemented | Eval predictions offload to CPU after every batch by default. Set `eval_accumulation_steps` to a larger window only to reduce transfer calls, accepting retention of up to that many batches on device. |
+| `batch_eval_metrics` | Streaming metric reduction not implemented | Eval predictions offload to CPU after every batch by default. CUDA overlaps copies through a bounded pinned staging queue and CPU chunks merge through a balanced tree. Set `eval_accumulation_steps` to a larger window only to reduce transfer calls, accepting retention of up to that many batches on device. |
 
 `per_gpu_*` and the deprecated `push_to_hub_*` aliases are *renamed* to their
 modern equivalents; `adafactor=True` is *mapped* to `optim="adafactor"`.
