@@ -96,20 +96,43 @@ class TestPredictionAccumulator:
         acc = _PredictionAccumulator(eval_accumulation_steps=2)
         for _ in range(5):
             _add_batch(acc, 0.5)
-        # Two flushes before finalize (the trailing batch is still hot).
+        # Two flushes before finalize have merged into one balanced-tree node.
         assert len(acc._cold_logits) == 2
+        assert sum(chunk is not None for chunk in acc._cold_logits) == 1
         acc.finalize()
-        assert len(acc._cold_logits) == 3
+        assert len(acc._cold_logits) == 2
+        assert sum(chunk is not None for chunk in acc._cold_logits) == 2
 
     def test_accumulation_steps_none_flushes_each_batch(self):
         acc = _PredictionAccumulator(eval_accumulation_steps=None)
         for _ in range(4):
             _add_batch(acc, 0.5)
-        # The default effective window is one batch, bounding device retention.
-        assert len(acc._cold_logits) == 4
+        # The default effective window is one batch, bounding device retention;
+        # four cold flushes compact into one level-2 node.
+        assert len(acc._cold_logits) == 3
+        assert sum(chunk is not None for chunk in acc._cold_logits) == 1
         acc.finalize()
-        # No trailing hot batch remains after the per-batch flushes.
-        assert len(acc._cold_logits) == 4
+        assert len(acc._cold_logits) == 3
+
+    def test_cold_chunk_tree_stays_logarithmically_bounded(self):
+        acc = _PredictionAccumulator()
+        for value in range(1024):
+            logits = torch.tensor([value])
+            acc.add(
+                loss=None,
+                logits=logits,
+                labels=None,
+                inputs=None,
+                batch_size=1,
+            )
+
+        assert len(acc._cold_logits) == 11
+        assert sum(chunk is not None for chunk in acc._cold_logits) == 1
+        predictions, _, _, _ = acc.finalize()
+        torch.testing.assert_close(
+            torch.from_numpy(predictions),
+            torch.arange(1024),
+        )
 
     def test_freeze_moves_payloads_before_cpu_concatenation(self, monkeypatch):
         events: list[str] = []
@@ -242,6 +265,121 @@ class TestPredictionAccumulator:
         assert preds[1].shape == (3, 4)
         assert label_ids[0].shape == (3,)
         assert label_ids[1].shape == (3,)
+
+
+class TestLinearNestedAssembly:
+    def test_nested_mapping_sequence_and_scalar_semantics(self):
+        chunks = [
+            {
+                "scores": torch.tensor([[1.0, 2.0]]),
+                "aux": [torch.tensor(3.0)],
+            },
+            {
+                "scores": torch.tensor([[4.0], [5.0]]),
+                "aux": [torch.tensor(6.0)],
+            },
+        ]
+
+        result = _eval_mod._concat_nested_chunks(chunks)
+
+        assert isinstance(result, dict)
+        assert isinstance(result["aux"], list)
+        torch.testing.assert_close(
+            result["scores"],
+            torch.tensor([[1.0, 2.0], [4.0, -100.0], [5.0, -100.0]]),
+        )
+        torch.testing.assert_close(result["aux"][0], torch.tensor([3.0, 6.0]))
+
+    def test_each_nested_leaf_is_assembled_once(self, monkeypatch):
+        calls = 0
+        original = _eval_mod._concat_tensor_chunks
+
+        def recording_concat(tensors, *, padding_value):
+            nonlocal calls
+            calls += 1
+            return original(tensors, padding_value=padding_value)
+
+        monkeypatch.setattr(_eval_mod, "_concat_tensor_chunks", recording_concat)
+        chunks = [
+            {"left": torch.full((1, 2), i), "right": (torch.tensor(i),)}
+            for i in range(64)
+        ]
+
+        result = _eval_mod._concat_nested_chunks(chunks)
+
+        assert calls == 2
+        assert result["left"].shape == (64, 2)
+        assert result["right"][0].shape == (64,)
+
+    def test_incompatible_trailing_shapes_are_rejected(self):
+        with pytest.raises(ValueError, match="incompatible shapes"):
+            _eval_mod._concat_nested_chunks([torch.ones(1, 2, 3), torch.ones(1, 2, 4)])
+
+
+class TestEvaluationTelemetry:
+    def test_interval_overlap_uses_ordered_streams(self):
+        model = [(0.0, 2.0), (3.0, 5.0), (7.0, 8.0)]
+        transfer = [(1.0, 4.0), (4.5, 6.0), (8.0, 9.0)]
+
+        assert _eval_mod._interval_overlap(model, transfer) == pytest.approx(2.5)
+
+    def test_cpu_transfer_and_phase_metrics(self):
+        telemetry = _eval_mod._EvaluationTelemetry(torch.device("cpu"))
+        acc = _PredictionAccumulator(telemetry=telemetry)
+        with telemetry.model():
+            _add_batch(acc, 0.5)
+        acc.finalize()
+
+        metrics = telemetry.to_dict()
+        assert metrics.keys() == {
+            "model_time_sec",
+            "gather_time_sec",
+            "transfer_time_sec",
+            "finalization_time_sec",
+            "metric_time_sec",
+            "transfer_bytes",
+            "transfer_overlap_sec",
+            "transfer_overlap_ratio",
+        }
+        assert metrics["model_time_sec"] >= 0.0
+        assert metrics["finalization_time_sec"] >= 0.0
+        assert metrics["transfer_bytes"] == 0
+
+    @pytest.mark.cuda
+    def test_cuda_transfer_queue_is_bounded_and_stream_safe(self):
+        telemetry = _eval_mod._EvaluationTelemetry(torch.device("cuda"))
+        acc = _PredictionAccumulator(telemetry=telemetry)
+        expected = []
+        expected_bytes = 0
+        for i in range(6):
+            with telemetry.model():
+                logits = torch.full((2, 4), float(i), device="cuda")
+                labels = torch.full((2, 4), i, dtype=torch.long, device="cuda")
+            expected.append(torch.full((2, 4), float(i)))
+            expected_bytes += logits.numel() * logits.element_size()
+            expected_bytes += labels.numel() * labels.element_size()
+            acc.add(
+                loss=None,
+                logits=logits,
+                labels=labels,
+                inputs=None,
+                batch_size=2,
+            )
+
+        predictions, label_ids, _, _ = acc.finalize()
+        metrics = telemetry.to_dict()
+
+        assert acc._transfer_pipeline.max_pending_observed <= 2
+        assert all(
+            not chunk.is_pinned() for chunk in acc._cold_logits if chunk is not None
+        )
+        torch.testing.assert_close(
+            torch.from_numpy(predictions), torch.cat(expected, dim=0)
+        )
+        assert label_ids.shape == (12, 4)
+        assert metrics["transfer_bytes"] == expected_bytes
+        assert metrics["transfer_time_sec"] > 0.0
+        assert 0.0 <= metrics["transfer_overlap_ratio"] <= 1.0
 
 
 # ---------------------------------------------------------------------------
