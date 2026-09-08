@@ -23,17 +23,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]
-# No torch bound of our own: ifed-sdk pins torch==2.11.0 because its prebuilt
-# agent bridge is compiled against that exact minor, and a second bound here
-# could only ever conflict with it.
+# No torch bound of our own: ifed-sdk pins the exact minor its prebuilt agent
+# bridge is compiled against, and a second bound here could only conflict.
 dependencies = [
     "opaque-engine>=0.0.0.dev0",
     # Markers track the platforms IFED publishes its prebuilt agent bridge for.
-    # The two abi wheels are direct, not transitive: uv maps a dependency to an
-    # index only for direct dependencies.
-    "ifed-sdk==5.2.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
-    "ifed-agent-abi==2.0.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
-    "ifed-server-abi==2.0.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+    # The two abi wheels are listed unversioned only to route them to the
+    # jetbrains-fed index, which uv consults for direct dependencies alone;
+    # ifed-sdk pins their versions.
+    "ifed-sdk==5.3.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+    "ifed-agent-abi; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
+    "ifed-server-abi; (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'darwin' and platform_machine == 'arm64')",
 ]
 
 [tool.setuptools.packages.find]

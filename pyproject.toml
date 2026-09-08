@@ -81,8 +81,6 @@ git_describe_command = "git describe --dirty --tags --long --match v*"
 
 [tool.uv]
 package = true
-# ifed-sdk needs torch==2.11.0 (its prebuilt agent bridge is built against it)
-constraint-dependencies = ["torch==2.11.0"]
 workspace.members = [
     "packages/opaque-base",
     "packages/opaque-engine",
