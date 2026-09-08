@@ -796,7 +796,8 @@ def _concat_nested_chunks(
         if not all(type(tensor) is type(first) for tensor in tensors):
             raise TypeError("Evaluation chunks must have matching nested structures.")  # noqa: TRY003
         keys = tuple(first)
-        if not all(tuple(tensor) == keys for tensor in tensors):
+        key_set = set(keys)
+        if not all(set(tensor) == key_set for tensor in tensors):
             raise ValueError("Evaluation chunk mappings must have matching keys.")  # noqa: TRY003
         return type(first)(
             {

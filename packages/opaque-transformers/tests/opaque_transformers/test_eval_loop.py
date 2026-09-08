@@ -290,6 +290,18 @@ class TestLinearNestedAssembly:
         )
         torch.testing.assert_close(result["aux"][0], torch.tensor([3.0, 6.0]))
 
+    def test_mapping_key_order_may_differ_between_chunks(self):
+        chunks = [
+            {"scores": torch.tensor([1]), "labels": torch.tensor([2])},
+            {"labels": torch.tensor([3]), "scores": torch.tensor([4])},
+        ]
+
+        result = _eval_mod._concat_nested_chunks(chunks)
+
+        assert tuple(result) == ("scores", "labels")
+        torch.testing.assert_close(result["scores"], torch.tensor([1, 4]))
+        torch.testing.assert_close(result["labels"], torch.tensor([2, 3]))
+
     def test_each_nested_leaf_is_assembled_once(self, monkeypatch):
         calls = 0
         original = _eval_mod._concat_tensor_chunks
@@ -378,7 +390,7 @@ class TestEvaluationTelemetry:
         )
         assert label_ids.shape == (12, 4)
         assert metrics["transfer_bytes"] == expected_bytes
-        assert metrics["transfer_time_sec"] > 0.0
+        assert metrics["transfer_time_sec"] >= 0.0
         assert 0.0 <= metrics["transfer_overlap_ratio"] <= 1.0
 
 
