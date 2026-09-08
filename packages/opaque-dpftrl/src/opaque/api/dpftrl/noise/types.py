@@ -50,10 +50,13 @@ class MfStrategy(Protocol):
     Strategies that don't read every kwarg (e.g. :class:`IdentityStrategy`
     ignores all three; :class:`BandMfStrategy` reads only ``n_steps`` for
     :meth:`coefficients` and :meth:`streaming_matrix`) accept-and-ignore the
-    rest via ``**_``.  :meth:`sensitivity` is the exception: every strategy
-    reads the full participation schema, so a caller that wants the
-    single-participation column norm must ask for it with
-    ``min_sep=n_steps, max_participations=1``.
+    rest via ``**_``.  :meth:`sensitivity` is the exception: a strategy whose
+    sensitivity grows with repeat participation reads the full schema, so a
+    caller that wants the single-participation column norm must ask for it
+    with ``min_sep=n_steps, max_participations=1``.  A strategy whose
+    sensitivity is genuinely participation-independent may ignore the schema
+    and document that it does; :class:`IdentityStrategy` returns ``1.0``
+    unconditionally on that basis.
     """
 
     def coefficients(

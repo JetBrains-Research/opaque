@@ -107,7 +107,10 @@ separate `cyclic_poisson` factory).
 mechanism, we analyze $k$ independent Poisson-subsampled Gaussian mechanisms
 and compose them. Each group has:
 
-- Effective noise multiplier: $\sigma_{\text{eff}} = \sigma / S$
+- Effective noise multiplier: $\sigma_{\text{eff}} = \sigma / \kappa$, the
+  single-participation column norm — **not** $S$.  Repeat participation is
+  priced by the $k$-fold composition below, so normalizing by $S$ here
+  would count it twice.
 - Sample rate: $q$
 
 The total privacy is the $k$-fold self-composition of the per-group PLD:
