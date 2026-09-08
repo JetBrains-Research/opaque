@@ -23,7 +23,7 @@ def apply_model_patches(
     performance: bool = True,
     compat: bool = True,
     peft: bool = True,
-    fused_linear_cross_entropy: bool = False,
+    fused_linear_cross_entropy: bool | None = None,
     **kwargs,
 ) -> None:
     """Apply global and instance-level patches for a specific model.
@@ -36,7 +36,7 @@ def apply_model_patches(
     Three umbrella flags drive the per-concern ``**kwargs``:
 
     - ``performance`` (default ``True``) — memory-efficiency patches
-      that run on any host (currently ``kv_cache``).
+      that run on any host (``kv_cache`` and conditional fused linear CE).
     - ``compat`` (default ``True``) — vmap-safety wrappers
       (``eager_attention``, ``batchify``).
     - ``kernels`` (kwarg, defaults to ``performance``) — Triton kernel
@@ -50,11 +50,11 @@ def apply_model_patches(
     ``outputs.logits`` (``compute_metrics``,
     ``preprocess_logits_for_metrics``, eval loops) continue to work.
 
-    ``fused_linear_cross_entropy`` is a kernel kwarg promoted to an
-    explicit parameter: it defaults to ``False`` rather than inheriting
-    from ``kernels`` because the fused forward returns ``logits=None``,
-    which is incompatible with callers that read logits. Enable it
-    when loss is the only consumer of the forward output.
+    ``fused_linear_cross_entropy`` installs a conditional causal-LM forward.
+    It inherits from ``performance`` when unset; pass ``False`` to disable it.
+    The wrapper delegates to the original forward unless a labeled call sets
+    ``loss_only=True``, which permits the optimized branch to return
+    ``logits=None``.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:

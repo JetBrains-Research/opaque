@@ -111,7 +111,7 @@ def linear_nll_sum(
         # which would mismatch the kernel's ``tl.dot``. No-op when autocast off.
         hidden, weight = kernel_mod.follow_autocast(hidden, weight)
         return kernel_mod.Opaque_LinearCrossEntropyLoss.apply(
-            hidden, weight, labels, -100, 0, 0.0, use_token_scaling
+            hidden, weight, labels, -100, 0, 0.0, use_token_scaling, 1.0
         )
 
     # Non-CUDA: the chunked kernel streams the matmul + LSE in fp32 itself, so a

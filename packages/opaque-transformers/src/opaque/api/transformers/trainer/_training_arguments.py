@@ -438,10 +438,9 @@ class TrainingArguments:
     # ``opaque.patches.apply_model_patches`` kwargs (no key translation).
     # Supported keys: ``rope``, ``rms_norm``, ``activation``,
     # ``cross_entropy``, ``fused_linear_cross_entropy``, ``kv_cache``,
-    # ``eager_attention``, ``batchify``.  ``fused_linear_cross_entropy``
-    # is opt-in because the fused forward returns ``logits=None``, which
-    # is incompatible with ``compute_metrics`` /
-    # ``preprocess_logits_for_metrics``.
+    # ``eager_attention``, ``batchify``. The conditional fused-linear-CE wrapper
+    # inherits from the model patcher's ``performance`` bucket; False opts out.
+    # Only calls the trainer proves are loss-only activate its optimized branch.
     performance_kernels_config: dict[str, Any] | str | None = None
     # Whether ``opaque.patches.apply_model_patches`` should apply compat
     # patches (vmap-safety: ``eager_attention``, ``batchify``, vmap-safe

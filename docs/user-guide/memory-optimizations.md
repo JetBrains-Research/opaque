@@ -170,31 +170,29 @@ paths on your workload.
 ### Fused linear cross-entropy
 
 Computes the loss directly from hidden states and the `lm_head` weight matrix,
-never materializing the full `(batch*seq, vocab)` logits tensor. Enable it by
-passing `fused_linear_cross_entropy=True` to
-`apply_model_patches(model, ...)`.
+never materializing the full `(batch*seq, vocab)` logits tensor. The normal
+`performance` patch bucket installs the conditional wrapper; pass
+`loss_only=True` only for forwards where logits have no consumer.
 
-The fused path returns `logits=None` from `XForCausalLM.forward`, which is
-incompatible with callers that read `outputs.logits` — `compute_metrics`,
-`preprocess_logits_for_metrics`, and generation eval. Enable the patch when
-loss is the only consumer of the forward output;
-`examples/train_dpsgd.py` and `examples/train_dpftrl.py` do.
+The fused branch returns `logits=None`; calls that need logits for metrics,
+preprocessing, generation, or a custom loss leave the marker false. Unsupported
+loss options also fall back safely.
+Cohere and Granite logit scaling is applied inside each tile, avoiding a
+transformed copy of the full `lm_head` weight.
 
 Families outside the fused CUDA kernel's numerical envelope can use the
-portable chunked backend. Its peak probability-tile memory scales with
-`microbatch_size * prediction_tokens * chunk_width` in FP32. Configure the
-loss-only path and vocabulary-column width through:
+portable chunked backend. It tiles both prediction tokens and vocabulary under
+an internal CPU/MPS-aware workspace bound. Configure the loss-only path and an
+optional maximum vocabulary-column tile width through:
 
 ```python
-performance_kernels_config = {
-    "fused_linear_cross_entropy": True,
-    "chunked_linear_cross_entropy": 2048,
-}
+apply_model_patches(model, chunked_linear_cross_entropy=2048)
 ```
 
 The fused flag enables the logits-free path; for the chunk-width setting,
-`True` selects the family default, while `False` or `0` disables the portable
-backend.
+`True` selects automatic two-dimensional tiling, a positive integer caps the
+vocabulary width while token tiling remains automatic, and `False` or `0`
+disables the portable backend.
 
 ## Profiling
 
@@ -269,11 +267,10 @@ parameter-efficient method to reduce the trainable parameter count.
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).
 
-**OOM with fused linear CE not enabled:** Fused linear CE is opt-in
-(`apply_model_patches(model, fused_linear_cross_entropy=True)`). Without
-it, the full `(batch*seq, vocab)` logits tensor is materialized — for
-128K vocab models, that is ~2 GB per sample. Enable the flag (only if
-nothing else reads logits) or reduce batch size.
+**OOM with fused linear CE not active:** Ensure the `performance` patch bucket
+is enabled and pass `loss_only=True` only when logits have no consumer. Otherwise, the
+full `(batch*seq, vocab)` tensor is materialized — about 2 GB per sample at 128K
+vocabulary — so reduce batch size if logits are required.
 
 ## API reference
 

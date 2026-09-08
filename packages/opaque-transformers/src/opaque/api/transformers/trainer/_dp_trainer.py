@@ -194,9 +194,17 @@ def _resolve_drift_disposition(
     return drift
 
 
-def _compile_strict_chunk(fn: Callable, *, backend: str, mode: str) -> Callable:
-    """Compile one tensor-only gradient chunk without graph-break fallback."""
-    return torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
+def _compile_strict_chunk(
+    fn: Callable, *, backend: str | Callable, mode: str
+) -> Callable:
+    """Compile one tensor-only gradient chunk as a strict dynamic graph."""
+    return torch.compile(
+        fn,
+        backend=backend,
+        mode=mode,
+        fullgraph=True,
+        dynamic=True,
+    )
 
 
 @dataclasses.dataclass
@@ -797,8 +805,8 @@ class DPTrainer:
         collator / checkpoint hooks.  ``use_performance_kernels`` (default
         ``False``) gates the CUDA + Triton kernel group (``rope``,
         ``rms_norm``, ``activation``, ``cross_entropy``).  The
-        ``performance`` bucket — currently ``kv_cache`` — is always
-        enabled here because ``DynamicCache`` allocation leaks vmap refs
+        ``performance`` bucket — ``kv_cache`` and the conditional fused-CE
+        wrapper — is always enabled here because ``DynamicCache`` allocation leaks vmap refs
         and inflates training memory regardless of host;
         ``performance_kernels_config={"kv_cache": False}`` opts out.
 
@@ -808,19 +816,45 @@ class DPTrainer:
         custom model. Non-HF ``nn.Module`` models log a warning and remain
         supported.
         """
+        self._fused_forward_uses_marker = False
         try:
             from opaque.patches import apply_model_patches
         except ImportError:
             log.debug("opaque.patches unavailable; skipping model patches.")
             return
 
-        kwargs = self.args.performance_kernels_config or {}
+        kwargs = dict(self.args.performance_kernels_config or {})
         apply_model_patches(
             self._model,
             compat=bool(self.args.use_compat_patches),
             performance=True,
             kernels=bool(self.args.use_performance_kernels),
             **kwargs,
+        )
+
+        def accepts_marker(module: Any, *, allow_var_kwargs: bool) -> bool:
+            try:
+                parameters = inspect.signature(module.forward).parameters.values()
+            except (TypeError, ValueError):
+                return False
+            return any(
+                parameter.name == "loss_only"
+                or (
+                    allow_var_kwargs and parameter.kind is inspect.Parameter.VAR_KEYWORD
+                )
+                for parameter in parameters
+            )
+
+        # A PEFT wrapper commonly accepts **kwargs while only its nested causal-LM
+        # module carries the actual fused forward. Require both facts so an
+        # unsupported custom model never receives an unknown marker.
+        self._fused_forward_uses_marker = bool(
+            kwargs.get("fused_linear_cross_entropy") is not False
+            and accepts_marker(self._model, allow_var_kwargs=True)
+            and any(
+                accepts_marker(module, allow_var_kwargs=False)
+                for module in self._model.modules()
+            )
         )
 
     def _setup_precision(self) -> None:
@@ -2354,6 +2388,12 @@ class DPTrainer:
         # the kwarg but the trainer-side rebuild below corrects that.
         if smoothing > 0.0:
             inputs = {**inputs, "label_smoothing": smoothing}
+        if (
+            not return_logits
+            and self._compute_loss_func is None
+            and self._fused_forward_uses_marker
+        ):
+            inputs = {**inputs, "loss_only": True}
 
         output = fmodel(params, **inputs)
         # Output is required to be dict-like (``ModelOutput`` /
@@ -2601,6 +2641,9 @@ class DPTrainer:
         # path; users who want ``compute_loss_func`` honoured at eval set
         # ``include_for_metrics=["loss"]`` to take the per-example path
         # above.
+        forward_inputs = {**model_inputs, **labels_kwargs}
+        if prediction_loss_only and has_labels and self._fused_forward_uses_marker:
+            forward_inputs["loss_only"] = True
         with torch.no_grad():
             was_training = self._model.training
             if was_training:
@@ -2608,11 +2651,9 @@ class DPTrainer:
             try:
                 if self._ctx is not None:
                     merged = {**self._ctx.frozen_params, **self._ctx.trainable_params}
-                    output = self._ctx.fmodel(
-                        merged, **{**model_inputs, **labels_kwargs}
-                    )
+                    output = self._ctx.fmodel(merged, **forward_inputs)
                 else:
-                    output = model(**{**model_inputs, **labels_kwargs})
+                    output = model(**forward_inputs)
             finally:
                 if was_training:
                     self._model.train()
@@ -4179,9 +4220,9 @@ class DPTrainer:
 
         The clipping factories keep variable-size microbatch orchestration,
         diagnostics, and state updates eager.  The injected compiler sees only
-        ``vmap(grad_and_value)`` plus per-example clipping and reduction. Each
-        encountered chunk size gets a complete graph, bounding variants by the
-        configured microbatch size instead of realized Poisson batch sizes.
+        ``vmap(grad_and_value)`` plus per-example clipping and reduction, with a
+        symbolic leading chunk dimension. This avoids specializing on realized
+        Poisson or remainder batch sizes; PyTorch may retain a size-one variant.
         """
         a = self.args
         if not a.torch_compile:
