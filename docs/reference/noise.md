@@ -27,7 +27,7 @@ Strategy factories (passed to `mf_gaussian_noise()`):
 
 - **`band_mf_strategy()`** — BandMF banded Toeplitz correlated noise
 - **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
-- **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
+- **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, no retained noise-history buffer)
 - **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
 - **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 

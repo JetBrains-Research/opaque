@@ -5,6 +5,7 @@ from opaque.api.auditing._coin_flip import (
     _COIN_FLIP_DOMAIN,
 )
 from opaque.api.dpftrl.noise._engine import MF_GAUSSIAN_STREAM_FOLD
+from opaque.api.dpftrl.noise._lambda_cgd import LAMBDA_CGD_STREAM_FOLD
 from opaque.api.dpftrl.noise._second_moment import (
     SECOND_MOMENT_FIRST_STREAM_FOLD,
     SECOND_MOMENT_SECOND_STREAM_FOLD,
@@ -29,6 +30,7 @@ _STREAM_ROOTS = (
     ("opaque.dpftrl.second_moment.first", SECOND_MOMENT_FIRST_STREAM_FOLD),
     ("opaque.dpftrl.second_moment.second", SECOND_MOMENT_SECOND_STREAM_FOLD),
     ("opaque.dpftrl.mf_gaussian", MF_GAUSSIAN_STREAM_FOLD),
+    ("opaque.dpftrl.lambda_cgd", LAMBDA_CGD_STREAM_FOLD),
     ("opaque.dpftrl.b_min_sep", B_MIN_SEP_STREAM_FOLD),
     ("opaque.dpftrl.balls_in_bins", BALLS_IN_BINS_STREAM_FOLD),
     ("opaque.dpftrl.cyclic_poisson", CYCLIC_POISSON_STREAM_FOLD),

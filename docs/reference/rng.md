@@ -221,7 +221,8 @@ Do not reuse these shipped tags:
 | `opaque.dpsgd.adaptive_clipping` | adaptive clipping threshold noise |
 | `opaque.dpsgd.poisson` | DP-SGD Poisson sampling |
 | `opaque.dpsgd.k_out_of_t` | DP-SGD k-out-of-t sampling |
-| `opaque.dpftrl.mf_gaussian` | `opaque.dpftrl.noise.mf_gaussian_noise` |
+| `opaque.dpftrl.mf_gaussian` | generic matrix-factorization noise |
+| `opaque.dpftrl.lambda_cgd` | λ-CGD PRNG-replay noise |
 | `opaque.dpftrl.second_moment.first` / `.second` | paired MF second-moment streams |
 | `opaque.dpftrl.cyclic_poisson` | DP-FTRL cyclic Poisson sampling |
 | `opaque.dpftrl.b_min_sep` | DP-FTRL b-min-separation sampling |

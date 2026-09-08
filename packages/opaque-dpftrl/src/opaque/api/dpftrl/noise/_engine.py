@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.exceptions import CheckpointError, ConfigurationError, InputTypeError
 from opaque.pytree import tree_map
 from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
@@ -49,7 +49,7 @@ class MFNoiseState(NoiseState):
     responsible for preserving the same construction inputs.
 
     Attributes:
-        _inner_state: Internal state (streaming matrix state or step counter).
+        _inner_state: Strategy-specific runtime state or execution identity.
         _step_counter: Number of noise_fn calls made.
         _rng_key: Immutable RNG key for deterministic per-step derivation.
         _first_max_norm: ``ClippedPytree.max_norm`` from the first call (scalar
@@ -514,6 +514,20 @@ def _validate_constant_max_norm(
             )
         )
     return max_norm
+
+
+def _validate_mf_state_latches(state: MFNoiseState, *, op: str) -> None:
+    """Reject state whose step and sensitivity latch disagree."""
+    step = state._step_counter
+    has_norm = state._first_max_norm is not None
+    has_fingerprint = state._first_max_norm_sync_fingerprint is not None
+    if (
+        type(step) is not int
+        or step < 0
+        or has_norm != has_fingerprint
+        or (step == 0) != (not has_norm)
+    ):
+        raise CheckpointError(*(f"{op} received an inconsistent MF noise state.",))
 
 
 # ---- Distributed state validation ----

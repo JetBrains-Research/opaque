@@ -265,7 +265,7 @@ Opaque provides five MF strategies, all used through the unified `mf_gaussian_no
 |----------|--------|----------|
 | `band_mf_strategy()` | O(bands) | General use with ``dpftrl_acc.poisson`` amplification |
 | `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
-| `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
+| `lambda_cgd_strategy()` | O(1) | Constant replay metadata; no retained noise-history buffer |
 | `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
 | `identity_strategy()` | O(1) | Testing MF infrastructure with standard noise |
 
@@ -395,8 +395,12 @@ noise_fn, noise_state = mf_gaussian_noise(
 
 ### `lambda_cgd_strategy`
 
-DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
-vectors. Zero extra memory overhead compared to DP-SGD.
+DP-λCGD strategy — uses PRNG replay instead of retaining previous noise
+vectors. Its checkpointed replay identity owns the
+`opaque.dpftrl.lambda_cgd` stream root. Legacy unrooted λ-CGD checkpoints
+cannot be resumed because mixing the old and new key derivations would change
+the correlated mechanism mid-run; restart from the original public or
+pre-training initialization.
 
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy

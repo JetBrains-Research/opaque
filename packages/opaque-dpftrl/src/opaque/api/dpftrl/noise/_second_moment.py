@@ -16,16 +16,22 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
-from opaque.exceptions import InputTypeError
+from opaque.exceptions import CheckpointError, InputTypeError
 from opaque.random import fold_in as rng_fold_in
 from opaque.types import (
     NoisedPytree,
     NoiseState,
+    PerGroup,
     SecondMomentClippingOutput,
     SecondMomentNoiseOutput,
 )
 
-from ._engine import MFNoiseState, _expect_clipped, _validate_constant_max_norm
+from ._engine import (
+    MFNoiseState,
+    _expect_clipped,
+    _validate_constant_max_norm,
+    _validate_mf_state_latches,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -37,6 +43,34 @@ if TYPE_CHECKING:
 # Integers `0` and `1` would alias `split(key, 2)`. See ``docs/reference/rng.md``.
 SECOND_MOMENT_FIRST_STREAM_FOLD = "opaque.dpftrl.second_moment.first"
 SECOND_MOMENT_SECOND_STREAM_FOLD = "opaque.dpftrl.second_moment.second"
+
+
+def _validate_raw_noise_state(
+    strategy: MfStrategy,
+    state: MFNoiseState,
+    expected_state: MFNoiseState,
+) -> None:
+    validator = getattr(strategy, "validate_raw_noise_state", None)
+    if validator is not None:
+        validator(state, expected_state)
+
+
+def _validate_raw_noise_call(
+    strategy: MfStrategy,
+    clipped_grads: Any,
+    state: MFNoiseState,
+    expected_state: MFNoiseState,
+    *,
+    stddev: float | PerGroup,
+) -> None:
+    validator = getattr(strategy, "validate_raw_noise_call", None)
+    if validator is not None:
+        validator(
+            clipped_grads,
+            state,
+            expected_state,
+            stddev=stddev,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,6 +160,15 @@ def make_second_moment_mf_noise(
         second_clipped = _expect_clipped(
             clipped_input.squared_grads, op="mf_gaussian_noise (squared stream)"
         )
+        _validate_mf_state_latches(st._first_state, op="mf_gaussian_noise")
+        _validate_mf_state_latches(
+            st._second_state,
+            op="mf_gaussian_noise (squared stream)",
+        )
+        if st._first_state._step_counter != st._second_state._step_counter:
+            raise CheckpointError(*("Paired MF noise stream steps do not match.",))
+        _validate_raw_noise_state(first_strategy, st._first_state, first_state)
+        _validate_raw_noise_state(second_strategy, st._second_state, second_state)
         max_norm = _validate_constant_max_norm(
             first_clipped, st._first_state._first_max_norm, op="mf_gaussian_noise"
         )
@@ -147,6 +190,23 @@ def make_second_moment_mf_noise(
             noise_multiplier / c1,
             first=max_norm * c1,
             second=squared_max_norm * c2,
+        )
+        # Preflight both streams before either raw function may construct a
+        # replay generator. This keeps paired failures atomic when λ-CGD is the
+        # second stream rather than the first.
+        _validate_raw_noise_call(
+            first_strategy,
+            first_clipped.pytree,
+            st._first_state,
+            first_state,
+            stddev=first_stddev,
+        )
+        _validate_raw_noise_call(
+            second_strategy,
+            second_clipped.pytree,
+            st._second_state,
+            second_state,
+            stddev=second_stddev,
         )
         noisy_grads, new_first = first_fn(
             first_clipped.pytree,

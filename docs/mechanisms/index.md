@@ -40,7 +40,7 @@ second-moment caveats), see the [DP-FTRL user guide](../user-guide/dp-ftrl.md).
 |-----------|----------|--------|----------|
 | [BandMF](dp-ftrl/band-mf.md) | Banded Toeplitz | $O(\text{bands})$ | General use, moderate runs |
 | [BLT](dp-ftrl/blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
-| [DP-λCGD](dp-ftrl/lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
+| [DP-λCGD](dp-ftrl/lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | No retained noise-history buffer, any run length |
 | [BISR](dp-ftrl/bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal; generalizes λCGD |
 | [BSR](dp-ftrl/bsr.md) | Banded square root (closed form) | $O(p)$ | Paper `alpha`, `beta` kwargs; no optimizer at init |
 | Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
@@ -55,7 +55,7 @@ Need correlated noise across steps (DP-FTRL)?
 │         accounting always uses opaque.dpsgd.accounting.gaussian().
 │
 └─ Yes ── Constraints?
-          ├─ Zero extra memory → DP-λCGD (PRNG replay)
+          ├─ No noise-history buffer → DP-λCGD (PRNG replay)
           ├─ Asymptotically optimal → BISR (generalizes λCGD)
           ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
           ├─ n < 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)

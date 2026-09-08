@@ -1,10 +1,13 @@
 """Tests for private second-moment MF noise."""
 
 import math
+from dataclasses import replace
 
 import pytest
 import torch
 
+from opaque.api.dpftrl.noise import _engine as noise_engine_module
+from opaque.api.dpftrl.noise import _lambda_cgd as lambda_cgd_module
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -16,7 +19,7 @@ from opaque.dpftrl.noise import (
     mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.pytree import tree_leaves
 from opaque.random import key
 from opaque.serialization import from_state_dict, state_dict
@@ -571,6 +574,204 @@ class TestSecondMomentMFNoise:
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
         output, _ = noise_fn(_paired(grads), state)
         assert output.noisy_squared_grads.pytree["w"].shape == (4, 3)
+
+    def test_lambda_cgd_paired_state_resumes_exactly(self, grad_template):
+        first = lambda_cgd_strategy(lambda_=0.5)
+        second = lambda_cgd_strategy(lambda_=0.8)
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            first,
+            second_moment_strategy=second,
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, state = noise_fn(paired, state)
+
+        resumed_fn, fresh = mf_gaussian_noise(
+            grad_template,
+            first,
+            second_moment_strategy=second,
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(999),
+        )
+        restored = from_state_dict(fresh, state_dict(state))
+        expected, _ = noise_fn(paired, state)
+        actual, _ = resumed_fn(paired, restored)
+
+        for expected_tree, actual_tree in (
+            (expected.noisy_grads.pytree, actual.noisy_grads.pytree),
+            (
+                expected.noisy_squared_grads.pytree,
+                actual.noisy_squared_grads.pytree,
+            ),
+        ):
+            for expected_leaf, actual_leaf in zip(
+                tree_leaves(expected_tree), tree_leaves(actual_tree), strict=True
+            ):
+                torch.testing.assert_close(actual_leaf, expected_leaf, atol=0, rtol=0)
+
+    def test_lambda_cgd_paired_state_rejects_strategy_drift(self, grad_template):
+        source_fn, source = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.7),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, source = source_fn(paired, source)
+        _, target = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.9),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+
+        with pytest.raises(CheckpointError, match="execution identity"):
+            from_state_dict(target, state_dict(source))
+
+    def test_lambda_cgd_rejects_paired_partner_scale_drift_before_draw(
+        self, grad_template, monkeypatch
+    ):
+        source_fn, source = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=identity_strategy(),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, source = source_fn(paired, source)
+        target_fn, _ = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=blt_strategy(momentum=0.9),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        monkeypatch.setattr(
+            lambda_cgd_module,
+            "generator_from_key",
+            lambda _key: pytest.fail("generator must not be constructed"),
+        )
+
+        with pytest.raises(CheckpointError, match="base noise scale changed"):
+            target_fn(paired, source)
+
+    def test_second_lambda_scale_drift_fails_before_first_stream_draw(
+        self, grad_template, monkeypatch
+    ):
+        source_fn, source = mf_gaussian_noise(
+            grad_template,
+            identity_strategy(),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.5),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, source = source_fn(paired, source)
+        target_fn, _ = mf_gaussian_noise(
+            grad_template,
+            identity_strategy(),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.5),
+            n_steps=4,
+            noise_multiplier=2.0,
+            key=key(42),
+        )
+        monkeypatch.setattr(
+            noise_engine_module,
+            "generator_from_key",
+            lambda _key: pytest.fail("first-stream generator must not be constructed"),
+        )
+
+        with pytest.raises(CheckpointError, match="base noise scale changed"):
+            target_fn(paired, source)
+
+    def test_lambda_cgd_paired_state_rejects_legacy_child(self, grad_template):
+        _, state = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.7),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        saved = state_dict(state)
+        inner_prefix = "_second_state._inner_state"
+        for field in tuple(saved):
+            if field.startswith(inner_prefix):
+                del saved[field]
+        saved[inner_prefix] = None
+        saved["_second_state._inner_state_fields"] = '["_inner_state"]'
+        _, fresh = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.7),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+
+        with pytest.raises(CheckpointError, match="incompatible RNG topology"):
+            from_state_dict(fresh, saved)
+
+    def test_lambda_cgd_paired_runtime_rejects_legacy_child_before_draw(
+        self, grad_template, monkeypatch
+    ):
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.7),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, state = noise_fn(paired, state)
+        malformed = replace(
+            state,
+            _second_state=replace(state._second_state, _inner_state=None),
+        )
+        monkeypatch.setattr(
+            lambda_cgd_module,
+            "generator_from_key",
+            lambda _key: pytest.fail("generator must not be constructed"),
+        )
+
+        with pytest.raises(CheckpointError, match="incompatible RNG topology"):
+            noise_fn(paired, malformed)
+
+    def test_paired_runtime_rejects_child_step_drift_before_draw(
+        self, grad_template, monkeypatch
+    ):
+        noise_fn, state = mf_gaussian_noise(
+            grad_template,
+            lambda_cgd_strategy(lambda_=0.5),
+            second_moment_strategy=lambda_cgd_strategy(lambda_=0.7),
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(42),
+        )
+        paired = _paired({"w": torch.zeros(4, 3), "b": torch.zeros(4)})
+        _, spent = noise_fn(paired, state)
+        malformed = replace(spent, _first_state=state._first_state)
+        monkeypatch.setattr(
+            lambda_cgd_module,
+            "generator_from_key",
+            lambda _key: pytest.fail("generator must not be constructed"),
+        )
+
+        with pytest.raises(CheckpointError, match="stream steps do not match"):
+            noise_fn(paired, malformed)
 
     def test_squared_grads_are_noised_not_raw(self, grad_template):
         strategy = band_mf_strategy(bands=5, momentum=0.9)

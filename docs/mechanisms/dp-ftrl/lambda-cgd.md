@@ -2,13 +2,14 @@
 
 **DP-λCGD** (Kalinin et al., 2026) is a correlated noise mechanism that uses a
 single parameter \(\lambda \in [0, 1)\) to control noise correlation across training steps.
-Its key advantage is **zero extra memory** — noise correlation is achieved via
-PRNG seed replay instead of storing previous noise vectors.
+Its key advantage is **constant replay state** — noise correlation is achieved
+by regenerating the previous draw instead of retaining a model-sized noise
+history buffer.
 
 - **Paper**: [DP-λCGD: Efficient Noise Correlation for Differentially Private Model Training](https://arxiv.org/abs/2601.22334)
 - **Strategy matrix**: Lower-triangular Toeplitz with entries \(C_{i,j} = \lambda^{i-j}\)
 - **Inverse**: Bidiagonal — 1 on the diagonal, \(-\lambda\) on the subdiagonal (bandwidth 2)
-- **Memory**: Zero extra (PRNG replay regenerates previous noise from its seed)
+- **Memory**: O(1) replay metadata; no retained noise-vector history
 - **Amplification**: Balls-in-Bins (BnB) with MC dominating pair accounting
 
 ## Accounting
@@ -73,6 +74,28 @@ max_participations.
 
 ## Noise generation
 
+λ-CGD owns the RNG stream root `opaque.dpftrl.lambda_cgd`. Its checkpointed
+replay contract binds that root and contract version to λ, normalization,
+horizon, compute dtype, RNG identity, gradient layout, step, and the first
+realized base noise scale. Resume therefore requires the same configuration
+and tensor structure; paired releases also bind the scale produced by the
+joint allocation.
+
+The identity is an integrity guard, not a portable snapshot of a generated
+noise vector. Exact replay still requires a compatible Opaque/PyTorch RNG
+environment.
+
+Checkpoints written by older releases used an un-namespaced stream and are
+deliberately not resumable: changing the derivation at a resume boundary would
+splice two different correlated-noise processes. Restart from the original
+public/pre-training initialization with the current release; already
+DP-trained weights are not a zero-cost fresh initialization.
+The same base seed therefore produces deliberately different λ-CGD noise after
+this fix. All λ-CGD checkpoints written by v0.15.4 or the v0.15.5.rc1/rc2
+prereleases are restart-only, including step-zero, `lambda_=0`, and
+completed-horizon states; the uniform rejection is the compatibility boundary,
+not a claim that every degenerate splice would change the covariance.
+
 ```python
 from opaque.dpftrl.noise import mf_gaussian_noise, lambda_cgd_strategy
 from opaque.random import key
@@ -89,8 +112,8 @@ noise_fn, state = mf_gaussian_noise(
 ```
 
 At each step t, the noise function:
-1. Generates z_t from step t's PRNG seed
-2. Regenerates z_{t-1} from step t-1's PRNG seed (PRNG replay)
+1. Generates z_t from the λ-CGD-rooted step-t PRNG key
+2. Regenerates z_{t-1} from the same root at step t-1 (PRNG replay)
 3. Computes correlated noise: n_t = z_t - λ · z_{t-1}
 4. Optionally applies column-norm scaling: n_t *= d_t
 

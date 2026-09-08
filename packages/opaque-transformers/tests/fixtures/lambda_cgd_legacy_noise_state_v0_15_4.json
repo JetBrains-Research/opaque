@@ -1,0 +1,29 @@
+{
+  "_fixture": {
+    "source_commit": "ef1abc58eb180250d4a2f930abdcd156d363f4e9",
+    "source_release_shape": "v0.15.4 / v0.15.5.rc1 / v0.15.5.rc2",
+    "classification": "Synthetic regression fixture using a public test seed; it contains no production key material.",
+    "configuration": {
+      "key": 42,
+      "lambda": 0.5,
+      "normalized": false,
+      "n_steps": 4,
+      "min_sep": 4,
+      "max_participations": 1,
+      "noise_multiplier": 1.0,
+      "completed_steps": 2,
+      "max_norm": 1.0
+    },
+    "generation": "Construct the v0.15.4 mf_lambda_cgd Trainer smoke configuration (seed 42, normalized false, four-step Balls-in-Bins horizon), call it twice with gradients clipped at 1.0, then serialize MFNoiseState with opaque.serialization.state_dict. The historical state did not encode gradient layout."
+  },
+  "noise_state": {
+    "_first_max_norm": "{\"kind\":\"scalar\",\"value\":1.0}",
+    "_first_max_norm_sync_fingerprint": -6806658139132948733,
+    "_inner_state": null,
+    "_inner_state_fields": "[\"_inner_state\"]",
+    "_rng_key.impl": "opaque_threefry_like",
+    "_rng_key.seed": 42,
+    "_step_counter": 2,
+    "layout_version": 1
+  }
+}

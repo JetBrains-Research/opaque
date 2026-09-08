@@ -1672,6 +1672,7 @@ class DPTrainer:
                 noise_multiplier=noise_multiplier,
                 key=key(a.seed),
             )
+            noise_state = self._sync_mf_noise_state(noise_state)
 
         # --- Collate ---
         # Same wrapper used by the eval dataloader so train and eval
@@ -1719,6 +1720,14 @@ class DPTrainer:
             horizon_process=horizon_process,
             mf=mf,
         )
+
+    def _sync_mf_noise_state(self, state: Any) -> Any:
+        """Validate MF replay state across distributed ranks."""
+        if not self._ddp.is_distributed:
+            return state
+        from opaque.distributed import sync
+
+        return sync(state)
 
     def _inner_training_loop(
         self,
@@ -2191,7 +2200,10 @@ class DPTrainer:
             # reads it directly and returns a ``NoisedPytree``.  Adaptive
             # clipping flows through unchanged because the wrapper updates
             # ``max_norm`` per call.
+            first_mf_release = ctx.mf is not None and ctx.noise_state._step_counter == 0
             noisy_grads, ctx.noise_state = ctx.noise_fn(grads, ctx.noise_state)
+            if first_mf_release:
+                ctx.noise_state = self._sync_mf_noise_state(ctx.noise_state)
             sp.mark("noise")
 
             # HF parity: empty device cache *after* the forward/backward pass
@@ -5363,6 +5375,8 @@ class DPTrainer:
         """Overwrite ctx fields with values restored from a checkpoint."""
         ctx.clip_state = opaque_from_state_dict(ctx.clip_state, runtime.clip_state)
         ctx.noise_state = opaque_from_state_dict(ctx.noise_state, runtime.noise_state)
+        if ctx.mf is not None:
+            ctx.noise_state = self._sync_mf_noise_state(ctx.noise_state)
 
         opt_path = Path(ckpt_dir) / ckpt.DP_OPTIMIZER_NAME
         if opt_path.exists():

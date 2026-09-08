@@ -23,6 +23,11 @@ from opaque.api.engine.distributed._state import (
 from opaque.distributed import is_distributed
 from opaque.types import PerGroup
 
+from ._lambda_cgd import (
+    _lambda_cgd_replay_sync_token,
+    _validate_lambda_cgd_noise_state,
+)
+
 _INT64_MAX = 2**63 - 1
 _UINT64_MODULUS = 2**64
 
@@ -83,6 +88,31 @@ def mf_per_group_sync_fingerprint_for_latch(
     return _normalize_int64_fingerprint(prior._first_max_norm_sync_fingerprint)
 
 
+def _assert_rng_and_replay_equal(state: MFNoiseState, state_name: str) -> None:
+    """Assert that RNG and replay identities match across ranks.
+
+    Seeds are canonicalized to unsigned 64-bit, so roughly half of them fall
+    outside the signed ``int64`` domain the scalar reductions use — the same
+    constraint that ``_normalize_int64_fingerprint`` handles for latched
+    sensitivity fingerprints. A seed is opaque identity material rather than a
+    magnitude, so it is compared as text.
+    """
+    replay_token = _lambda_cgd_replay_sync_token(state._inner_state)
+    token = json.dumps(
+        {
+            "impl": state._rng_key.impl,
+            "seed": state._rng_key.seed,
+            "step": state._step_counter,
+            "replay": replay_token or "local",
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert_string_equal(token, name=f"{state_name}.replay")
+    if replay_token is not None:
+        _validate_lambda_cgd_noise_state(state)
+
+
 _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
     "_inner_state": "local",
     "_step_counter": "assert_equal",
@@ -92,31 +122,18 @@ _MF_NOISE_STATE_FIELD_OPS: dict[str, str] = {
 }
 
 
-def _assert_rng_key_equal(state: MFNoiseState, state_name: str) -> None:
-    """Assert that the RNG key seed matches across ranks.
-
-    Seeds are canonicalized to unsigned 64-bit, so roughly half of them fall
-    outside the signed ``int64`` domain the scalar reductions use — the same
-    constraint that ``_normalize_int64_fingerprint`` handles for latched
-    sensitivity fingerprints. A seed is opaque identity material rather than a
-    magnitude, so it is compared as text.
-    """
-    assert_string_equal(str(state._rng_key.seed), name=f"{state_name}.seed")
-
-
 def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
     """Validate MF noise state consistency across ranks.
 
-    Asserts that all ranks share the same seed, step counter, and (once
-    latched) first-call sensitivity bound.  No-op outside
-    ``torch.distributed``.
+    Asserts that all ranks share the same seed, step counter, replay contract,
+    and latched sensitivity bound. No-op outside ``torch.distributed``.
     """
     if not is_distributed():
         return state
     fingerprint = _normalize_int64_fingerprint(state._first_max_norm_sync_fingerprint)
     if fingerprint != state._first_max_norm_sync_fingerprint:
         state = replace(state, _first_max_norm_sync_fingerprint=fingerprint)
-    _assert_rng_key_equal(state, "MFNoiseState")
+    _assert_rng_and_replay_equal(state, "MFNoiseState")
     return sync_object(state, field_ops=_MF_NOISE_STATE_FIELD_OPS)
 
 

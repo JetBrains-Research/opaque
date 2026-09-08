@@ -14,6 +14,7 @@ in-package CI signal so regressions surface immediately.
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -21,6 +22,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.api.dpftrl.noise import _lambda_cgd as lambda_cgd_module
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
 from opaque.exceptions import CheckpointError
 from opaque.transformers import TrainingArguments
@@ -324,6 +326,130 @@ class TestDpFtrlCheckpointRoundTrip:
         assert out1.metrics["privacy_epsilon"] == pytest.approx(
             out2.metrics["privacy_epsilon"], rel=1e-3
         )
+
+    def test_resume_rejects_historical_lambda_cgd_replay_topology(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        outdir = tmp_path / "lambda-cgd-legacy"
+        ds = _TinyDS(n=16)
+        source_args = _args(
+            output_dir=str(outdir),
+            mechanism="mf_lambda_cgd",
+            max_steps=4,
+            save_steps=2,
+        )
+        source_args.seed = 42
+        source_args.privacy_noise_mechanism_kwargs = {
+            "lambda_": 0.5,
+            "normalized": False,
+        }
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=source_args,
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        trainer1.train()
+
+        checkpoint = outdir / "checkpoint-2"
+        runtime_path = checkpoint / "dp_state.pt"
+        runtime = torch.load(runtime_path, map_location="cpu", weights_only=False)
+        fixture_path = (
+            Path(__file__).parents[1]
+            / "fixtures"
+            / "lambda_cgd_legacy_noise_state_v0_15_4.json"
+        )
+        with fixture_path.open() as fixture_file:
+            runtime.noise_state = json.load(fixture_file)["noise_state"]
+        torch.save(runtime, runtime_path)
+
+        monkeypatch.setattr(
+            lambda_cgd_module,
+            "generator_from_key",
+            lambda _key: pytest.fail("legacy state must fail before an RNG draw"),
+        )
+        resumed_args = _args(
+            output_dir=str(tmp_path / "lambda-cgd-legacy-resumed"),
+            mechanism="mf_lambda_cgd",
+            max_steps=4,
+        )
+        resumed_args.seed = 42
+        resumed_args.privacy_noise_mechanism_kwargs = {
+            "lambda_": 0.5,
+            "normalized": False,
+        }
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=resumed_args,
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="incompatible RNG topology"):
+            trainer2.train(resume_from_checkpoint=str(checkpoint))
+
+    def test_lambda_cgd_trainer_syncs_setup_first_release_and_restore(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        outdir = tmp_path / "lambda-cgd-sync-boundaries"
+        ds = _TinyDS(n=16)
+        trainer1 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_lambda_cgd",
+                max_steps=4,
+                save_steps=2,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        fresh_sync_steps = []
+        original_fresh_sync = trainer1._sync_mf_noise_state
+
+        def record_fresh_sync(state):
+            fresh_sync_steps.append(state._step_counter)
+            return original_fresh_sync(state)
+
+        monkeypatch.setattr(trainer1, "_sync_mf_noise_state", record_fresh_sync)
+        trainer1.train()
+        assert fresh_sync_steps == [0, 1]
+
+        trainer2 = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "lambda-cgd-sync-boundaries-resumed"),
+                mechanism="mf_lambda_cgd",
+                max_steps=4,
+            ),
+            train_dataset=ds,
+            data_collator=_collate,
+        )
+        resume_sync_steps = []
+        original_resume_sync = trainer2._sync_mf_noise_state
+
+        def record_resume_sync(state):
+            resume_sync_steps.append(state._step_counter)
+            return original_resume_sync(state)
+
+        monkeypatch.setattr(trainer2, "_sync_mf_noise_state", record_resume_sync)
+        original_inner_loop = trainer2._inner_training_loop
+
+        def assert_synced_before_training(ctx, **kwargs):
+            assert resume_sync_steps == [0, 2]
+            return original_inner_loop(ctx, **kwargs)
+
+        monkeypatch.setattr(
+            trainer2,
+            "_inner_training_loop",
+            assert_synced_before_training,
+        )
+        trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+        assert resume_sync_steps == [0, 2]
 
     def test_k_out_of_t_resume_rejects_parameter_drift(self, tmp_path):
         outdir = tmp_path / "k-out-of-t"

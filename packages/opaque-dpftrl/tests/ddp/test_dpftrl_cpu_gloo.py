@@ -9,6 +9,7 @@ from dpftrl_ddp_helpers import (
     _worker_auto_band_mf_gloo,
     _worker_bisr_bounded_state_gloo,
     _worker_cpu_gloo_training_contract,
+    _worker_lambda_cgd_replay_state_gloo,
     _worker_per_group_mf_state_gloo,
     _worker_second_moment_mf_state_gloo,
 )
@@ -40,6 +41,12 @@ def test_bisr_bounded_history_stays_synchronized_across_ranks() -> None:
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("gloo backend is not available")
     _spawn_gloo(2, _worker_bisr_bounded_state_gloo)
+
+
+def test_lambda_cgd_replay_state_rejects_cross_rank_drift() -> None:
+    if not dist.is_available() or not dist.is_gloo_available():
+        pytest.skip("gloo backend is not available")
+    _spawn_gloo(2, _worker_lambda_cgd_replay_state_gloo)
 
 
 @pytest.mark.slow

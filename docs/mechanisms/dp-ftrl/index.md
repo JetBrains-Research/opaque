@@ -14,8 +14,8 @@ calibrated against `n_steps` once.
   Multi-epoch BLT covers iterating over the dataset multiple times.
 - **[BiSR](bisr.md)** — banded inverse square root.
 - **[BSR](bsr.md)** — banded square root.
-- **[λ-CGD](lambda-cgd.md)** — DP-λCGD (PRNG-replay noise; zero extra
-  memory at inference time).
+- **[λ-CGD](lambda-cgd.md)** — DP-λCGD (PRNG-replay noise without a retained
+  noise-history buffer).
 
 The simplest case (sensitivity 1, no correlation) is the
 **identity strategy** — exposed via

@@ -42,6 +42,7 @@ from ._engine import (
     _matrix_factorization_noise,
     _resolve_noise_multiplier,
     _validate_constant_max_norm,
+    _validate_mf_state_latches,
 )
 from ._identity import IdentityStrategy
 from ._second_moment import SecondMomentMFNoiseState, make_second_moment_mf_noise
@@ -160,6 +161,7 @@ def mf_gaussian_noise(
                 )
             )
         clipped_grads = _expect_clipped(clipped_grads, op="mf_gaussian_noise")
+        _validate_mf_state_latches(st, op="mf_gaussian_noise")
         max_norm = _validate_constant_max_norm(
             clipped_grads, st._first_max_norm, op="mf_gaussian_noise"
         )

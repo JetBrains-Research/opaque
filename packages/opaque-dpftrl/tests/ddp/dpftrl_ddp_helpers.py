@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -24,11 +26,13 @@ from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
     identity_strategy,
+    lambda_cgd_strategy,
     mf_gaussian_noise,
 )
 from opaque.functional import make_functional
 from opaque.pytree import tree_leaves, tree_map
 from opaque.random import key
+from opaque.random.types import RngKey
 from opaque.types import clipped
 
 _spawn_gloo = _spawn
@@ -489,6 +493,56 @@ def _worker_bisr_bounded_state_gloo(rank: int, world_size: int, port: int) -> No
                     assert all(
                         torch.equal(gathered[0], other) for other in gathered[1:]
                     )
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_lambda_cgd_replay_state_gloo(rank: int, world_size: int, port: int) -> None:
+    """Reject λ-CGD execution and scale drift across ranks."""
+    import pytest
+
+    _setup_gloo(rank, world_size, port)
+    try:
+        template = {"weight": torch.zeros(2)}
+        _, state = mf_gaussian_noise(
+            template,
+            lambda_cgd_strategy(lambda_=0.4 + 0.1 * rank),
+            n_steps=2,
+            noise_multiplier=1.0,
+            key=key(793),
+        )
+        with pytest.raises(RuntimeError, match=r"MFNoiseState\.replay mismatch"):
+            sync(state)
+
+        _, state = mf_gaussian_noise(
+            template,
+            lambda_cgd_strategy(lambda_=0.5),
+            n_steps=2,
+            noise_multiplier=1.0,
+            key=key(793),
+        )
+        if rank == 1:
+            state = replace(
+                state,
+                _rng_key=RngKey(seed=state._rng_key.seed, impl="rank-drift"),
+            )
+        with pytest.raises(RuntimeError, match=r"MFNoiseState\.replay mismatch"):
+            sync(state)
+
+        noise_fn, state = mf_gaussian_noise(
+            template,
+            lambda_cgd_strategy(lambda_=0.5),
+            n_steps=2,
+            noise_multiplier=1.0 + rank,
+            key=key(793),
+        )
+        _, state = noise_fn(clipped(template, max_norm=1.0), state)
+        with pytest.raises(RuntimeError, match=r"MFNoiseState\.replay mismatch"):
+            sync(state)
+
+        token = torch.tensor([1.0])
+        dist.all_reduce(token, op=dist.ReduceOp.SUM)
+        assert token.item() == float(world_size)
     finally:
         _cleanup_ddp()
 
