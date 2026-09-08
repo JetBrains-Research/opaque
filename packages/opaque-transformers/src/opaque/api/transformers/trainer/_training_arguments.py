@@ -959,8 +959,13 @@ class TrainingArguments:
                 _normalize_dict_field(getattr(self, field_name)),
             )
 
-        offload = self.activation_offloading_config or {}
-        unknown_offload = set(offload) - {"mode", "min_bytes", "max_pinned_bytes"}
+        offload = self.activation_offloading_config
+        normalized_offload = offload or {}
+        unknown_offload = set(normalized_offload) - {
+            "mode",
+            "min_bytes",
+            "max_pinned_bytes",
+        }
         if unknown_offload:
             raise ConfigurationError(
                 *(
@@ -968,7 +973,7 @@ class TrainingArguments:
                     f"{sorted(unknown_offload)}",
                 )
             )
-        mode = offload.get("mode", "pageable")
+        mode = normalized_offload.get("mode", "pageable")
         if mode not in {"pageable", "overlap"}:
             raise ConfigurationError(
                 *(
@@ -977,7 +982,7 @@ class TrainingArguments:
                 )
             )
         for key in ("min_bytes", "max_pinned_bytes"):
-            value = offload.get(key)
+            value = normalized_offload.get(key)
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or value < 0
             ):
@@ -987,7 +992,6 @@ class TrainingArguments:
                         f"non-negative integer, got {value!r}",
                     )
                 )
-        self.activation_offloading_config = offload
 
         # Privacy / clipping / sampling kwargs default to ``{}`` rather
         # than ``None`` for the consumer's convenience (avoids ``or {}``

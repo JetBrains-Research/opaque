@@ -223,6 +223,16 @@ class TestDataLoaderArguments:
 
 
 class TestActivationOffloadingArguments:
+    def test_unset_and_explicit_empty_config_remain_distinct(self):
+        unset = TrainingArguments(privacy_noise_multiplier=1.0)
+        explicit = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            activation_offloading_config={},
+        )
+
+        assert unset.activation_offloading_config is None
+        assert explicit.activation_offloading_config == {}
+
     def test_config_normalizes_supported_values(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
