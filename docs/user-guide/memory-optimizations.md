@@ -137,15 +137,46 @@ with functorch). No special kwargs needed.
 
 ### CPU offloading of saved tensors
 
-`torch.autograd.graph.save_on_cpu` moves tensors saved for backward to
-pinned CPU memory during forward and reloads them during backward. When
-combined with gradient checkpointing, it offloads the checkpoint inputs
-(inter-layer hidden states); checkpoint handles intermediates separately.
+`opaque.functional.save_on_cpu` selectively moves tensors saved for backward to
+CPU during forward and reloads them during backward. By default it uses pageable
+host memory, skips tensors smaller than 1 MiB, and leaves tensors or views that
+share storage with `protected_tensors` on device. Pass the current functional
+parameters as protected tensors; optimizers commonly replace those tensors, so
+create a fresh context for each step.
 
 ```python
-with torch.autograd.graph.save_on_cpu(pin_memory=True):
+from opaque.functional import SaveOnCpuStats, save_on_cpu
+
+stats = SaveOnCpuStats()
+with save_on_cpu(
+    protected_tensors=params,
+    min_bytes=1 << 20,
+    stats=stats,
+):
     grads, aux = grad_fn(params, batch)
 ```
+
+Pinned CUDA offload is an explicit throughput mode. It overlaps at most two D2H
+transfers on a dedicated stream and caps pinned allocations at 1 GiB by default;
+selected tensors beyond the cap use pageable memory. Tune both limits on the
+actual model and device rather than assuming that copying more tensors is faster.
+
+```python
+with save_on_cpu(
+    pin_memory=True,
+    protected_tensors=params,
+    max_pinned_bytes=1 << 30,
+    stats=stats,
+):
+    grads, aux = grad_fn(params, batch)
+```
+
+`stats.to_dict()` reports selected and skipped tensors/bytes, pageable and pinned
+traffic, the peak pinned allocation, maximum in-flight transfers, and D2H time.
+With non-reentrant gradient checkpointing, checkpoint's own hooks manage
+recomputed intermediates; the outer offload context sees checkpoint inputs such
+as inter-layer hidden states. Saved-tensor hooks remain first-order-only and are
+not supported around `torch.compile`.
 
 ## Fused Triton kernels
 

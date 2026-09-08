@@ -191,8 +191,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--activation-offloading",
         action="store_true",
-        help="Offload saved-for-backward activations to CPU via "
-        "``torch.autograd.graph.save_on_cpu``. Adds PCIe transfer overhead "
+        help="Selectively offload saved-for-backward activations via "
+        "``opaque.functional.save_on_cpu``. Adds PCIe transfer overhead "
         "but lets activations exceed the GPU memory cap.",
     )
     p.add_argument(

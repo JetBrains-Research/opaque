@@ -131,6 +131,7 @@ _DDP_BACKEND_ENV_DEPENDENT: tuple[str, ...] = ("xccl", "hccl", "cncl", "mccl")
 # comma-separated ``"key=value,key=value"`` string, or ``None``.  The
 # normalised result is ``dict[str, Any] | None`` for every entry.
 _DICT_FIELDS: tuple[str, ...] = (
+    "activation_offloading_config",
     "performance_kernels_config",
     "lr_scheduler_kwargs",
     "gradient_checkpointing_kwargs",
@@ -465,11 +466,14 @@ class TrainingArguments:
     # =================================================================
     # Generic memory optimization (DP-shaped, not DP-specific)
     # =================================================================
-    #: Offload saved activations to CPU during the backward pass to extend the
-    #: trainable batch past the GPU activation ceiling (host RAM is left
-    #: pageable — never pinned — so the OS can swap; see ``_setup_training``).
+    #: Selectively offload saved activations to CPU to extend the trainable
+    #: batch past the GPU activation ceiling. The default uses pageable memory;
+    #: bounded pinned transfers require explicit configuration.
     #: Trades host-transfer bandwidth for GPU memory; off by default.
     activation_offloading: bool = False
+    #: Selective offload settings: ``mode`` (``"pageable"`` or ``"overlap"``),
+    #: ``min_bytes``, and ``max_pinned_bytes``. Overlap is explicitly opt-in.
+    activation_offloading_config: dict[str, Any] | str | None = None
 
     # =================================================================
     # Differential privacy (budget, mechanisms, sampling, DDP data policy)
@@ -954,6 +958,36 @@ class TrainingArguments:
                 field_name,
                 _normalize_dict_field(getattr(self, field_name)),
             )
+
+        offload = self.activation_offloading_config or {}
+        unknown_offload = set(offload) - {"mode", "min_bytes", "max_pinned_bytes"}
+        if unknown_offload:
+            raise ConfigurationError(
+                *(
+                    "activation_offloading_config contains unknown keys: "
+                    f"{sorted(unknown_offload)}",
+                )
+            )
+        mode = offload.get("mode", "pageable")
+        if mode not in {"pageable", "overlap"}:
+            raise ConfigurationError(
+                *(
+                    "activation_offloading_config.mode must be 'pageable' or "
+                    f"'overlap', got {mode!r}",
+                )
+            )
+        for key in ("min_bytes", "max_pinned_bytes"):
+            value = offload.get(key)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ConfigurationError(
+                    *(
+                        f"activation_offloading_config.{key} must be a "
+                        f"non-negative integer, got {value!r}",
+                    )
+                )
+        self.activation_offloading_config = offload
 
         # Privacy / clipping / sampling kwargs default to ``{}`` rather
         # than ``None`` for the consumer's convenience (avoids ``or {}``

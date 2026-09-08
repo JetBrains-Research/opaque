@@ -88,7 +88,12 @@ from opaque.profiling import (
 from opaque.random import fold_in, key, split
 from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler
 from opaque.distributed import local_shard
-from opaque.functional import make_functional, empty_collate
+from opaque.functional import (
+    SaveOnCpuStats,
+    empty_collate,
+    make_functional,
+    save_on_cpu,
+)
 from opaque.scheduling import (
     cosine_schedule,
     inverse_sqrt_schedule,
@@ -549,7 +554,18 @@ def parse_args():
         "--activation-offloading",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
+        help="Selectively offload saved tensors to CPU",
+    )
+    train_group.add_argument(
+        "--activation-offloading-mode",
+        choices=("pageable", "overlap"),
+        default="pageable",
+    )
+    train_group.add_argument(
+        "--activation-offloading-min-bytes", type=int, default=1 << 20
+    )
+    train_group.add_argument(
+        "--activation-offloading-max-pinned-bytes", type=int, default=1 << 30
     )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
@@ -1341,16 +1357,6 @@ def main():
         )
         print("\nGradient checkpointing: enabled")
 
-    offload_ctx = (
-        torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.activation_offloading
-        else contextlib.nullcontext()
-    )
-    if args.activation_offloading:
-        print(
-            f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)"
-        )
-
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
     print("  (This may take 1-2 minutes for large models...)")
@@ -1364,6 +1370,22 @@ def main():
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
     print_memory(device, "After functional conversion")
+
+    offload_stats = SaveOnCpuStats() if args.activation_offloading else None
+
+    def offload_context():
+        if offload_stats is None:
+            return contextlib.nullcontext()
+        return save_on_cpu(
+            pin_memory=args.activation_offloading_mode == "overlap",
+            min_bytes=args.activation_offloading_min_bytes,
+            max_pinned_bytes=args.activation_offloading_max_pinned_bytes,
+            protected_tensors=(trainable_params, frozen_params),
+            stats=offload_stats,
+        )
+
+    if offload_stats is not None:
+        print(f"CPU offload: enabled ({args.activation_offloading_mode}, selective)")
 
     def merged_params(trainable):
         return {**frozen_params, **trainable}
@@ -1901,7 +1923,7 @@ def main():
             # === Execution ===
             with tracker.train(batch_size=batch_size) as sp:
                 # Compute clipped gradients (handles empty batches via library)
-                with offload_ctx:
+                with offload_context():
                     (grads_tuple, aux), clip_state = grad_fn(
                         trainable_params, input_ids, state=clip_state
                     )
@@ -1958,6 +1980,11 @@ def main():
                         "train/noise_std": _effective(noise_stddev),
                         "train/lr": current_lr,
                         **tracker.train.last.to_dict(prefix="train/"),
+                        **(
+                            offload_stats.to_dict(prefix="train/activation_offload_")
+                            if offload_stats is not None
+                            else {}
+                        ),
                     }
                     if (
                         isinstance(step_clip_norm, PerGroup)

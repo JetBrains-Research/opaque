@@ -46,6 +46,7 @@ TRL_DPO_DIRECT_FIELDS: frozenset[str] = frozenset(
         "ref_model_sync_steps",
         # On TRL's DPOConfig but not on HF base TrainingArguments.
         "activation_offloading",
+        "activation_offloading_config",
         # SimPO / CPO / ORPO head-specific tunables (same names/semantics here).
         "simpo_gamma",
         "cpo_alpha",

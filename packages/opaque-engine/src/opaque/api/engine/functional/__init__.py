@@ -11,6 +11,9 @@ from collections.abc import Callable
 import torch
 import torch.nn as nn
 
+from .offload import SaveOnCpuStats as SaveOnCpuStats
+from .offload import save_on_cpu as save_on_cpu
+
 
 def make_functional(
     mod: nn.Module,

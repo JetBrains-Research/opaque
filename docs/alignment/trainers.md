@@ -134,8 +134,9 @@ diagnostics — `entropy` and `mean_token_accuracy` over the supervised
 don't need them.
 
 `activation_offloading` (inherited from the base config, shared by SFT and DPO)
-offloads activations to CPU between the forward and backward to trade host
-bandwidth for GPU memory.
+selectively offloads large saved activations to pageable CPU memory between the
+forward and backward. Use `activation_offloading_config` to tune `min_bytes` or
+opt into bounded pinned transfers with `{"mode": "overlap"}`.
 
 !!! note "TRL-parity defaults"
     `SFTConfig` overrides a few base defaults to match TRL: `learning_rate`

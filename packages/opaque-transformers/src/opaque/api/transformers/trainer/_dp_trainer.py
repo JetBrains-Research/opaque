@@ -62,7 +62,7 @@ from opaque.exceptions import (
     InputTypeError,
     OperationError,
 )
-from opaque.functional import make_functional
+from opaque.functional import SaveOnCpuStats, make_functional, save_on_cpu
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
@@ -235,7 +235,8 @@ class _TrainingContext:
     num_epochs: int
     collate_fn: Callable
     batch_keys: tuple[str, ...] = ()
-    offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
+    offload_config: dict[str, Any] | None = None
+    offload_stats: SaveOnCpuStats | None = None
     opt_name: str = "adamw"
     current_sampler: Any = None
     # Checkpoint cursor for a distinct ignored-state Poisson stream.
@@ -1378,17 +1379,15 @@ class DPTrainer:
             )
             log.info("Gradient checkpointing: enabled")
 
-        # --- CPU offload context ---
-        offload_ctx: Any = contextlib.nullcontext()
+        # --- CPU offload policy ---
+        offload_config: dict[str, Any] | None = None
+        offload_stats: SaveOnCpuStats | None = None
         if a.activation_offloading:
-            # ``pin_memory=False`` is forced: ``cpu_offload`` exists to
-            # extend batches past the GPU ceiling, and pinning host RAM
-            # would re-cap that expansion at the host limit (host-OOM is
-            # an uncatchable SIGKILL that ``auto_find_microbatch_size``
-            # cannot recover from).  Pageable host RAM is slower per
-            # transfer but the OS can swap.
-            offload_ctx = torch.autograd.graph.save_on_cpu(pin_memory=False)
-            log.info("CPU offload: enabled")
+            offload_config = dict(a.activation_offloading_config or {})
+            mode = offload_config.pop("mode", "pageable")
+            offload_config["pin_memory"] = mode == "overlap"
+            offload_stats = SaveOnCpuStats()
+            log.info("CPU offload: enabled (%s, selective)", mode)
 
         # --- Functional conversion ---
         log.info("Converting model to functional form...")
@@ -1705,7 +1704,8 @@ class DPTrainer:
             num_epochs=num_epochs,
             collate_fn=collate_fn,
             batch_keys=batch_keys,
-            offload_ctx=offload_ctx,
+            offload_config=offload_config,
+            offload_stats=offload_stats,
             opt_name=(
                 self._functional_optimizer_name
                 if self._functional_optimizer_factory is not None
@@ -2155,7 +2155,14 @@ class DPTrainer:
             try:
                 # autocast wraps the *outer* grad_fn (vmap(grad)+clip) call —
                 # the placement that actually casts on MPS (see _autocast_ctx).
-                with ctx.offload_ctx, self._autocast_ctx():
+                offload_ctx = contextlib.nullcontext()
+                if ctx.offload_config is not None:
+                    offload_ctx = save_on_cpu(
+                        protected_tensors=(ctx.trainable_params, ctx.frozen_params),
+                        stats=ctx.offload_stats,
+                        **ctx.offload_config,
+                    )
+                with offload_ctx, self._autocast_ctx():
                     (grads, aux), ctx.clip_state = ctx.grad_fn(
                         ctx.trainable_params,
                         *batch_args,
@@ -4175,6 +4182,8 @@ class DPTrainer:
             # reporting-callback rewriter wraps them under ``train/``.
             if self._perf_tracker.train.last is not None:
                 logs.update(self._perf_tracker.train.last.to_dict())
+            if ctx.offload_stats is not None:
+                logs.update(ctx.offload_stats.to_dict())
             self.log(logs, start_time=self._train_start_time)
             ctrl = self._control
             ctrl.should_log = False

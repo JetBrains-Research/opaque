@@ -31,11 +31,8 @@ _active = threading.local()
 _orig_reparametrize = None
 
 
-def _stack() -> list:
-    s = getattr(_active, "stack", None)
-    if s is None:
-        s = _active.stack = []
-    return s
+def _stack() -> tuple:
+    return getattr(_active, "stack", ())
 
 
 def apply() -> None:
@@ -63,7 +60,8 @@ def _wrap_reparametrize_module() -> None:
             if tie_weights
             else parameters_and_buffers
         )
-        _stack().append((module, params))
+        previous_stack = _stack()
+        _active.stack = (*previous_stack, (module, params))
         try:
             with _orig_reparametrize(
                 module,
@@ -74,7 +72,7 @@ def _wrap_reparametrize_module() -> None:
             ):
                 yield
         finally:
-            _stack().pop()
+            _active.stack = previous_stack
 
     stateless._reparametrize_module = _reparametrize_module
 
@@ -85,8 +83,18 @@ def _wrap_checkpoint_frame() -> None:
     orig_init = _CheckpointFrame.__init__
 
     def __init__(self, recompute_fn, *args, **kwargs):
-        snapshot = list(_stack())
-        if snapshot:
+        snapshot = _stack()
+        if len(snapshot) == 1:
+            module, params = snapshot[0]
+
+            def rebinding_recompute(
+                *a, _fn=recompute_fn, _module=module, _params=params
+            ):
+                with _orig_reparametrize(_module, _params, tie_weights=False):
+                    return _fn(*a)
+
+            recompute_fn = rebinding_recompute
+        elif snapshot:
 
             def rebinding_recompute(*a, _fn=recompute_fn, _snapshot=snapshot):
                 with contextlib.ExitStack() as stack:

@@ -22,6 +22,12 @@ output = fmodel(params, input_tensor)
 Functional models allow `torch.func.vmap` to compute per-example gradients
 efficiently, which is essential for DP-SGD.
 
+`save_on_cpu()` is Opaque's selective saved-tensor offload context. It keeps
+small tensors and protected parameter storage on device, while optionally using
+a bounded pinned-memory CUDA transfer stream. See [Memory
+optimizations](../user-guide/memory-optimizations.md#cpu-offloading-of-saved-tensors)
+for configuration and telemetry.
+
 ### Trainable / frozen partition (for PEFT and LoRA)
 
 For parameter-efficient fine-tuning (LoRA, adapters, BitFit, …) only a

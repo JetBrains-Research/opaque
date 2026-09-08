@@ -459,9 +459,19 @@ def test_sft_activation_offloading_inherited_base_field(tmp_path):
     # — the config accepts it on ``SFTConfig`` and the base ``DPTrainer`` reader
     # sees the same flag; no SFT-side override.
     args = _args(
-        SFTConfig, tmp_path, max_length=8, loss_type="nll", activation_offloading=True
+        SFTConfig,
+        tmp_path,
+        max_length=8,
+        loss_type="nll",
+        activation_offloading=True,
+        activation_offloading_config={
+            "mode": "overlap",
+            "min_bytes": 0,
+            "max_pinned_bytes": 0,
+        },
     )
     assert args.activation_offloading is True
+    assert args.activation_offloading_config["mode"] == "overlap"
     torch.manual_seed(0)
     trainer = SFTTrainer(
         model=_tiny_model(),
@@ -474,6 +484,9 @@ def test_sft_activation_offloading_inherited_base_field(tmp_path):
     out = trainer.train()
     assert out.global_step == 2
     assert torch.isfinite(torch.tensor(out.training_loss))
+    logged = set().union(*(row.keys() for row in trainer.state.log_history))
+    assert "activation_offload_selected_bytes" in logged
+    assert "activation_offload_peak_pinned_bytes" in logged
 
 
 def test_sft_eos_token_honored_when_set_else_tokenizer(tmp_path):

@@ -419,7 +419,7 @@ def parse_args() -> argparse.Namespace:
         "--activation-offloading",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Use DPTrainer activation_offloading.",
+        help="Use DPTrainer selective activation offloading.",
     )
     train_group.add_argument(
         "--auto-find-microbatch-size",

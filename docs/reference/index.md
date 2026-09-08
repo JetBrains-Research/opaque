@@ -29,6 +29,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Utilities](utilities.md)** — Functional and PyTree utilities
   - `make_functional()` — Convert `nn.Module` to functional form
+  - `save_on_cpu()` — Selectively offload saved activations with bounded overlap
   - `tree_map()`, `tree_map_with_path()`, `partition()`, `merge()`, `global_norm()`, `tree_leaves()`
 
 ### DP-SGD components

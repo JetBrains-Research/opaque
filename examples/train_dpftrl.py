@@ -149,7 +149,12 @@ from opaque.dpftrl.sampling import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
-from opaque.functional import empty_collate, make_functional
+from opaque.functional import (
+    SaveOnCpuStats,
+    empty_collate,
+    make_functional,
+    save_on_cpu,
+)
 from opaque.profiling import (
     perf_tracker,
     print_memory,
@@ -585,6 +590,15 @@ def parse_args():
     )
     train_g.add_argument(
         "--activation-offloading", action=argparse.BooleanOptionalAction, default=False
+    )
+    train_g.add_argument(
+        "--activation-offloading-mode",
+        choices=("pageable", "overlap"),
+        default="pageable",
+    )
+    train_g.add_argument("--activation-offloading-min-bytes", type=int, default=1 << 20)
+    train_g.add_argument(
+        "--activation-offloading-max-pinned-bytes", type=int, default=1 << 30
     )
 
     # LoRA
@@ -1340,12 +1354,6 @@ def main():
         if is_main_process:
             print("\nGradient checkpointing: enabled")
 
-    offload_ctx = (
-        torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.activation_offloading
-        else contextlib.nullcontext()
-    )
-
     # --- Functional conversion ---
     print("\nConverting to functional form...")
     t0 = time.time()
@@ -1357,6 +1365,22 @@ def main():
     param_names = list(trainable_params.keys())
     print(f"Trainable parameters: {len(param_names)} (took {time.time() - t0:.1f}s)")
     print_memory(device, "After functional conversion")
+
+    offload_stats = SaveOnCpuStats() if args.activation_offloading else None
+
+    def offload_context():
+        if offload_stats is None:
+            return contextlib.nullcontext()
+        return save_on_cpu(
+            pin_memory=args.activation_offloading_mode == "overlap",
+            min_bytes=args.activation_offloading_min_bytes,
+            max_pinned_bytes=args.activation_offloading_max_pinned_bytes,
+            protected_tensors=(trainable_params, frozen_params),
+            stats=offload_stats,
+        )
+
+    if offload_stats is not None and is_main_process:
+        print(f"CPU offload: enabled ({args.activation_offloading_mode}, selective)")
 
     def merged_params(trainable):
         return {**frozen_params, **trainable}
@@ -2038,7 +2062,7 @@ def main():
         lr_t = float(lr_schedule(global_step))
 
         with tracker.train(batch_size=batch_size) as sp:
-            with offload_ctx:
+            with offload_context():
                 (grads, aux), clip_state = grad_fn(
                     trainable_params,
                     input_ids,
@@ -2118,6 +2142,11 @@ def main():
                     ),
                     "train/lr": lr_t,
                     **tracker.train.last.to_dict(prefix="train/"),
+                    **(
+                        offload_stats.to_dict(prefix="train/activation_offload_")
+                        if offload_stats is not None
+                        else {}
+                    ),
                 }
                 if (
                     isinstance(clip_norm, PerGroup)

@@ -339,7 +339,8 @@ NPU, XLA) are rejected with a redirect message.
 | `include_tokens_per_second` | `bool` | `False` | Emit `train_tokens_per_second` in end-of-train metrics. |
 | `include_num_input_tokens_seen` | `bool \| str` | `False` | `{"no", "all", "non_padding"}`.  `"non_padding"` uses `attention_mask` or `pad_token_id`. |
 | `skip_memory_metrics` | `bool` | `True` | Skip HF-borrowed `TrainerMemoryTracker` snapshots. |
-| `activation_offloading` | `bool` | `False` | Offload activations to CPU between forward and backward. |
+| `activation_offloading` | `bool` | `False` | Selectively offload saved activations to pageable CPU memory between forward and backward. |
+| `activation_offloading_config` | `dict \| str \| None` | `None` | Optional `mode` (`"pageable"` or opt-in `"overlap"`), `min_bytes`, and `max_pinned_bytes` settings for `opaque.functional.save_on_cpu`. |
 | `debug` | `list \| str \| None` | `""` | HF debug flags.  Supports `"underflow_overflow"`. |
 
 ### Validation

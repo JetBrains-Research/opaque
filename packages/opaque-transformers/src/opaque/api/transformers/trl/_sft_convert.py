@@ -41,6 +41,7 @@ TRL_SFT_DIRECT_FIELDS: frozenset[str] = frozenset(
         # On TRL's SFTConfig/DPOConfig but not on HF base ``TrainingArguments``;
         # opaque's base has the same field with the same semantics.
         "activation_offloading",
+        "activation_offloading_config",
     }
 )
 

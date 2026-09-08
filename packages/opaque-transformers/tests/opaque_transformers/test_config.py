@@ -222,6 +222,39 @@ class TestDataLoaderArguments:
             )
 
 
+class TestActivationOffloadingArguments:
+    def test_config_normalizes_supported_values(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            activation_offloading=True,
+            activation_offloading_config=(
+                "mode=overlap,min_bytes=1048576,max_pinned_bytes=1073741824"
+            ),
+        )
+        assert args.activation_offloading_config == {
+            "mode": "overlap",
+            "min_bytes": 1048576,
+            "max_pinned_bytes": 1073741824,
+        }
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {"mode": "unknown"},
+            {"min_bytes": -1},
+            {"min_bytes": False},
+            {"max_pinned_bytes": -1},
+            {"unknown": 1},
+        ],
+    )
+    def test_invalid_config_is_rejected(self, config):
+        with pytest.raises(ConfigurationError, match="activation_offloading_config"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                activation_offloading_config=config,
+            )
+
+
 class TestEvalAccumulationArguments:
     @pytest.mark.parametrize("value", [0, -1, False])
     def test_non_positive_or_boolean_window_is_rejected(self, value):
