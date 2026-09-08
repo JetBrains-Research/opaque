@@ -475,6 +475,7 @@ def test_family_factory_default_replacements_are_opaque_vmap_safe():
         apply_module_masking_patch,
         vmap_eager_attention_forward,
         vmap_repeat_kv,
+        vmap_sdpa_attention_forward,
     )
 
     apply = make_apply_family_patches(
@@ -485,6 +486,7 @@ def test_family_factory_default_replacements_are_opaque_vmap_safe():
     closure = {c.cell_contents for c in (apply.__closure__ or ())}
     assert vmap_repeat_kv in closure
     assert vmap_eager_attention_forward in closure
+    assert vmap_sdpa_attention_forward in closure
     assert _opaque_apply_rotary_pos_emb in closure
     assert apply_module_masking_patch in closure
 

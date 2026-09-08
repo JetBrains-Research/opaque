@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 from opaque.api.patches.transformers.components.attention import (
     vmap_eager_attention_forward,
     vmap_repeat_kv,
+    vmap_sdpa_attention_forward,
 )
 from opaque.api.patches.transformers.components.masking import (
     apply_module_masking_patch,
@@ -123,7 +124,7 @@ def make_apply_family_patches(
     module_path: str,
     repeat_kv_replacement: ForwardFn | None = vmap_repeat_kv,
     eager_attention_replacement: ForwardFn | None = vmap_eager_attention_forward,
-    sdpa_attention_replacement: ForwardFn | None = None,
+    sdpa_attention_replacement: ForwardFn | None = vmap_sdpa_attention_forward,
     rope_replacement: ForwardFn | None = _opaque_apply_rotary_pos_emb,
     masking_module_patcher: ModulePatcher | None = apply_module_masking_patch,
 ) -> FamilyPatchFn:
@@ -150,8 +151,8 @@ def make_apply_family_patches(
             ``vmap_eager_attention_forward``.  ``None`` skips.
         sdpa_attention_replacement: Replacement for the ``"sdpa"`` entry of
             an ``ALL_ATTENTION_FUNCTIONS`` interface bound in ``module_path``
-            alone — other families keep resolving ``"sdpa"`` to the stock
-            implementation. ``None`` leaves SDPA untouched for this family too.
+            alone. Defaults to opaque's replication-free GQA shim. ``None``
+            leaves SDPA untouched for this family.
         rope_replacement: Replacement for ``mod.apply_rotary_pos_emb``.
             Default: opaque's ``_opaque_apply_rotary_pos_emb``.  ``None``
             skips.
