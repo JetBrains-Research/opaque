@@ -194,7 +194,9 @@ def _resolve_drift_disposition(
     return drift
 
 
-def _compile_strict_chunk(fn: Callable, *, backend: str, mode: str) -> Callable:
+def _compile_strict_chunk(
+    fn: Callable, *, backend: str | Callable, mode: str
+) -> Callable:
     """Compile one tensor-only gradient chunk as a strict dynamic graph."""
     return torch.compile(
         fn,

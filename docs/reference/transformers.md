@@ -215,7 +215,7 @@ Dataclass surface.  Every field listed here exists on
 | `tf32` | `bool \| None` | `None` | Toggle TF32 on Ampere+. |
 | `gradient_checkpointing` | `bool` | `False` | Off by default: vmap recomputes activations per microbatch, so GC adds overhead without memory benefit on models that fit. Opaque automatically uses the vmap-safe non-reentrant path. Incompatible with `torch_compile`. |
 | `gradient_checkpointing_kwargs` | `dict \| str \| None` | `None` | Forwarded to `model.gradient_checkpointing_enable(...)`. |
-| `torch_compile` | `bool` | `False` | Compile each tensor-only microbatch gradient/clipping kernel with `fullgraph=True` and a dynamic leading dimension, avoiding specialization for each realized Poisson batch size. |
+| `torch_compile` | `bool` | `False` | Compile each tensor-only microbatch gradient/clipping kernel with `fullgraph=True` and a dynamic leading dimension, avoiding specialization for each realized Poisson batch size except for a possible dedicated size-one graph. |
 | `torch_compile_backend` | `str \| None` | `None` | Defaults to `"inductor"` when compile is on. |
 | `torch_compile_mode` | `str \| None` | `None` | One of `{"default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"}`. |
 
