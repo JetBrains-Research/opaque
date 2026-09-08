@@ -170,16 +170,14 @@ paths on your workload.
 ### Fused linear cross-entropy
 
 Computes the loss directly from hidden states and the `lm_head` weight matrix,
-never materializing the full `(batch*seq, vocab)` logits tensor. `DPTrainer`
-installs the conditional wrapper automatically and activates it only for calls
-that discard logits. Set
-`performance_kernels_config={"fused_linear_cross_entropy": False}` to opt out.
-Direct `apply_model_patches(model, ...)` callers still enable it explicitly with
-`fused_linear_cross_entropy=True`.
+never materializing the full `(batch*seq, vocab)` logits tensor. Install the
+conditional wrapper with
+`apply_model_patches(model, fused_linear_cross_entropy=True)`, then pass
+`opaque_fused_loss_only=True` only for forwards where logits have no consumer.
 
-The fused branch returns `logits=None`; prediction, metrics,
-`preprocess_logits_for_metrics`, generation, and custom-loss calls retain the
-materialized logits path. Unsupported loss options also fall back safely.
+The fused branch returns `logits=None`; calls that need logits for metrics,
+preprocessing, generation, or a custom loss leave the marker false. Unsupported
+loss options also fall back safely.
 Cohere and Granite logit scaling is applied inside each tile, avoiding a
 transformed copy of the full `lm_head` weight.
 
@@ -189,10 +187,11 @@ portable chunked backend. Its peak probability-tile memory scales with
 loss-only path and vocabulary-column width through:
 
 ```python
-performance_kernels_config = {
-    "fused_linear_cross_entropy": True,
-    "chunked_linear_cross_entropy": 2048,
-}
+apply_model_patches(
+    model,
+    fused_linear_cross_entropy=True,
+    chunked_linear_cross_entropy=2048,
+)
 ```
 
 The fused flag enables the logits-free path; for the chunk-width setting,
@@ -272,13 +271,10 @@ parameter-efficient method to reduce the trainable parameter count.
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).
 
-**OOM with fused linear CE not active:** `DPTrainer` activates fused linear CE
-automatically for eligible loss-only calls; an explicit
-`performance_kernels_config={"fused_linear_cross_entropy": False}` disables it.
-Direct model-forward users must opt in with
-`apply_model_patches(model, fused_linear_cross_entropy=True)` and pass the
-loss-only marker only when logits have no consumer. Otherwise, the full
-`(batch*seq, vocab)` tensor is materialized — about 2 GB per sample at 128K
+**OOM with fused linear CE not active:** Install the wrapper with
+`apply_model_patches(model, fused_linear_cross_entropy=True)` and pass
+`opaque_fused_loss_only=True` only when logits have no consumer. Otherwise, the
+full `(batch*seq, vocab)` tensor is materialized — about 2 GB per sample at 128K
 vocabulary — so reduce batch size if logits are required.
 
 ## API reference
