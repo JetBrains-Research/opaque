@@ -143,6 +143,17 @@ class TestEvalSpeedMetrics:
         assert "eval_samples_per_second" in metrics
         assert "eval_steps_per_second" in metrics
         assert "eval_loss" in metrics
+        for phase in (
+            "model_time_sec",
+            "gather_time_sec",
+            "transfer_time_sec",
+            "finalization_time_sec",
+            "metric_time_sec",
+            "transfer_bytes",
+            "transfer_overlap_sec",
+            "transfer_overlap_ratio",
+        ):
+            assert f"eval_{phase}" in metrics
 
     def test_custom_prefix(self, lora_model, tiny_dataset, tmp_path):
         model, tokenizer = lora_model

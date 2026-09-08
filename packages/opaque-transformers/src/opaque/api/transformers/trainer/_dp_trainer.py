@@ -2724,12 +2724,14 @@ class DPTrainer:
         if per_device_eval_bs:
             log.info("  Batch size = %d", per_device_eval_bs)
 
+        telemetry = _eval._EvaluationTelemetry(self._device)
         accumulator = _eval._PredictionAccumulator(
             prediction_loss_only=ploss_only,
             eval_accumulation_steps=a.eval_accumulation_steps,
             eval_do_concat_batches=bool(a.eval_do_concat_batches),
             include_inputs=include_inputs,
             include_losses=include_losses,
+            telemetry=telemetry,
         )
         if a.eval_accumulation_steps:
             log.info(
@@ -2754,106 +2756,109 @@ class DPTrainer:
         # before collectives.
         local_oom = False
 
-        for batch in dataloader:
-            bs = _eval.find_batch_size(batch) or 0
-            if bs == 0:
-                continue
-            self._pending_eval_aux = None
-            try:
-                with self._perf_tracker.eval(batch_size=bs):
-                    loss, logits, labels = self.prediction_step(
-                        self._model,
-                        batch,
-                        prediction_loss_only=ploss_only,
-                        ignore_keys=ignore_keys,
-                    )
-            except RuntimeError as err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
-                    raise
-                local_oom = True
+        with self._perf_tracker.eval(batch_size=num_examples):
+            for batch in dataloader:
+                bs = _eval.find_batch_size(batch) or 0
+                if bs == 0:
+                    continue
                 self._pending_eval_aux = None
-                break
-            try:
-                step_aux = self._pending_eval_aux
-                self._pending_eval_aux = None
-                if step_aux:
-                    for name, value in step_aux.items():
-                        eval_aux_chunks.setdefault(name, []).append(value.detach())
-
-                # Per-batch progress hook (HF parity); progress callbacks rely
-                # on this firing once per eval batch.
-                self._control = self._callback_handler.on_prediction_step(
-                    self.args,
-                    self.state,
-                    self._control,
-                )
-
-                # ``loss`` is scalar (default forward) or 1-D per-example
-                # (when ``'loss' in include_for_metrics`` triggers the
-                # vmap'd eval closure).  The model's per-example CE is already
-                # the mean over real (non-``-100``) tokens, so:
-                #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
-                #     the total CE; dividing the running sum by the running
-                #     ``loss_samples`` count gives per-real-token mean CE.
-                #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
-                #     example i's total CE; summing then dividing by the total
-                #     real-token count gives the same per-token mean.
-                # When labels aren't exposed (rare), or the trainer opted out
-                # of token weighting (``_eval_token_weighted_loss=False``),
-                # fall back to the plain per-example mean.
-                if loss is not None:
-                    if labels is not None and self._eval_token_weighted_loss:
-                        # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
-                        # position 0 via the internal shift); the per-token-mean
-                        # weighting denominator must match that count.
-                        shifted = labels[..., 1:]
-                        token_mask = shifted != _IGNORE_INDEX
-                        if loss.ndim > 0:
-                            # per-example: weight each by its real-token count
-                            per_example_real = token_mask.sum(
-                                dim=tuple(range(1, shifted.ndim))
-                            ).to(loss.dtype)
-                            total_loss += float((loss * per_example_real).sum().item())
-                            loss_samples += int(per_example_real.sum().item())
-                        else:
-                            # scalar: weight by real-token count in the whole batch
-                            real_tokens = int(token_mask.sum().item())
-                            total_loss += float(loss.item()) * real_tokens
-                            loss_samples += real_tokens
-                    else:
-                        # labels not exposed, or token weighting opted out:
-                        # plain per-example mean
-                        total_loss += (
-                            float(loss.sum().item())
-                            if loss.ndim > 0
-                            else float(loss.item()) * bs
+                try:
+                    with telemetry.model():
+                        loss, logits, labels = self.prediction_step(
+                            self._model,
+                            batch,
+                            prediction_loss_only=ploss_only,
+                            ignore_keys=ignore_keys,
                         )
-                        loss_samples += bs
-                total_samples += bs
+                except RuntimeError as err:
+                    if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                        raise
+                    local_oom = True
+                    self._pending_eval_aux = None
+                    break
+                try:
+                    step_aux = self._pending_eval_aux
+                    self._pending_eval_aux = None
+                    if step_aux:
+                        for name, value in step_aux.items():
+                            eval_aux_chunks.setdefault(name, []).append(value.detach())
 
-                if logits is not None and self._preprocess_logits is not None:
-                    logits_for_hook: Tensor | tuple[Tensor, ...]
-                    logits_for_hook = (
-                        logits[0]
-                        if isinstance(logits, tuple) and len(logits) == 1
-                        else logits
+                    # Per-batch progress hook (HF parity); progress callbacks rely
+                    # on this firing once per eval batch.
+                    self._control = self._callback_handler.on_prediction_step(
+                        self.args,
+                        self.state,
+                        self._control,
                     )
-                    logits = self._preprocess_logits(logits_for_hook, labels)
 
-                main_input = batch.get(main_input_name) if include_inputs else None
-                accumulator.add(
-                    loss=loss,
-                    logits=logits,
-                    labels=labels,
-                    inputs=main_input,
-                    batch_size=bs,
-                )
-            except RuntimeError as err:
-                if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
-                    raise
-                local_oom = True
-                self._pending_eval_aux = None
-                break
+                    # ``loss`` is scalar (default forward) or 1-D per-example
+                    # (when ``'loss' in include_for_metrics`` triggers the
+                    # vmap'd eval closure).  The model's per-example CE is already
+                    # the mean over real (non-``-100``) tokens, so:
+                    #   - scalar branch: ``loss.item() * real_tokens_in_batch`` is
+                    #     the total CE; dividing the running sum by the running
+                    #     ``loss_samples`` count gives per-real-token mean CE.
+                    #   - 1-D branch: ``loss[i] * real_tokens_in_example[i]`` is
+                    #     example i's total CE; summing then dividing by the total
+                    #     real-token count gives the same per-token mean.
+                    # When labels aren't exposed (rare), or the trainer opted out
+                    # of token weighting (``_eval_token_weighted_loss=False``),
+                    # fall back to the plain per-example mean.
+                    if loss is not None:
+                        if labels is not None and self._eval_token_weighted_loss:
+                            # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
+                            # position 0 via the internal shift); the per-token-mean
+                            # weighting denominator must match that count.
+                            shifted = labels[..., 1:]
+                            token_mask = shifted != _IGNORE_INDEX
+                            if loss.ndim > 0:
+                                # per-example: weight each by its real-token count
+                                per_example_real = token_mask.sum(
+                                    dim=tuple(range(1, shifted.ndim))
+                                ).to(loss.dtype)
+                                total_loss += float(
+                                    (loss * per_example_real).sum().item()
+                                )
+                                loss_samples += int(per_example_real.sum().item())
+                            else:
+                                # scalar: weight by real-token count in the whole batch
+                                real_tokens = int(token_mask.sum().item())
+                                total_loss += float(loss.item()) * real_tokens
+                                loss_samples += real_tokens
+                        else:
+                            # labels not exposed, or token weighting opted out:
+                            # plain per-example mean
+                            total_loss += (
+                                float(loss.sum().item())
+                                if loss.ndim > 0
+                                else float(loss.item()) * bs
+                            )
+                            loss_samples += bs
+                    total_samples += bs
+
+                    if logits is not None and self._preprocess_logits is not None:
+                        logits_for_hook: Tensor | tuple[Tensor, ...]
+                        logits_for_hook = (
+                            logits[0]
+                            if isinstance(logits, tuple) and len(logits) == 1
+                            else logits
+                        )
+                        logits = self._preprocess_logits(logits_for_hook, labels)
+
+                    main_input = batch.get(main_input_name) if include_inputs else None
+                    accumulator.add(
+                        loss=loss,
+                        logits=logits,
+                        labels=labels,
+                        inputs=main_input,
+                        batch_size=bs,
+                    )
+                except RuntimeError as err:
+                    if not (self._ddp.is_distributed and self._is_retryable_oom(err)):
+                        raise
+                    local_oom = True
+                    self._pending_eval_aux = None
+                    break
 
         # Cluster-wide OOM check before end-of-loop collectives. Ranks that
         # finished their shard wait here for siblings still iterating; a
@@ -2875,13 +2880,16 @@ class DPTrainer:
         if self._ddp.is_distributed:
             from opaque.api.engine.distributed._state import reduce_scalar
 
-            total_loss = reduce_scalar(float(total_loss), op="sum", device=self._device)
-            loss_samples = int(
-                reduce_scalar(loss_samples, op="sum", device=self._device)
-            )
-            total_samples = int(
-                reduce_scalar(total_samples, op="sum", device=self._device)
-            )
+            with telemetry.phase("gather"):
+                total_loss = reduce_scalar(
+                    float(total_loss), op="sum", device=self._device
+                )
+                loss_samples = int(
+                    reduce_scalar(loss_samples, op="sum", device=self._device)
+                )
+                total_samples = int(
+                    reduce_scalar(total_samples, op="sum", device=self._device)
+                )
         metrics: dict[str, Any] = {}
         if loss_samples > 0:
             metrics["loss"] = total_loss / loss_samples
@@ -2898,7 +2906,8 @@ class DPTrainer:
                 if eval_aux_chunks
                 else None
             )
-            gathered_eval_aux = gather_pytree(local_eval_aux)
+            with telemetry.phase("gather"):
+                gathered_eval_aux = gather_pytree(local_eval_aux)
         else:
             gathered_eval_aux = {
                 name: torch.cat(chunks) for name, chunks in eval_aux_chunks.items()
@@ -2937,7 +2946,8 @@ class DPTrainer:
                 inputs=inputs_arr,
                 losses=losses_tensor,
             )
-            user_metrics = self._compute_metrics(ep)
+            with telemetry.phase("metric"):
+                user_metrics = self._compute_metrics(ep)
             if user_metrics:
                 metrics.update(user_metrics)
         # Empty-dataset path: HF silently skips ``compute_metrics``;
@@ -2945,13 +2955,11 @@ class DPTrainer:
         # when total_samples == 0).  Caller-level evaluate/predict
         # wrappers add throughput metrics.
 
-        # Opaque per-step performance metrics for the eval pass.
-        # ``last`` is the most recent batch's StepPerf (post-warmup);
-        # we surface ``step_time_sec`` / ``memory_*`` as new fields.
-        # ``samples_per_second`` is emitted here too but the caller's
-        # later ``speed_metrics`` update overwrites it with the
-        # wall-clock aggregate — HF parity wins on the colliding key,
-        # everything else is added by us.
+        metrics.update(telemetry.to_dict())
+
+        # The eval performance stage now spans the complete prediction loop,
+        # rather than synchronizing and retaining only the last batch record.
+        # Caller-level ``speed_metrics`` still owns aggregate throughput keys.
         if self._perf_tracker.eval.last is not None:
             metrics.update(self._perf_tracker.eval.last.to_dict())
 
