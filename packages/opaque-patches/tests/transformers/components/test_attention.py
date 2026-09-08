@@ -188,6 +188,41 @@ def test_gqa_sdpa_uses_native_gqa_when_backend_supports_it(monkeypatch):
     assert kwargs["enable_gqa"] is True
 
 
+def test_native_gqa_eligibility_uses_physical_vmap_batch_shape():
+    vmap_size, heads, sequence, head_dim = 3, 4, 5, 8
+    query = torch.randn(vmap_size, 1, heads, sequence, head_dim)
+    key = torch.randn_like(query)
+    value = torch.randn_like(query)
+    mask = torch.ones(vmap_size, 1, 1, sequence, sequence, dtype=torch.bool)
+    seen = []
+
+    def loss(q, k, v, attention_mask):
+        seen.append(
+            tuple(
+                attention_components._sdpa_eligibility_tensor(tensor).shape
+                for tensor in (q, k, v, attention_mask)
+            )
+        )
+        return (q + k + v).sum()
+
+    torch.vmap(torch.func.grad(loss, argnums=(0, 1, 2)))(query, key, value, mask)
+
+    qkv_shape = (vmap_size, heads, sequence, head_dim)
+    assert seen == [
+        (qkv_shape, qkv_shape, qkv_shape, (vmap_size, 1, sequence, sequence))
+    ]
+
+    nested_seen = []
+
+    def nested_loss(q):
+        nested_seen.append(attention_components._sdpa_eligibility_tensor(q).shape)
+        return q.sum()
+
+    nested_query = query.unsqueeze(0).expand(2, *query.shape)
+    torch.vmap(torch.vmap(torch.func.grad(nested_loss)))(nested_query)
+    assert nested_seen == [(2 * vmap_size, heads, sequence, head_dim)]
+
+
 @pytest.mark.cuda
 def test_native_gqa_eligibility_uses_gqa_backend_parameters():
     device = torch.device("cuda")

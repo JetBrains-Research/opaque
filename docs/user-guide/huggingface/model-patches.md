@@ -126,15 +126,19 @@ SDPA is the Transformers default and works under DP/`vmap(grad)` out of the box
 
 | SDPA backend | Under `vmap(grad)` | Notes |
 |---|---|---|
-| `MATH` | ✅ vmap-native | decomposes to primitives vmap batches directly — no fallback |
-| `EFFICIENT_ATTENTION` | ✅ correct, slower | functorch has no batching rule for `_scaled_dot_product_efficient_attention_backward` yet, so the backward runs as a **per-example loop** (a "performance drop" warning) — removed by the upstream PyTorch batching-rule patch |
-| `CUDNN_ATTENTION` | ✅ correct, slower | same per-example-loop fallback as efficient |
-| `FLASH_ATTENTION` | ⚠️ not selected | rejected under vmap (`No available kernel`) |
+| `MATH` | ✅ vmap-native | Decomposes to primitives that vmap batches directly. |
+| `EFFICIENT_ATTENTION` | ✅ batched | The physical DP batch is merged into the model batch for one fused backward dispatch. |
+| `CUDNN_ATTENTION` | ✅ batched | Uses the same merged-batch backward path as efficient attention. |
+| `FLASH_ATTENTION` | ✅ batched where eligible | Selected by PyTorch when the device, dtype, shape, mask, and GQA layout meet Flash constraints. |
 
-PyTorch's backend selector picks among these; the fused backends are correct
-under vmap and only pay the loop-fallback until the upstream batching rule lands.
-SDPA still saves significant memory over eager by avoiding the
-`(heads, seq, seq)` attention matrix.
+PyTorch's backend selector still makes the final choice. Opaque records the
+operator that actually ran when validating performance rather than inferring it
+from configuration. On PyTorch releases without fused backward batching, the
+explicit model patch installs schema-compatible rules; it defers automatically
+when PyTorch provides native equivalents. Releases with incompatible internal
+schemas keep PyTorch's correct per-example fallback. Dropout also keeps
+PyTorch's vmap randomness contract rather than merging incompatible random
+streams. SDPA avoids eager attention's explicit `(heads, seq, seq)` matrix.
 Measured at Qwen2-0.5B scale with LoRA:
 
 | seq_len | Microbatch | Eager memory | SDPA memory | Savings |

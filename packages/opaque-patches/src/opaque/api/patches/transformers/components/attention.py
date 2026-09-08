@@ -8,6 +8,7 @@ import torch
 # materializing the full (..., heads, query_length, key_length) matrix.
 _GEMMA2_QUERY_CHUNK = 64
 _SDPA_QUERY_CHUNK = 64
+_SDPA_VMAP_PHYSICAL_RANK = 5
 
 
 def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -113,6 +114,24 @@ def _grouped_sdpa(
     return torch.cat(output_groups, dim=-3)
 
 
+def _sdpa_eligibility_tensor(tensor: torch.Tensor | None) -> torch.Tensor | None:
+    """Expose functorch dimensions so CUDA tests the physical fused shape."""
+    if tensor is None:
+        return None
+    while True:
+        if torch._C._functorch.is_gradtrackingtensor(tensor):
+            tensor = torch._C._functorch.get_unwrapped(tensor)
+            continue
+        if not torch._C._functorch.is_batchedtensor(tensor):
+            return tensor
+        level = torch._C._functorch.maybe_get_level(tensor)
+        tensor, bdim = torch._C._functorch._unwrap_batched(tensor, level)
+        if bdim is not None:
+            tensor = tensor.movedim(bdim, 0)
+            if tensor.ndim >= _SDPA_VMAP_PHYSICAL_RANK:
+                tensor = tensor.flatten(0, 1)
+
+
 def _can_use_native_gqa(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -121,8 +140,12 @@ def _can_use_native_gqa(
     dropout: float,
     is_causal: bool,
 ) -> bool:
-    if query.device.type != "cuda" or torch._C._functorch.is_batchedtensor(query):
+    if query.device.type != "cuda":
         return False
+    query, key, value, attention_mask = (
+        _sdpa_eligibility_tensor(tensor)
+        for tensor in (query, key, value, attention_mask)
+    )
     params = torch.backends.cuda.SDPAParams(
         query, key, value, attention_mask, dropout, is_causal, True
     )

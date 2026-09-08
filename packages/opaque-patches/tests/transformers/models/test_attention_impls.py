@@ -46,26 +46,29 @@ def _sdpa_backends():
         pytest.param(SDPBackend.MATH, id="math"),
         pytest.param(SDPBackend.EFFICIENT_ATTENTION, id="efficient"),
         pytest.param(SDPBackend.CUDNN_ATTENTION, id="cudnn"),
-        # Flash isn't selectable under vmap ("No available kernel"); xfail
-        # non-strict so it auto-passes if a future torch enables it.
-        pytest.param(
-            SDPBackend.FLASH_ATTENTION,
-            id="flash",
-            marks=pytest.mark.xfail(
-                reason="flash not selected under vmap", strict=False
-            ),
-        ),
+        pytest.param(SDPBackend.FLASH_ATTENTION, id="flash"),
     ]
+
+
+def _backward_operator(backend):
+    from torch.nn.attention import SDPBackend
+
+    return {
+        SDPBackend.EFFICIENT_ATTENTION: (
+            "aten::_scaled_dot_product_efficient_attention_backward"
+        ),
+        SDPBackend.CUDNN_ATTENTION: "aten::_scaled_dot_product_cudnn_attention_backward",
+        SDPBackend.FLASH_ATTENTION: "aten::_scaled_dot_product_flash_attention_backward",
+    }.get(backend)
 
 
 @pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="SDPA backends need CUDA")
 @pytest.mark.parametrize("backend", _sdpa_backends())
 def test_sdpa_backends_under_vmap(backend, device):
-    """Every selectable SDPA backend works under DP vmap(grad). MATH is
-    vmap-native; efficient/cudnn run via the per-example-loop fallback until the
-    upstream batching-rule patch lands; flash isn't selected (xfail)."""
+    """Fused SDPA backward batches the physical DP examples in one dispatch."""
     from torch.nn.attention import SDPBackend, sdpa_kernel
+    from torch.profiler import ProfilerActivity, profile
 
     # The fused SDPA kernels (efficient/cudnn/flash) only provide a bf16 path on
     # Ampere+ (sm>=80); on older GPUs (e.g. Turing/T4, sm_75) they raise
@@ -79,8 +82,23 @@ def test_sdpa_backends_under_vmap(backend, device):
             )
 
     model = _build_llama(device, "sdpa")
-    with sdpa_kernel([backend]):
+    with (
+        sdpa_kernel([backend]),
+        profile(activities=[ProfilerActivity.CPU]) as profiler,
+    ):
         assert_vmap_grad(model, device, dtype=torch.bfloat16)
+
+    backward_operator = _backward_operator(backend)
+    if backward_operator is not None:
+        selected = {
+            event.key: event.count
+            for event in profiler.key_averages()
+            if event.key.startswith("aten::_scaled_dot_product_")
+            and event.key.endswith("_backward")
+        }
+        assert backward_operator in selected, f"selected SDPA operators: {selected}"
+        # Python batching records the outer dispatch and the merged redispatch.
+        assert selected[backward_operator] <= 2 * model.config.num_key_value_heads
 
 
 @pytest.mark.parametrize("impl", IMPLS)

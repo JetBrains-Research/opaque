@@ -42,6 +42,9 @@ from opaque.api.patches.transformers.components.masking import (
     apply_module_masking_patch,
 )
 from opaque.api.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
+from opaque.api.patches.transformers.components.sdpa_batching import (
+    install_fused_sdpa_batching_rules,
+)
 
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
@@ -219,6 +222,7 @@ def make_apply_family_patches(
                 # process-global interface must keep the stock SDPA entry.
                 scoped_attention = _scoped_attention_functions(mod)
                 if scoped_attention is not None:
+                    install_fused_sdpa_batching_rules()
                     scoped_attention["sdpa"] = sdpa_attention_replacement
                     patched = True
             if masking_module_patcher is not None:
