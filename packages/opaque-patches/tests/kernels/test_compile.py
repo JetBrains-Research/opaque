@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from torch.func import grad, vmap
 from torch.utils._pytree import tree_leaves
 
 from opaque.api.engine.clipping import clipped_grad
@@ -96,3 +97,21 @@ def test_kernels_under_compile_cuda(backend: str):
     eager = _run(model, x, y, compile_backend=None)
     compiled = _run(model, x, y, compile_backend=backend)
     _assert_close(eager, compiled, rtol=1e-3, atol=1e-4)
+
+
+def test_rmsnorm_vmap_grad_compiles_fullgraph_cuda():
+    """Static backward metadata keeps the transformed RMSNorm graph capturable."""
+    torch.manual_seed(1)
+    x = torch.randn(4, 8, 64, device="cuda", dtype=torch.bfloat16)
+    w = torch.randn(64, device="cuda", dtype=torch.bfloat16)
+
+    def loss_fn(inp, weight):
+        return opaque_rms_norm(inp, weight).float().square().mean()
+
+    grad_fn = vmap(grad(loss_fn, argnums=(0, 1)), in_dims=(0, None))
+    eager = grad_fn(x, w)
+    compiled_fn = torch.compile(grad_fn, backend="inductor", fullgraph=True)
+    compiled = compiled_fn(x, w)
+
+    for actual, expected in zip(compiled, eager, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=2e-2, atol=1e-3)

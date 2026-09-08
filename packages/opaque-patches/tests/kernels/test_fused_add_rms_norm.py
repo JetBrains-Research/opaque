@@ -122,6 +122,44 @@ class TestFusedAddRMSNormBackward:
         torch.testing.assert_close(r1.grad, r0.grad, rtol=RTOL_B, atol=ATOL_B)
         torch.testing.assert_close(w1.grad, w0.grad, rtol=RTOL_B, atol=ATOL_B)
 
+    @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
+    def test_frozen_weight_skips_dw_and_scalar_extraction(self, casting_mode):
+        B, T, H = 2, 4, 64
+        eps = 1e-5
+        offset = 1.0 if casting_mode == "gemma" else 0.0
+        x = torch.randn(
+            B, T, H, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        r = torch.randn(
+            B, T, H, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+        x_ref = x.detach().clone().requires_grad_()
+        r_ref = r.detach().clone().requires_grad_()
+        reference = ref_gemma_fused if casting_mode == "gemma" else ref_llama_fused
+        y_ref, s_ref = reference(x_ref, r_ref, w, eps)
+
+        y, s, _ = Opaque_FusedAddRMSNorm.apply(
+            x, r, w, eps, offset, casting_mode, False
+        )
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            torch.autograd.backward((y, s), (torch.ones_like(y), torch.ones_like(s)))
+            torch.cuda.synchronize()
+        (y_ref + s_ref).sum().backward()
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert "aten::item" not in keys
+        assert "aten::_local_scalar_dense" not in keys
+        assert "aten::sum" not in keys
+        assert w.grad is None
+        torch.testing.assert_close(x.grad, x_ref.grad, rtol=RTOL_B, atol=ATOL_B)
+        torch.testing.assert_close(r.grad, r_ref.grad, rtol=RTOL_B, atol=ATOL_B)
+
 
 class TestFusedAddRMSNormVmapForward:
     def test_vmap_forward_precision(self, assert_precision, mellum_config):
@@ -223,6 +261,59 @@ class TestFusedAddRMSNormVmapGradPerExampleDW:
             msg=f"per-example dW mismatch ({casting_mode}) — "
             "vmap dW must not be the batch-sum",
         )
+
+    def test_frozen_weight_vmap_skips_dw_kernel(self):
+        B, T, H = 4, 8, 64
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        r = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi, ri):
+            y, s = opaque_llama(xi, ri, w)
+            return (y + s).mean()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            gx_vmap, gr_vmap = vmap(grad(f, argnums=(0, 1)))(x, r)
+            torch.cuda.synchronize()
+        gx_eager = torch.stack([grad(f, argnums=0)(x[i], r[i]) for i in range(B)])
+        gr_eager = torch.stack([grad(f, argnums=1)(x[i], r[i]) for i in range(B)])
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert not any("_rms_norm_weight_grad" in key for key in keys)
+        torch.testing.assert_close(gx_vmap, gx_eager, rtol=RTOL_B, atol=ATOL_B)
+        torch.testing.assert_close(gr_vmap, gr_eager, rtol=RTOL_B, atol=ATOL_B)
+
+    def test_trainable_dw_uses_triton_reduction_without_scalar_extraction(self):
+        B, T, H = 4, 8, 64
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        r = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi, ri, wt):
+            y, s, _ = Opaque_FusedAddRMSNorm.apply(
+                xi, ri, wt, 1e-5, 0.0, "llama", False
+            )
+            return (y + s).mean()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            vmap(grad(f, argnums=(0, 1, 2)), in_dims=(0, 0, None))(x, r, w)
+            torch.cuda.synchronize()
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert "aten::item" not in keys
+        assert "aten::_local_scalar_dense" not in keys
+        assert any("_rms_norm_weight_grad_partial_kernel" in key for key in keys)
+        assert any("_rms_norm_weight_grad_reduce_kernel" in key for key in keys)
 
 
 class TestFusedAddRMSNormVmapGrad:
