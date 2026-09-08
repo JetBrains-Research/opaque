@@ -3584,8 +3584,7 @@ SwiGLU / GeGLU activations used by patched model families.</p>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">performance</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                         <span class="c1"># kv_cache (pure-Python; always-on)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">kernels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                             <span class="c1"># CUDA + Triton group (rope, rms_norm, …)</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">peft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                                <span class="c1"># LoRA fusion when adapters detected</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">fused_linear_cross_entropy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>         <span class="c1"># opt-in (fused forward returns logits=None)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>apply_runtime_patches()</code> should be called once near process startup,
 before creating checkpointed models or HF data collators.
@@ -3610,7 +3609,7 @@ graph.</p>
 <tr>
 <td><code>performance</code></td>
 <td><code>True</code></td>
-<td>Memory-efficiency patches that run on any host (currently <code>kv_cache</code>).</td>
+<td>Memory-efficiency patches that run on any host (<code>kv_cache</code> and the conditional fused-linear-CE wrapper).</td>
 </tr>
 <tr>
 <td><code>kernels</code></td>
@@ -3624,8 +3623,8 @@ graph.</p>
 </tr>
 <tr>
 <td><code>fused_linear_cross_entropy</code></td>
-<td><code>False</code></td>
-<td>Promoted kernel kwarg — opt-in because the fused forward returns <code>logits=None</code>, which is incompatible with callers that read <code>outputs.logits</code>.</td>
+<td><code>performance</code></td>
+<td>Conditional fused LM-head loss wrapper. Set <code>False</code> to disable; only calls with <code>loss_only=True</code> return <code>logits=None</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -4177,15 +4176,16 @@ kernel, never materializing the full logits tensor. For Mellum-4b
 with 128K vocab, this avoids the ~2 GB <code>logits = hidden_states @
 lm_head.T</code> allocation that the non-fused path produces per forward
 pass.</p>
-<p>The patched <code>XForCausalLM.forward</code> returns <code>logits=None</code> on the
-fast path, which is incompatible with callers that read
-<code>outputs.logits</code> — <code>compute_metrics</code>,
-<code>preprocess_logits_for_metrics</code>, and generation eval all need the
-materialised tensor.  The patch is <strong>opt-in</strong> for this reason:
-enable via <code>apply_model_patches(model,
-fused_linear_cross_entropy=True)</code> when loss is the only consumer of
-the forward output.  <code>examples/train_dpsgd.py</code> and
-<code>examples/train_dpftrl.py</code> enable it.</p>
+<p>The fused forward wrapper is installed with the normal <code>performance</code> patch
+bucket. It delegates to the original model forward unless the caller sets
+<code>loss_only=True</code>; that loss-only branch may return <code>logits=None</code>. Unsupported
+loss options also fall back to the model-native logits path. Set
+<code>fused_linear_cross_entropy=False</code> on <code>apply_model_patches</code> to disable the
+wrapper.</p>
+<p>Cohere's multiplicative and Granite's divisive logit scaling are passed as one
+scalar into the tiled computation. Scaling occurs before optional softcapping,
+and backward applies the chain rule to the original (including trainable or
+tied) head weight without allocating a transformed full-weight copy.</p>
 <p><code>cross_entropy=True</code> (default when <code>kernels=True</code>) still installs
 the non-fused chunked CE via <code>loss_function</code>, which operates on
 materialised logits and leaves <code>outputs.logits</code> populated.</p>
@@ -4337,11 +4337,10 @@ per-concern keys discussed above:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">use_performance_kernels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">performance_kernels_config</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        <span class="s2">"fused_linear_cross_entropy"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>   <span class="c1"># opt-in</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="s2">"chunked_linear_cross_entropy"</span><span class="p">:</span> <span class="mi">2048</span><span class="p">,</span> <span class="c1"># vocabulary columns per tile</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        <span class="s2">"kv_cache"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>                    <span class="c1"># for HF DynamicCache-dependent models</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="p">},</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        <span class="s2">"chunked_linear_cross_entropy"</span><span class="p">:</span> <span class="mi">2048</span><span class="p">,</span> <span class="c1"># vocabulary columns per tile</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="s2">"kv_cache"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>                    <span class="c1"># for HF DynamicCache-dependent models</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="p">},</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>

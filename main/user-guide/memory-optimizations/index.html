@@ -3638,22 +3638,19 @@ for per-operation details and per-model support.</p>
 paths on your workload.</p>
 <h3 id="fused-linear-cross-entropy">Fused linear cross-entropy<a class="headerlink" href="#fused-linear-cross-entropy" title="Permanent link">&para;</a></h3>
 <p>Computes the loss directly from hidden states and the <code>lm_head</code> weight matrix,
-never materializing the full <code>(batch*seq, vocab)</code> logits tensor. Enable it by
-passing <code>fused_linear_cross_entropy=True</code> to
-<code>apply_model_patches(model, ...)</code>.</p>
-<p>The fused path returns <code>logits=None</code> from <code>XForCausalLM.forward</code>, which is
-incompatible with callers that read <code>outputs.logits</code> — <code>compute_metrics</code>,
-<code>preprocess_logits_for_metrics</code>, and generation eval. Enable the patch when
-loss is the only consumer of the forward output;
-<code>examples/train_dpsgd.py</code> and <code>examples/train_dpftrl.py</code> do.</p>
+never materializing the full <code>(batch*seq, vocab)</code> logits tensor. The normal
+<code>performance</code> patch bucket installs the conditional wrapper; pass
+<code>loss_only=True</code> only for forwards where logits have no consumer.</p>
+<p>The fused branch returns <code>logits=None</code>; calls that need logits for metrics,
+preprocessing, generation, or a custom loss leave the marker false. Unsupported
+loss options also fall back safely.
+Cohere and Granite logit scaling is applied inside each tile, avoiding a
+transformed copy of the full <code>lm_head</code> weight.</p>
 <p>Families outside the fused CUDA kernel's numerical envelope can use the
 portable chunked backend. Its peak probability-tile memory scales with
 <code>microbatch_size * prediction_tokens * chunk_width</code> in FP32. Configure the
 loss-only path and vocabulary-column width through:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">performance_kernels_config</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s2">"fused_linear_cross_entropy"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="s2">"chunked_linear_cross_entropy"</span><span class="p">:</span> <span class="mi">2048</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">chunked_linear_cross_entropy</span><span class="o">=</span><span class="mi">2048</span><span class="p">)</span>
 </code></pre></div>
 <p>The fused flag enables the logits-free path; for the chunk-width setting,
 <code>True</code> selects the family default, while <code>False</code> or <code>0</code> disables the portable
@@ -3751,11 +3748,10 @@ parameter-efficient method to reduce the trainable parameter count.</p>
 <p><strong>Memory grows over time:</strong> Profile across iterations to identify whether
 peak memory is increasing. Check for tensors that are accumulating outside
 the training loop (e.g., appending to a list without detaching).</p>
-<p><strong>OOM with fused linear CE not enabled:</strong> Fused linear CE is opt-in
-(<code>apply_model_patches(model, fused_linear_cross_entropy=True)</code>). Without
-it, the full <code>(batch*seq, vocab)</code> logits tensor is materialized — for
-128K vocab models, that is ~2 GB per sample. Enable the flag (only if
-nothing else reads logits) or reduce batch size.</p>
+<p><strong>OOM with fused linear CE not active:</strong> Ensure the <code>performance</code> patch bucket
+is enabled and pass <code>loss_only=True</code> only when logits have no consumer. Otherwise, the
+full <code>(batch*seq, vocab)</code> tensor is materialized — about 2 GB per sample at 128K
+vocabulary — so reduce batch size if logits are required.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See the <code>opaque.profiling</code> module for complete function signatures.</p>
 
