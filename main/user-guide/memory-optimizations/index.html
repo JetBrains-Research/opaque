@@ -3605,13 +3605,14 @@ with functorch). No special kwargs needed.</p>
   The legacy reentrant path is not supported.</li>
 <li>Supports first-order differentiation only; higher-order transforms still
   reject saved-tensor hooks.</li>
-<li><code>torch.compile</code> is not supported with checkpointed functional transforms.</li>
+<li>Checkpointed functional transforms cannot be wrapped with <code>torch.compile</code>:
+  non-reentrant checkpointing relies on saved-tensor hooks that AOTAutograd
+  cannot safely compose with <code>vmap(grad(...))</code>.</li>
 <li>Use <code>torch.no_grad()</code> for direct <code>vmap(grad(...))</code> calls. <code>clipped_grad</code> does
   this automatically unless an outer transform differentiates its result.</li>
-<li>Opt out at the API layer (no env-var kill switches): pass
+<li>Opt out at the patch API layer (no environment-variable kill switches): pass
   <code>vmap_checkpointing=False</code> to <code>apply_runtime_patches(...)</code> or
-  <code>apply_model_patches(...)</code>, or <code>performance_kernels_config={"vmap_checkpointing": False}</code>
-  to <code>TrainingArguments</code>.</li>
+  <code>apply_model_patches(...)</code>.</li>
 </ul>
 <h3 id="cpu-offloading-of-saved-tensors">CPU offloading of saved tensors<a class="headerlink" href="#cpu-offloading-of-saved-tensors" title="Permanent link">&para;</a></h3>
 <p><code>torch.autograd.graph.save_on_cpu</code> moves tensors saved for backward to

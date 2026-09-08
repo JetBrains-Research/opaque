@@ -3656,12 +3656,12 @@ keys win on collision with the defaults table.</p>
 <tr>
 <td><code>gradient_checkpointing</code></td>
 <td><code>False</code></td>
-<td>Pair with <code>gradient_checkpointing_kwargs={"use_reentrant": False}</code> — reentrant checkpointing doesn't compose with vmap.</td>
+<td>Opaque automatically uses the vmap-safe non-reentrant path; no checkpointing kwargs are required. Incompatible with <code>torch_compile</code>.</td>
 </tr>
 <tr>
 <td><code>torch_compile</code></td>
 <td><code>False</code></td>
-<td>Compiles the per-example loss closure (not the model). Tries <code>fullgraph=True</code> first; falls back with a warning.</td>
+<td>Compiles the tensor-only per-microbatch <code>vmap(grad)+clip+reduce</code> kernel with <code>fullgraph=True</code>.</td>
 </tr>
 </tbody>
 </table>
