@@ -297,14 +297,12 @@ with 128K vocab, this avoids the ~2 GB `logits = hidden_states @
 lm_head.T` allocation that the non-fused path produces per forward
 pass.
 
-The patched `XForCausalLM.forward` returns `logits=None` only when its
-per-call loss-only marker is set. `DPTrainer` installs this conditional wrapper
-automatically and marks only model-native loss-only training/evaluation calls;
-prediction, metrics, preprocessing, generation, and custom-loss calls keep
-materialised logits. Set
-`performance_kernels_config={"fused_linear_cross_entropy": False}` to opt out,
-or `True` to force wrapper installation. Direct `apply_model_patches` callers
-remain opt-in and pass `fused_linear_cross_entropy=True` explicitly.
+The fused forward wrapper is opt-in through
+`apply_model_patches(model, fused_linear_cross_entropy=True)`. Once installed,
+it returns `logits=None` only when the caller sets
+`opaque_fused_loss_only=True`; calls leave the marker false whenever logits are
+consumed by metrics, preprocessing, generation, or a custom loss. Unsupported
+loss options fall back to the model-native logits path.
 
 Cohere's multiplicative and Granite's divisive logit scaling are passed as one
 scalar into the tiled computation. Scaling occurs before optional softcapping,
