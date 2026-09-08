@@ -171,8 +171,8 @@ def _linear_ce_forward_kernel(
 
     tl.debug_barrier()
 
-    accum = accum.cast(E.dtype.element_ty, fp_downcast_rounding="rtne")
     accum = accum * logit_scale
+    accum = accum.cast(E.dtype.element_ty, fp_downcast_rounding="rtne")
     logits = tl.where(offs_v[None, :] < V, accum, -float("inf"))
     if HAS_SOFTCAP:
         logits = tl_softcapping(logits, softcap)
@@ -377,8 +377,8 @@ def _linear_ce_backward_kernel(
 
     tl.debug_barrier()
 
-    accum = accum.cast(E.dtype.element_ty, fp_downcast_rounding="rtne")
     accum = accum * logit_scale
+    accum = accum.cast(E.dtype.element_ty, fp_downcast_rounding="rtne")
     if HAS_SOFTCAP:
         accum = tl_softcapping(accum, softcap)
 
