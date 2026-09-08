@@ -19,7 +19,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
-from opaque.api.patches.kernels.rms_norm import Opaque_RMSNorm
+from opaque.api.patches.kernels.rms_norm import Opaque_RMSNorm, opaque_rms_norm
 
 pytestmark = [
     pytest.mark.cuda,
@@ -50,11 +50,13 @@ def ref_gemma_rms(
 
 
 def opaque_llama(x, w, eps=1e-6):
-    return Opaque_RMSNorm.apply(x, w, eps, 0.0, "llama", False, None)
+    y, _, _ = Opaque_RMSNorm.apply(x, w, eps, 0.0, "llama", False, None)
+    return y
 
 
 def opaque_gemma(x, w, eps=1e-6, offset=1.0):
-    return Opaque_RMSNorm.apply(x, w, eps, offset, "gemma", False, None)
+    y, _, _ = Opaque_RMSNorm.apply(x, w, eps, offset, "gemma", False, None)
+    return y
 
 
 class TestRMSNormForward:
@@ -81,6 +83,62 @@ class TestRMSNormForward:
         y_r = ref_gemma_rms(x, w, eps, off)
         assert_precision(y_o, y_r, rtol=RTOL_F, atol=ATOL_F, label="gemma fwd")
 
+    def test_forward_reuses_rstd_and_contiguous_input(self):
+        B, T, H = 2, 4, 64
+        eps = 1e-5
+        x = torch.randn(
+            B, T, H, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        y, rstd, x_saved = Opaque_RMSNorm.apply(x, w, eps, 0.0, "llama", False, None)
+
+        assert y.shape == x.shape
+        assert rstd.shape == x.shape[:-1]
+        assert not rstd.requires_grad
+        assert not x_saved.requires_grad
+        assert x_saved.data_ptr() == x.data_ptr()
+        expected_rstd = torch.rsqrt(x.float().square().mean(dim=-1) + eps)
+        torch.testing.assert_close(rstd, expected_rstd, rtol=RTOL_B, atol=ATOL_B)
+        assert isinstance(opaque_rms_norm(x, w, eps), torch.Tensor)
+
+    def test_noncontiguous_input_reuses_forward_materialization(self):
+        B, T, H = 2, 4, 64
+        eps = 1e-5
+        x = (
+            torch.randn(B, H, T, device="cuda", dtype=torch.bfloat16)
+            .transpose(1, 2)
+            .detach()
+            .requires_grad_()
+        )
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        x_ref = x.detach().clone().requires_grad_()
+        w_ref = w.detach().clone().requires_grad_()
+
+        y, _, x_saved = Opaque_RMSNorm.apply(x, w, eps, 0.0, "llama", False, None)
+        ref = ref_llama_rms(x_ref, w_ref, eps)
+        y.sum().backward()
+        ref.sum().backward()
+
+        assert not x.is_contiguous()
+        assert x_saved.is_contiguous()
+        torch.testing.assert_close(y, ref, rtol=RTOL_F, atol=ATOL_F)
+        torch.testing.assert_close(x.grad, x_ref.grad, rtol=RTOL_B, atol=ATOL_B)
+        torch.testing.assert_close(w.grad, w_ref.grad, rtol=RTOL_B, atol=ATOL_B)
+
+    def test_saved_input_preserves_version_checking(self):
+        x = torch.randn(
+            2, 4, 64, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w = torch.randn(64, device="cuda", dtype=torch.bfloat16)
+        y, _, _ = Opaque_RMSNorm.apply(x, w, 1e-5, 0.0, "llama", False, None)
+
+        with torch.no_grad():
+            x.add_(1)
+
+        with pytest.raises(RuntimeError, match="modified by an inplace operation"):
+            y.sum().backward()
+
 
 class TestRMSNormBackward:
     def test_llama_backward_bf16(self, assert_precision, mellum_config):
@@ -103,6 +161,41 @@ class TestRMSNormBackward:
 
         assert_precision(x1.grad, x0.grad, rtol=RTOL_B, atol=ATOL_B, label="dx llama")
         assert_precision(w1.grad, w0.grad, rtol=RTOL_B, atol=ATOL_B, label="dw llama")
+
+    @pytest.mark.parametrize("casting_mode", ["llama", "gemma"])
+    def test_frozen_weight_skips_dw_and_scalar_extraction(self, casting_mode):
+        B, T, H = 2, 4, 64
+        eps = 1e-5
+        offset = 1.0 if casting_mode == "gemma" else 0.0
+        x = torch.randn(
+            B, T, H, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+        x_ref = x.detach().clone().requires_grad_()
+        reference = ref_gemma_rms if casting_mode == "gemma" else ref_llama_rms
+        ref = (
+            reference(x_ref, w, eps, offset)
+            if casting_mode == "gemma"
+            else reference(x_ref, w, eps)
+        )
+
+        y, _, _ = Opaque_RMSNorm.apply(x, w, eps, offset, casting_mode, False, None)
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            torch.autograd.backward(y, torch.ones_like(y))
+            torch.cuda.synchronize()
+        ref.sum().backward()
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert "aten::item" not in keys
+        assert "aten::_local_scalar_dense" not in keys
+        assert "aten::sum" not in keys
+        assert w.grad is None
+        torch.testing.assert_close(x.grad, x_ref.grad, rtol=RTOL_B, atol=ATOL_B)
 
 
 class TestRMSNormVmapForward:
@@ -174,9 +267,10 @@ class TestRMSNormVmapGradPerExampleDW:
         w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
 
         def f(xi, wt):
-            return Opaque_RMSNorm.apply(
+            y, _, _ = Opaque_RMSNorm.apply(
                 xi, wt, eps, offset, casting_mode, in_place, None
-            ).mean()
+            )
+            return y.mean()
 
         # vmap path (the fix under test)
         gx_vmap, gw_vmap = vmap(grad(f, argnums=(0, 1)), in_dims=(0, None))(x, w)
@@ -200,6 +294,52 @@ class TestRMSNormVmapGradPerExampleDW:
             msg=f"per-example dW mismatch ({casting_mode}) — "
             "vmap dW must not be the batch-sum",
         )
+
+    def test_frozen_weight_vmap_skips_dw_kernel(self):
+        B, T, H = 4, 8, 64
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi):
+            return opaque_llama(xi, w).mean()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            gx_vmap = vmap(grad(f))(x)
+            torch.cuda.synchronize()
+        gx_eager = torch.stack([grad(f)(x[i]) for i in range(B)])
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert not any("_rms_norm_weight_grad" in key for key in keys)
+        torch.testing.assert_close(gx_vmap, gx_eager, rtol=RTOL_B, atol=ATOL_B)
+
+    def test_trainable_dw_uses_triton_reduction_without_scalar_extraction(self):
+        B, T, H = 4, 8, 64
+        x = torch.randn(B, T, H, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(H, device="cuda", dtype=torch.bfloat16)
+
+        def f(xi, wt):
+            y, _, _ = Opaque_RMSNorm.apply(xi, wt, 1e-5, 0.0, "llama", False, None)
+            return y.mean()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as profiler:
+            vmap(grad(f, argnums=(0, 1)), in_dims=(0, None))(x, w)
+            torch.cuda.synchronize()
+
+        keys = {event.key for event in profiler.key_averages()}
+        assert "aten::item" not in keys
+        assert "aten::_local_scalar_dense" not in keys
+        assert any("_rms_norm_weight_grad_partial_kernel" in key for key in keys)
+        assert any("_rms_norm_weight_grad_reduce_kernel" in key for key in keys)
 
 
 class TestRMSNormVmapGrad:
