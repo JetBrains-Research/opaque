@@ -74,15 +74,18 @@ _FEATURES = [
 def test_workspace_budget_is_fixed_on_cpu_and_bounded_on_mps(monkeypatch):
     assert mod._workspace_budget_bytes(torch.device("cpu")) == 512 * 1024**2
 
+    mps = getattr(torch, "mps", None)
+    if mps is None:
+        pytest.skip("torch.mps API unavailable")
     monkeypatch.setattr(mod, "_MPS_MAX_WORKSPACE_BYTES", 8000)
-    monkeypatch.setattr(torch.mps, "recommended_max_memory", lambda: 100_000)
-    monkeypatch.setattr(torch.mps, "driver_allocated_memory", lambda: 20_000)
+    monkeypatch.setattr(mps, "recommended_max_memory", lambda: 100_000, raising=False)
+    monkeypatch.setattr(mps, "driver_allocated_memory", lambda: 20_000, raising=False)
     assert mod._workspace_budget_bytes(torch.device("mps")) == 8000
 
     def unavailable():
         raise RuntimeError("unavailable")
 
-    monkeypatch.setattr(torch.mps, "recommended_max_memory", unavailable)
+    monkeypatch.setattr(mps, "recommended_max_memory", unavailable)
     assert mod._workspace_budget_bytes(torch.device("mps")) == 512 * 1024**2
 
 
