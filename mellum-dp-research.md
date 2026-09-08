@@ -5,13 +5,11 @@ Research snapshot: 2026-09-07 UTC. Branch `claude/mellum-dp-representation-r6sla
 (PR #980). Environment: torch 2.14.0 CPU-only, transformers 5.16.1, no GPU. No tracked file was
 modified by this research.
 
-Evidence tags: **VERIFIED** means the cited lines were read or the cited script was run during this
-research and its output is kept; **PLAUSIBLE** means derived or read but not executed end to end.
-Evidence pointers of the form `mellum-dp-research/...` name files in the companion directory committed
-next to this report: `mellum-dp-research/design-spec.md` is the full design specification,
-`mellum-dp-research/reports/` holds the per-phase reports, and `mellum-dp-research/scripts/<phase>/<lane>/`
-holds each script together with its `.out`, `.log` or `.json` output; when several files of one directory
-are cited together, the directory is written once. Repo paths are relative to
+Evidence tags: **VERIFIED** means the cited lines were read or the claim was established by a check that
+was run during this research; **PLAUSIBLE** means derived or read but not executed end to end.
+The experiment scripts, their outputs and the full design specification were recorded in this branch's
+history under a companion `mellum-dp-research` directory and were removed once the feature landed. The
+numbers quoted here come from those runs. Repo paths are relative to
 `/home/user/opaque`; Hugging Face (HF) paths are under `.venv/lib/python3.11/site-packages/transformers/`.
 Every magnitude that is not an accounting number, an allocator identity, a matrix-factorization (MF)
 filter factor or a hockey-stick computation comes from a random-init tiny model on CPU. No trained-checkpoint
@@ -28,9 +26,8 @@ RMSNorm, sliding and full attention, router, top-k, renormalisation, experts, LM
 is per-token or per-example up to floating point (including the microbatch-dependent attention-kernel
 selection of Section 7.7), and Opaque's `vmap(grad)` reproduces the HF per-example gradient to
 3.5e-7 relative L2 in fp32 across dense and grouped mixture-of-experts (MoE), both attention layer types,
-padding, gradient checkpointing and chunked cross-entropy (VERIFIED,
-`mellum-dp-research/scripts/phase1/divergence/exp1_vmap_vs_loop.py` / `exp1_log.txt`,
-`exp2_grouped_padding_ce.py` / `exp2_log.txt`).
+padding, gradient checkpointing and chunked cross-entropy (VERIFIED by a vmap-vs-HF-loop comparison at
+toy scale).
 
 The load vector `f(B)` is argmax-derived, so its gradient is zero almost everywhere, and the gradient
 of the batch aux loss is exactly the sum of per-example gradients of a surrogate in which `f(B)` is a
@@ -42,11 +39,7 @@ matrix mechanism as the gradient. Opaque's per-group allocator makes the joint r
 sensitivity-`1/nm` Gaussian (Section 2.7), so the accountant call is literally unchanged under both
 stacks, and the whole price is a `sqrt(1+rho)` inflation of the gradient noise: at the preset-regime budget
 share `rho = 0.02`, x1.010 gradient noise with epsilon unchanged (the allocator identity VERIFIED with the
-real allocator, `mellum-dp-research/scripts/phase2/refute-sensitivity/costtable.py`,
-`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.py` / `feas_check.out`,
-`mellum-dp-research/scripts/phase2/judge-dp/check.py`; the epsilon and noise rows VERIFIED with the real
-accountant, `mellum-dp-research/scripts/phase2/refute-sensitivity/costtable.py`,
-`mellum-dp-research/scripts/phase2/synthesizer/final_table.py`).
+real allocator; the epsilon and noise rows VERIFIED with the real accountant).
 
 The validation phase ran the mechanism end to end on a tiny random-init Mellum with the real Opaque
 primitives (`clipped_grad` with a direct-construction two-group `PerGroup`, `gaussian_noise`,
@@ -73,7 +66,10 @@ not be calibrated in this container; the design carries the deterministic bracke
 and uses the upper end as a conservative, valid multiplier where a number is needed (valid because the
 un-amplified `mf_gaussian(nm, strategy)` accountant is itself a legitimate, looser guarantee at `nm = 1.544`;
 the amplified `b_min_sep(...)` accountant, if it finishes, reports something at or below `epsilon = 3` there,
-and it was not evaluated in this container).
+and it was not evaluated in this container). The design of Sections 4 and 5 has since been implemented
+on this branch (`DPTrainer` exposes `router_load_release` and its companion `router_load_*` arguments, and
+the mechanism page `docs/mechanisms/dp-sgd/moe-load-balancing.md` documents it), so those sections describe
+shipped code rather than a proposal.
 
 ## 1. What "kinda works" meant: the exact divergences between the DP path and the HF path
 
@@ -83,16 +79,16 @@ floating-point differences. STRUCTURAL: different code path, same mathematics.
 | # | item | class | magnitude / status | evidence |
 |---|---|---|---|---|
 | 1 | Load-balancing aux: `f`, `P` pooled over batch and all layers, denominator `L * T_tot`, `sum_e f_e = k = 8` | BATCH-COUPLED, inseparable as written | the only inseparable term; `f` has zero gradient | `modeling_mellum.py:575-606, 692-700` (VERIFIED) |
-| 2 | CE reduction: HF token-weighted (`num_items_in_batch`); Opaque per-example token mean, equal example weights | BATCH-COUPLED, separable | 0.40 rel-L2 on the aggregate gradient of a 15/13/10/7-token toy batch; coincide iff equal lengths; representable with a public constant | `mellum-dp-research/reports/phase1-divergence.md`, section 4 (VERIFIED) |
-| 3 | HF Trainer with accumulation `G` optimises `CE_tokenmean(logical batch) + coef * sum_mb aux(mb)`: per-microbatch `f`, effective coefficient `G * coef` | BATCH-COUPLED (HF artefact) | rel-L2 0.0 against that formula, 0.365 / 0.479 against the microbatch-mean / logical-batch aux | `mellum-dp-research/scripts/phase1/critic/expA_coef1.py` / `expA_coef1.json` (VERIFIED); `trainer.py:1961-1963` |
-| 4 | HF's aux recomputes top-k from a bf16 softmax; the forward uses fp32 | NUMERICAL (HF-internal) | 0.03 to 1.7 % of tokens get a different aux top-k set; 4 to 7 % exact bf16 ties at k/k+1; `f` deviates at most 1e-3 in units of `k/E` | `mellum-dp-research/scripts/phase1/critic/expB_aux_topk_dtype.py` / `expB.json` (VERIFIED); `modeling_mellum.py:584` vs `:335` |
-| 5 | Experts kernel: HF `grouped_mm` (bf16 accumulate, not vmappable) vs `opaque_moe` (fp32 accumulate, custom vmap rules) | STRUCTURAL + NUMERICAL | fp32 3.5e-7; bf16 0.45 to 0.5 % with **zero** route flips, inside HF batched-vs-loop 2.7e-3 and below HF bf16-vs-fp32 1.1e-2 | `mellum-dp-research/scripts/phase1/divergence/exp1_log.txt`, `exp2_log.txt`; `mellum-dp-research/scripts/phase1/empirical/e1b_vmap.py` / `e1b_vmap_results.json` (VERIFIED) |
-| 6 | bf16 routing: tokens change their top-k set between a bf16 and an fp32 forward, invariant to router sharpness | NUMERICAL, precision not vmap | about 1 %/layer (top-2 toy); 46 to 54 changed top-8 sets per 1024 rows per layer for the stock bf16 router (39 to 56 with the fp32-logit router) (top-8 toy); flips give about 8x excess error on router/expert gradients, +0.2 pp on attention-only | `mellum-dp-research/scripts/phase1/empirical/e2_routes.py` / `e2_results.json`, `e1b_ref.py`, `e1b_vmap.py` / `e1b_results.json`; `mellum-dp-research/scripts/phase2/design-skeptic/a_fp32_router_flips.py` / `a_out.json` (VERIFIED toy) |
+| 2 | CE reduction: HF token-weighted (`num_items_in_batch`); Opaque per-example token mean, equal example weights | BATCH-COUPLED, separable | 0.40 rel-L2 on the aggregate gradient of a 15/13/10/7-token toy batch; coincide iff equal lengths; representable with a public constant | measured on the toy batch (VERIFIED) |
+| 3 | HF Trainer with accumulation `G` optimises `CE_tokenmean(logical batch) + coef * sum_mb aux(mb)`: per-microbatch `f`, effective coefficient `G * coef` | BATCH-COUPLED (HF artefact) | rel-L2 0.0 against that formula, 0.365 / 0.479 against the microbatch-mean / logical-batch aux | toy HF Trainer accumulation run (VERIFIED); `trainer.py:1961-1963` |
+| 4 | HF's aux recomputes top-k from a bf16 softmax; the forward uses fp32 | NUMERICAL (HF-internal) | 0.03 to 1.7 % of tokens get a different aux top-k set; 4 to 7 % exact bf16 ties at k/k+1; `f` deviates at most 1e-3 in units of `k/E` | bf16-vs-fp32 aux top-k count on the toy model (VERIFIED); `modeling_mellum.py:584` vs `:335` |
+| 5 | Experts kernel: HF `grouped_mm` (bf16 accumulate, not vmappable) vs `opaque_moe` (fp32 accumulate, custom vmap rules) | STRUCTURAL + NUMERICAL | fp32 3.5e-7; bf16 0.45 to 0.5 % with **zero** route flips, inside HF batched-vs-loop 2.7e-3 and below HF bf16-vs-fp32 1.1e-2 | vmap-vs-HF-loop comparison in fp32 and bf16 on the toy model (VERIFIED) |
+| 6 | bf16 routing: tokens change their top-k set between a bf16 and an fp32 forward, invariant to router sharpness | NUMERICAL, precision not vmap | about 1 %/layer (top-2 toy); 46 to 54 changed top-8 sets per 1024 rows per layer for the stock bf16 router (39 to 56 with the fp32-logit router) (top-8 toy); flips give about 8x excess error on router/expert gradients, +0.2 pp on attention-only | route-flip counts between bf16 and fp32 forwards, stock and fp32-logit routers (VERIFIED toy) |
 | 7 | Scaled dot-product attention (SDPA) `is_causal` fast path chosen from `physical_mask.all()` over the whole physical microbatch (PR #980) | NUMERICAL, microbatch-coupled | one padded example switches every mate to the materialised-mask kernel; exact in fp32; systematic bf16 dependence on batch composition | `runtime/masking.py:195-216` (VERIFIED) |
 | 8 | `DPTrainer` default `use_performance_kernels=False` selects dense `Opaque_MoE` everywhere incl. CUDA; grouped flag captured by the first class-level patch per process | STRUCTURAL (performance) | 8x routed expert FLOPs, about 5x forward FLOPs | `_training_arguments.py:436`, `_factory.py:319`, `_router.py:59-92` (VERIFIED) |
 | 9 | HF `output_router_logits=True` fails under vmap with a mask (`scatter_add_`) and bypasses chunked CE | STRUCTURAL | 403 MB of logits per example on the fallback | `modeling_mellum.py:596-598`, `cross_entropy.py:212-233` (VERIFIED) |
-| 10 | Fully masked query rows under left padding: Boolean SDPA gives zeros, additive masks give `mean(V)`; HF disagrees across its own backends | NUMERICAL, convention | never arises: both repo collators right-pad | `mellum-dp-research/reports/phase1-divergence.md`, section 3.5; `mellum-dp-research/reports/phase1-critic.md`, R10 (VERIFIED) |
-| 11 | CUDA autocast staging: HF `grouped_mm` upcasts to fp32 masters, Opaque casts to the autocast dtype | NUMERICAL | 5.5e-3 on CPU autocast, equal to HF's own backend gap; not applicable to the pure-bf16 presets | `mellum-dp-research/scripts/phase1/divergence/exp7_maskedrow_autocast.py`; `mellum-dp-research/reports/phase1-divergence.md`, section 1.5 (VERIFIED CPU, PLAUSIBLE CUDA) |
+| 10 | Fully masked query rows under left padding: Boolean SDPA gives zeros, additive masks give `mean(V)`; HF disagrees across its own backends | NUMERICAL, convention | never arises: both repo collators right-pad | masked-row behaviour checked per SDPA backend; both repo collators read (VERIFIED) |
+| 11 | CUDA autocast staging: HF `grouped_mm` upcasts to fp32 masters, Opaque casts to the autocast dtype | NUMERICAL | 5.5e-3 on CPU autocast, equal to HF's own backend gap; not applicable to the pure-bf16 presets | CPU autocast comparison against HF (VERIFIED CPU, PLAUSIBLE CUDA) |
 
 PR #978 installed the chunked linear cross-entropy path (no per-example 98304-vocabulary logits).
 PR #980 kept upstream RMSNorm (the Triton bf16 reduction order flipped routes), kept HF's router-loss
@@ -124,8 +120,7 @@ L_aux(B) = E * sum_e f_e(B) P_e(B),      loss += router_aux_loss_coef * L_aux(B)
 `m` is the attention mask the caller passed (float-cast, `:581`), `T_tot = sum_x T_x`; `total_rows`
 accumulates inside the layer loop (`:600`), so the denominator is `L T_tot` and `sum_e f_e = k = 8`. `f`
 and `P` are pooled over layers before the product. The coefficient
-0.001 is the pretraining value; Mellum2's own SFT used 1e-4 (technical report section 5.1.2, VERIFIED,
-`mellum-dp-research/reports/phase1-literature.md`, section C.3). Only `P` is differentiable (Switch Transformer eqs. (4) to (6)).
+0.001 is the pretraining value; Mellum2's own SFT used 1e-4 (technical report section 5.1.2, VERIFIED). Only `P` is differentiable (Switch Transformer eqs. (4) to (6)).
 
 ### 2.2 The separability identity
 
@@ -139,19 +134,16 @@ P_e(x) = (1/(L T_x)) sum_l sum_t m_{x,t} p^l_{x,t,e}.
 **Proof.** `f` is piecewise constant in `theta`, so `grad L_aux = E sum_e f_e(B) grad P_e(B)`, and
 `P_e(B) = sum_x (T_x/T_tot) P_e(x)` is linear in the per-example means. Substitute.
 
-VERIFIED: rel-L2 0.0 on an unpatched toy (`mellum-dp-research/scripts/phase1/divergence/exp1_log.txt`);
-2.4e-7 to 3.3e-7 on three batches including ragged lengths
-(`mellum-dp-research/scripts/phase1/empirical/e4_aux.py` / `e4_results.json`, float64); 2.2e-7 on the patched
-model with ragged lengths (`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.py` /
-`feas_check.out`, check F).
+VERIFIED: rel-L2 0.0 on an unpatched toy; 2.4e-7 to 3.3e-7 on three batches including ragged lengths
+(float64); 2.2e-7 on the patched model with ragged lengths (feasibility check F).
 
 ### 2.3 The surrogate gradient is proportional to imbalance
 
 `sum_e P_e(x) = 1`, so `grad S(x; f~) = E w_x sum_e (f~_e - k/E) grad P_e(x)`. The signal is the
-imbalance; a uniform `f~` gives an identically zero gradient (measured `||grad|| = 2.8e-8`, `mellum-dp-research/scripts/phase1/empirical/e4_results.json`). This
+imbalance; a uniform `f~` gives an identically zero gradient (measured `||grad|| = 2.8e-8`). This
 is exactly what the real objective does at balance, and it is why "the aux is negligible" (H4) held
 in the toy: 2.4e-4 of the CE gradient at balanced random init, 5x larger under induced imbalance
-(`mellum-dp-research/scripts/phase1/empirical/e4b_imbalanced.py` / `e4b_imbalanced_results.json`). "Negligible" is not a design assumption anywhere below.
+(VERIFIED at toy scale). "Negligible" is not a design assumption anywhere below.
 
 ### 2.4 Why the per-example aux is a different regulariser
 
@@ -159,7 +151,7 @@ in the toy: 2.4e-4 of the CE gradient at balanced random init, 5x larger under i
 file naturally routes to few experts; the batch loss allows that as long as other files compensate,
 the per-example loss pushes every document toward uniform expert use (an anti-specialisation
 pressure). Cosine to the batch aux gradient: 0.26 to 0.39 at balanced init, 0.76 to 0.79 under induced
-imbalance (`mellum-dp-research/scripts/phase1/empirical/e4_results.json`, `e4b_imbalanced_results.json`, VERIFIED toy). DeepSeek-V2/V3 and Wang et al. define the per-sequence form as a
+imbalance (VERIFIED toy). DeepSeek-V2/V3 and Wang et al. define the per-sequence form as a
 distinct, deliberately weak complementary loss. It is an opt-in, never labelled faithful.
 
 ### 2.5 Token weighting for ragged rows
@@ -174,11 +166,11 @@ held-out split). Then, by linearity in `w_x`,
 (1/B_bar) sum_{x in B_t} grad l_x = (1/B_bar) sum_x grad CE_x + alpha (T_tot/(B_bar T_bar)) grad L_aux^HF(B_t)|_{f = f~_t}
 ```
 
-exactly: cosine 1.000000000000, scale `T_tot/(B_bar T_bar)` to six digits (VERIFIED, `mellum-dp-research/scripts/phase2/reviser/checks.py` / `checks.out`).
+exactly: cosine 1.000000000000, scale `T_tot/(B_bar T_bar)` to six digits (VERIFIED by a numerical identity check).
 The direction is HF's for every batch. The scale factor has mean `T_bar_true/T_bar` and relative sd
 about 6 %, the same kind of factor Poisson's `|B_t|/B_bar` already puts on the whole gradient; it is 1
 under packing or with `T_bar = T_bar_true`. An equal-weight surrogate is 15.6 % rel-L2 off on a
-16/12/10/16 length spread (`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.out`, check F) and is rejected. CE keeps Opaque's equal-example-weight
+16/12/10/16 length spread (feasibility check F) and is rejected. CE keeps Opaque's equal-example-weight
 convention (item 2 of Section 1), pre-existing and stated on the mechanism page.
 
 ### 2.6 The load vector, centring, structural bounds
@@ -197,10 +189,9 @@ Section 4; a duplicate capture would make the clip fire at 2.035 `C_h` and bias 
 is needed, the `PerGroup` entry is a bound and never an active clip, the release is unbiased. Adversarial
 routing of every token to the same `k` experts through the real clipper attains 0.99999896 of the bound and
 never exceeds it, for any non-negative mask
-(`mellum-dp-research/scripts/phase2/refute-sensitivity/adversarial.py`, `edge.py`, `edge2.py`, `edge3.py`;
-`mellum-dp-research/reports/phase2-refute-sensitivity.md`, section 2.1, attacks A1 to A5, VERIFIED). Adjacency is add/remove (repo default); the divisor is the public expected batch size
+(bound attacks A1 to A5 through the real clipper, VERIFIED). Adjacency is add/remove (repo default); the divisor is the public expected batch size
 `B_bar`, never the realised batch. Replace-one: gradient bound `2 C_g`; tight load bound
-`(T_max/T_bar) sqrt(2 k L)` (pooled `sqrt(2k) = 4.000`, attained, VERIFIED, attack A4 of the same script). The general
+`(T_max/T_bar) sqrt(2 k L)` (pooled `sqrt(2k) = 4.000`, attained, VERIFIED, attack A4). The general
 replace-one form of the per-layer centred-load bound is `(T_max/T_bar) sqrt(2 min(k, E - k) L)`, equal to
 `sqrt(2 k L)` for `E >= 2k` (attained by disjoint expert sets); `sqrt(2 k L (1 - k/E))` is not a bound (5.29 against
 5.66 attained at `E = 64, k = 8, L = 2`; Section 6.1.1, finding 8, check K3). Centring buys the 6.5 %
@@ -223,7 +214,7 @@ mechanism is a sensitivity-1 Gaussian at multiplier `nm` iff
 precedent Andrew et al. 2021 Thm 1: a clipped-count release and the gradient release on the same
 sample are pre- and post-processing of one query with joint sensitivity.) The naive "`nm C_g` on the
 gradient, `nm C_h` on the load" gives `2/nm^2`: it is `gaussian(nm/sqrt(2))`, an under-noising
-(`mellum-dp-research/reports/phase1-math.md`, section 4(b)). Opaque's allocator implements `sigma_i = nm sqrt(C_i sum_j C_j)`
+(by the constraint above). Opaque's allocator implements `sigma_i = nm sqrt(C_i sum_j C_j)`
 (`noise_allocation.py:103-110`, VERIFIED), which satisfies the constraint with equality. With
 `rho = C_h/C_g`:
 
@@ -232,10 +223,7 @@ sigma_g = nm C_g sqrt(1 + rho) / B_bar        (every gradient leaf)
 sigma_h = nm C_h sqrt(1 + 1/rho) / B_bar      (each of the L*E probe entries)
 ```
 
-The identity prints 1.000000 at six `rho` with the real allocator
-(`mellum-dp-research/scripts/phase2/refute-sensitivity/costtable.py`,
-`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.py` / `feas_check.out`,
-`mellum-dp-research/scripts/phase2/judge-dp/check.py`, VERIFIED). The
+The identity prints 1.000000 at six `rho` with the real allocator (VERIFIED). The
 gradient pays `sqrt(1+rho)`; the accountant sees `gaussian(nm)`.
 
 ### 2.8 Subsampling and adaptivity
@@ -243,7 +231,7 @@ gradient pays `sqrt(1+rho)`; the accountant sees `gaussian(nm)`.
 Both halves are computed on the same sampled batch, so the subsampling applies to the one joint
 mechanism. Poisson subsampling of the joint mechanism is Feldman and Shenfeld Lemma 3.2 / Thm 3.3 as
 implemented in `src/amplification/poisson.rs:15-42` (the code comment cites Thm 3.3 and Algorithms 8 and 9;
-Lemma 3.2 is the reading of `mellum-dp-research/reports/phase1-critic.md`, R6). Under b-min-sep the joint
+Lemma 3.2 is this research's own reading of the paper). Under b-min-sep the joint
 whitened stream goes through the unchanged `b_min_sep(mf_gaussian(nm, strategy))` accountant (Section 2.9),
 whose amplification theorem (Dong and Ganesh 2026, Section 9) was not re-fetched from the primary text. The
 Poisson lemma needs each record's inclusion coin independent of every other record's; Section 7.1 shows
@@ -251,8 +239,7 @@ where the trainer violates it today. `f~_t` is a function of previous outputs, t
 Zhu, Dong, Wang Thm 10 charges nothing for it, so lagged and filtered use is free. The opt-in
 independent forward-only draw (DP-SGD only) is two mechanisms with fresh coins and noise composed
 adaptively, `poisson(gaussian(nm), q) * T | poisson(gaussian(c nm), q2) * (T/m)`, `epsilon = 3.003` at
-`c = 2, m = 4` (VERIFIED, `mellum-dp-research/scripts/phase2/refute-sensitivity/costtable.py`,
-`mellum-dp-research/scripts/phase2/synthesizer/final_table.py`). Its sampler key is rank-domain-separated,
+`c = 2, m = 4` (VERIFIED with the real accountant). Its sampler key is rank-domain-separated,
 its noise key is shared across ranks and applied after the all-reduce, and both keys are serialised in the
 sidecar and re-folded by rank on resume (the five conditions stated in the privacy statement of Section 4).
 An empty Poisson batch releases `0 + noise` on the probe and keeps the MF column index contiguous.
@@ -260,13 +247,10 @@ An empty Poisson batch releases `0 + noise` on the probe and keeps the MF column
 ### 2.9 DP-FTRL
 
 The probe is a second `PerGroup` group of the same clipped stream. The constant-max_norm latch accepts
-the constant two-group `PerGroup` (`_engine.py:473-517`;
-`mellum-dp-research/scripts/phase1/primitives/e2_graft_group.py` / `e2_graft_group.out`,
-`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.py` / `feas_check.out`, VERIFIED);
+the constant two-group `PerGroup` (`_engine.py:473-517`; VERIFIED with the real primitives);
 `base_stddev = per_group_noise_stddev(max_norm, nm)`; the correlated noise `C^{-1} Z` is applied
 leaf-wise, probe included; realised per-step sigma is `base * ||row_t(C^{-1})||`, 1.431 for
-`band_mf_strategy(bands=64, momentum=0.95)`, stationary from `t ~ 7` (VERIFIED, `mellum-dp-research/scripts/phase2/judge-impl/mf_rownorm.py`,
-`mellum-dp-research/scripts/phase2/synthesizer/final_table.py`).
+`band_mf_strategy(bands=64, momentum=0.95)`, stationary from `t ~ 7` (VERIFIED from the instantiated strategy's inverse row norms).
 Correctness is Denisov et al. Thm 2.1 on the per-group-whitened stream: the participation-pattern
 sensitivity is homogeneous of degree 1 in the row bound, so for a shared pattern `pi`,
 `sum_g ||C(G_g - H_g)||_F^2/sigma_g^2 <= s(pi)^2/nm^2`, and the sup over `pi` is `sens(C)^2/nm^2`,
@@ -292,16 +276,15 @@ rank-identical under DDP):
 7. D_{t+1} = max_e |d~_e|/(k/E); D^l likewise from the per-layer EMA     (public monitors)
 ```
 
-The per-layer carrier costs nothing for the pooled estimate (0.04149 either way, VERIFIED,
-`mellum-dp-research/scripts/phase2/reviser/checks.out`, `mellum-dp-research/scripts/phase2/refute-sensitivity/filters.py`) and gives
+The per-layer carrier costs nothing for the pooled estimate (0.04149 either way, VERIFIED by closed form and Monte Carlo) and gives
 per-layer entries at `x sqrt(L) = x5.29` per-entry noise for diagnostics. The projection removes the
 pure-noise mean component. Bias correction: the uncorrected EMA from `m_0 = 0` has gain 0.634 /
-0.866 / 0.951 / 0.990 at `t = 100/200/300/460` (VERIFIED, `mellum-dp-research/scripts/phase2/reviser/checks.out`),
+0.866 / 0.951 / 0.990 at `t = 100/200/300/460` (VERIFIED numerically),
 a surrogate 37 % too weak early on; the corrected estimate is honestly noisier at the start (corrected std
 0.1032 at `t = 100` against the stationary 0.0710), which the dead zone accounts for. The dead
 zone exists because plain James-Stein zeroes only when `||d~||^2 < (E-1) s^2`, which pure noise exceeds
 about 48 % of the time; with `c = 2` a pure-noise step passes with probability 4.2e-6 (exact chi-square
-tail, 63 dof), 0.07 expected false passes over 15 625 steps (VERIFIED, `mellum-dp-research/scripts/phase2/reviser/checks.py` / `checks.out`). That
+tail, 63 dof), 0.07 expected false passes over 15 625 steps (VERIFIED numerically). That
 false-pass rate `P(chi^2_{E-1} > 2E)` is `E`-dependent: 4.2e-6 at `E = 64` but about 5e-2 at `E = 8`
 (Section 6.1.1, finding 2), and with bias-corrected `s_t` the first few steps pass more easily. In signal units the
 dead zone engages below a per-coordinate RMS imbalance `delta < sqrt(c) s/(k/E)`: 0.033 (DP-SGD) and
@@ -318,10 +301,9 @@ clipping, noise, accountant or MF-latch change.
 - **fp32 router as a flip fix.** REFUTED at toy scale. Flips originate in the bf16 hidden states
   entering the router (fixed relative resolution), not in the logits' rounding: the fp32-logit router
   changes 51/56 and 39/43 top-8 sets per 1024 rows per layer where the stock bf16 router changes
-  46/54 and 46/47 (`mellum-dp-research/scripts/phase2/design-skeptic/a_fp32_router_flips.py` / `a_out.json`,
-  reproduced bit-for-bit in `mellum-dp-research/reports/phase2-judge-utility.md`, section 1.4, VERIFIED). The pair that
+  46/54 and 46/47 (flip counts reproduced bit-for-bit by an independent re-run, VERIFIED). The pair that
   matters for (d), Opaque bf16 `vmap(grad)` vs HF eager at equal precision, has 0 flips and 0.0 rel-L2
-  on the patched model (`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.out`, check B). The fp32 router ships only as an opt-in, documented as
+  on the patched model (feasibility check B). The fp32 router ships only as an opt-in, documented as
   pretraining-faithful (Mellum2 pretrained with an FP32 router) and tie-robust, cost 0.30 % of routed
   expert MACs, default off because adapters served through stock HF run bf16 routes.
 - **Per-example aux as a faithful stand-in.** REFUTED (Section 2.4).
@@ -336,8 +318,7 @@ clipping, noise, accountant or MF-latch change.
 - **"A per-layer release costs x5.29 relative noise at equal privacy."** REFUTED for the release: at
   the same `rho`, `lambda_L = rho C_g/sqrt(7L)` is `sqrt(L)` smaller and the layer mean divides the
   noise by exactly `sqrt(L)`; pooled per-entry noise 0.04150 vs 0.04152 Monte Carlo, closed forms equal
-  (VERIFIED, `mellum-dp-research/scripts/phase2/reviser/checks.out`,
-  `mellum-dp-research/scripts/phase2/refute-sensitivity/filters.py`). The x5.29 applies to per-layer entries used on their own.
+  (VERIFIED). The x5.29 applies to per-layer entries used on their own.
 - **Randomised response on `sign(d)`**: per-step `epsilon = 64 ln((1-p)/p) = 12.8` at `p = 0.45`,
   dominated. **Independent draw with a 4x batch** (`q2 = 4q, c = 1`): `epsilon 5.30`. **Amortised
   same-batch release every `m` steps**: the same budget in bursts. **Public-data `f~`** (Davody et al.;
@@ -346,7 +327,7 @@ clipping, noise, accountant or MF-latch change.
   the checkpoint's router has no bias tensor, so it is an architecture extension with a serving
   patch; out.
 - **Count-vector sensitivity `L T_x k`**: loose by `sqrt(k)` (top-k assigns distinct experts), so the
-  stated 25 % relative noise was 8.8 % (`mellum-dp-research/reports/phase1-critic.md`, R7); superseded by the structural fraction bound.
+  stated 25 % relative noise was 8.8 % (corrected during review); superseded by the structural fraction bound.
 - **"KStack is public, so the calibration pass is free."** REJECTED: a non-DP pass over protected
   rows is a query on the protected set; `C_g` and `T_bar` are calibrated on a held-out shard disjoint
   from the training rows, or accounted as one quantile release.
@@ -356,12 +337,10 @@ clipping, noise, accountant or MF-latch change.
 - **H3** (route flips explain residual DP-vs-oracle drift): undecided as posed, because the bf16-vs-fp32
   pair and the DP-vs-HF pair have different flip rates and only a precision-matched oracle can decide it;
   decided pieces: bf16-vs-fp32 flips dominate the excess error on router and expert gradients
-  (12.9 % / 11.1 % to 1.7 % / 1.5 % when pinned, VERIFIED toy,
-  `mellum-dp-research/scripts/phase1/empirical/e1b_results.json`); the DP-vs-HF pair at equal precision has
+  (12.9 % / 11.1 % to 1.7 % / 1.5 % when pinned, VERIFIED toy); the DP-vs-HF pair at equal precision has
   no flips; 28-layer behaviour is acceptance test A1. **H5** (per-example expert sparsity at `T = 1024`):
-  open; the only measurement (`mellum-dp-research/scripts/phase1/empirical/e5_load.py` / `e5_results.json`)
-  used a 6-token vocabulary, which bounds the number of distinct router inputs and so cannot decide the
-  question (`mellum-dp-research/reports/phase1-critic.md`, R8); with frozen experts no expert gradient
+  open; the only measurement used a 6-token vocabulary, which bounds the number of distinct router inputs
+  and so cannot decide the question; with frozen experts no expert gradient
   exists, so H5 matters only for the experts-trainable variant.
 
 ## 4. The design (condensed)
@@ -392,15 +371,12 @@ the loss above; (4) per-group clip: gradient groups by `min(1, C_g/||g_x||)`, pr
 divide by `B_bar` (`normalize_by=B_bar`, so the stored per-group bounds are `C_g/B_bar` and `C_h/B_bar`);
 (5) noise by `gaussian_noise` / `mf_gaussian_noise` with the sigmas of Section 2.7;
 (6) release the noised pytree; (7) post-process the probe leaf (Section 2.10) and zero it in place so
-the optimizer's update for `z` is exactly 0 (VERIFIED for AdamW-BC, AdamW, SGD-momentum,
-`mellum-dp-research/scripts/phase2/refute-composition/probe_optimizer.py` / `probe_optimizer.out`);
+the optimizer's update for `z` is exactly 0 (VERIFIED for AdamW-BC, AdamW, SGD-momentum with the real optimizers);
 (8) accountant unchanged.
 
 **THE cost table.** Preset regime `B_bar = 256, k = 8, E = 64, C_g = 0.9, L = 28, q = 256/5e5,
 T = 15625, delta = 1e-6, T_bar = T_max`; every `rho` row reproduced with the real
-`per_group_noise_stddev` and the real accountant
-(`mellum-dp-research/scripts/phase2/refute-sensitivity/costtable.py`,
-`mellum-dp-research/scripts/phase2/synthesizer/final_table.py`); baseline
+`per_group_noise_stddev` and the real accountant; baseline
 `poisson(gaussian(0.5622), q)*T` gives `epsilon = 3.0004` (VERIFIED). `r1 = nm Delta_h sqrt(1+1/rho)/(B_bar k/E)`
 is the single-release per-entry noise on the pooled `d_hat` in units of `k/E = 0.125` (multiply by
 `T_max/T_bar` if `T_bar < T_max`). Filter
@@ -410,7 +386,7 @@ DP-SGD/Poisson `epsilon = 3` calibration; PLAUSIBLE as a lower bound for `nm_MF`
 64-banded strategy composes about `T/64` rounds at participation rate about `64 q`, which costs more epsilon at
 equal `nm` than `T` Poisson rounds at rate `q`) and `nm = 1.544`, the
 deterministic un-amplified band-MF bound at `epsilon = 3` (`mf_gaussian(nm, band_mf(64, 0.95),
-n_steps=15625, min_sep=64)`, `strategy.sensitivity = 1.0000`, VERIFIED, `mellum-dp-research/scripts/phase2/refute-feasibility/nm_bracket.py`). Amplification
+n_steps=15625, min_sep=64)`, `strategy.sensitivity = 1.0000`, VERIFIED with the real accountant). Amplification
 cannot require a larger multiplier than the un-amplified bound (PLAUSIBLE only insofar as the Monte
 Carlo accountant's upper bound could in principle be looser than the deterministic one), so
 `0.5622 <= nm_MF <= 1.544`.
@@ -445,9 +421,7 @@ Reading: at the worst admissible `nm_MF` the band-MF smoothed error (2.28 %) equ
 (2.35 %); the 2.8x filter advantage of anti-correlated noise pays for the un-amplified multiplier.
 With per-coordinate RMS imbalance `delta k/E`, the relative aux-gradient error at the default row is
 about `0.0083/delta` to `0.0228/delta` (band-MF) or `0.0235/delta` (DP-SGD): 8 to 24 % at
-`delta = 0.1`, 3 to 8 % at `delta = 0.3` (VERIFIED toy: 0.231 / 0.078,
-`mellum-dp-research/scripts/phase2/refute-sensitivity/filters.py`;
-`mellum-dp-research/reports/phase2-refute-sensitivity.md`, section 2.8). Below the dead zone the term is
+`delta = 0.1`, 3 to 8 % at `delta = 0.3` (VERIFIED toy: 0.231 / 0.078). Below the dead zone the term is
 exactly zero, where the true objective's gradient is negligible too.
 
 **Router precision.** Stock HF precision by default; fp32-logit router opt-in as a removable
@@ -460,8 +434,7 @@ return_aux=True)` pass over about 256 held-out examples under the preset partiti
 of `aux.grad_norms`, the bias-plus-noise curve, a 40 to 60 % clip rate in the first 100 steps; the
 preset pins the measured value (0.9 today, `train_dpftrl.py:611-612`). LoRA r = 16 on q/k/v/o is
 `d = 8 257 536` parameters, per-step noise norm `nm C_g sqrt(d)/B_bar = 5.68 = 6.3 C_g`, so `C_g` acts
-mostly as a learning-rate scale. The aux term moves the per-example norm < 0.1 % for `alpha <= 1e-3` (VERIFIED toy,
-`mellum-dp-research/scripts/phase1/empirical/e3_norms.py` / `e3_results.json`); at `alpha = 1`, the prototype's
+mostly as a learning-rate scale. The aux term moves the per-example norm < 0.1 % for `alpha <= 1e-3` (VERIFIED toy); at `alpha = 1`, the prototype's
 lab value chosen to make its arms distinguishable at toy scale, the median per-example norm rose x1.24 with the
 clip rate up to 60 % in the first steps under MF, so `C_g` is `alpha`-independent only for `alpha << 1`
 (Section 6.1.1, finding 4). Mode
@@ -605,11 +578,9 @@ How the statistics reach the loss: `MellumModel.forward` is `@capture_outputs` w
 `OutputRecorder(MellumTopKRouter, index=0)` (`modeling_mellum.py:431-433, 475`); hooks append only
 while a `ContextVar` collector is active. Under non-reentrant checkpointing the hook fires `2L` times,
 the recorder returns exactly `L` tensors, and every gradient leaf including the probe equals the
-non-checkpointed run to rel-L2 0.0 (VERIFIED at toy scale,
-`mellum-dp-research/scripts/phase2/refute-composition/t5_recorder_ckpt.py` / `t5_recorder_ckpt.out`,
-`mellum-dp-research/scripts/phase2/refute-feasibility/feas_check.py` / `feas_check.out`, checks A to E).
+non-checkpointed run to rel-L2 0.0 (VERIFIED at toy scale, feasibility checks A to E).
 Microbatch chunks are separate vmapped calls with separate collectors (chunk invariance 4.7e-8, VERIFIED,
-`feas_check.out`, check C). `torch.compile`
+feasibility check C). `torch.compile`
 remains PLAUSIBLE (T18).
 
 **`opaque-transformers`.** `api/transformers/moe_load.py` (new, trainer-independent): `attach_probe`
@@ -670,24 +641,24 @@ resume-key bug; without (a) and (b) `f~` diverges across ranks.
 Random-init tiny Mellum models on CPU (1 to 2 layers, 8 to 64 experts), torch 2.14 CPU. The consolidated
 results table from the prototype, verifier and auditor follows:
 
-All rows: tiny random-init Mellum on CPU (E = 8, k = 2, L = 2, hidden 64, vocab 128, `T_max = 32`, ragged lengths in [16, 32], `B_bar = 32`, `N = 1024`), real Opaque primitives (`clipped_grad` with a direct-construction `PerGroup`, `gaussian_noise`, `mf_gaussian_noise`, `PoissonSampler`, `BMinSepSampler`, the real accountant), `nm = 1.082` calibrated to `epsilon = 3` at `delta = 1e-5` for 300 steps. Scripts and outputs under `mellum-dp-research/scripts/phase3/`; the auditor re-ran the unmodified prototype (exit 0, 3 min 23 s; deterministic to every printed digit, only timing leaves differ), compared it line by line against the design (`mellum-dp-research/reports/phase3-audit.md`), and re-ran every verifier script.
+All rows: tiny random-init Mellum on CPU (E = 8, k = 2, L = 2, hidden 64, vocab 128, `T_max = 32`, ragged lengths in [16, 32], `B_bar = 32`, `N = 1024`), real Opaque primitives (`clipped_grad` with a direct-construction `PerGroup`, `gaussian_noise`, `mf_gaussian_noise`, `PoissonSampler`, `BMinSepSampler`, the real accountant), `nm = 1.082` calibrated to `epsilon = 3` at `delta = 1e-5` for 300 steps. The auditor re-ran the unmodified prototype (exit 0, 3 min 23 s; deterministic to every printed digit, only timing leaves differ), compared it line by line against the design, and re-ran every verifier script.
 
-| check | what was tested | result | key numbers | artefact |
-|---|---|---|---|---|
-| V1 | separability identity on the patched model with ragged lengths: batch mean of per-example surrogate gradients at `f~ = f(B)` vs HF's own `load_balancing_loss_func` gradient | PASS | cosine 1.000010 (fp32 rounding), norm ratio 0.748046 vs predicted `T_tot/(B_bar T_bar)` = 0.748047; out-of-place aux vs HF's function rel-L2 0.0 | `prototype/prototype_load_release.py`, `prototype_output.txt` |
-| V2 | pre-noise probe leaf equals `(lambda/B_bar) sum_x w_x d^{(L,E)}(x)`; structural bound never clipped, including the adversarial all-same-route example | PASS | max abs error 3.7e-9; adversarial norm 1.732051 = `Delta_L`; probe group norm max 1.944646 = `lambda Delta_L` vs `C_h` = 1.946591; examples clipped on the probe group: 0 | same |
-| V3 | Mahalanobis identity through the real `per_group_noise_stddev` and `gaussian_noise` | PASS | `(C_g/B)^2/sigma_g^2 + (C_h/B)^2/sigma_h^2 = 1/nm^2`, ratio 1.000000000000; gradient-noise inflation 1.157731 = `sqrt(1 + 0.34)` | same |
-| V4 | accountant invariance under both stacks | PASS | `poisson(gaussian(1.082), 1/32) * 300`: `epsilon = 2.998599` with and without the probe; `mf_gaussian(1.082, band_mf(4, 0.95), n_steps=50)`: 3.996299 both; neither factory takes a pytree or `PerGroup` | same |
-| V5 | 300-step DP-SGD, router and attention trainable, induced imbalance `delta_0 = 0.317`, arms OFF / ORACLE (exact non-private `f(B_t)`) / DP at `rho* = 0.34` / DP at `rho = 0.02`, plus noise-free ablations | PASS (6 of 6 criteria, one borderline) | held-out imbalance: OFF 0.317 to 0.420, ORACLE to 0.075, DP `rho*` to 0.165 (74 % of the ORACLE's reduction), DP `rho = 0.02` to 0.314 with the dead zone engaged on 86.7 % of steps (the noise floor above the imbalance, as the design's own formula predicts at `B_bar = 32`); noise-free DP ablation reaches 0.052 vs noise-free ORACLE 0.054 (lag and EMA cost nothing); cosine of the DP surrogate gradient to the population aux direction while active 0.825 (0.774 with a 64-example reference); realised pooled probe noise / predicted 0.999; probe never clipped; `z` stays 0; held-out CE identical across arms (4.804) | same, `prototype_results.json` (summary rows) |
-| V6 | 50 steps under `mf_gaussian_noise(band_mf_strategy(bands=4, momentum=0.95))` with `BMinSepSampler` | PASS (two undeclared deviations found by the auditor, both privacy-neutral) | constant-max_norm latch held for all 50 steps (`_validate_constant_max_norm` runs on every call and raises on change; the prototype hard-coded the flag, the auditor's patched copy asserts it explicitly); realised `noise_stddev` per group vs `base * row_l2(t)`: max rel error 3.4e-16; empirical probe-noise RMS / predicted 0.993; EMA-filtered factor 0.1488 vs 0.2146 under DP-SGD (x0.69 at bands 4); imbalance 0.317 to 0.161. The prototype passed `sampling_prob = q` instead of the paper's per-iteration `p = q/(1 - q(b - 1))` that the trainer derives, so its expected batch was 29.3 (observed 29.9) against `normalize_by = 32`; the auditor's one-line patch gives mean batch 31.98 with every identity unchanged (imbalance 0.317 to 0.170) | `prototype/`, `auditor/patched.diff`, `auditor/mf_arm_patched.out` |
-| V7 | gradient checkpointing on vs off (opaque HF checkpoint glue) | PASS | probe leaf rel-L2 0.0; max over all clipped leaves 0.0 | same |
-| K1a | DDP + checkpoint resume: does a restored sampler on rank `r != 0` re-derive a rank-specific key? (code reading plus a sampler-level reproduction for `PoissonSampler` and `BMinSepSampler`) | CONFIRMED (bug) | restored rank-1 stream key equals rank 0's; 20 of 20 post-resume inclusion masks identical across ranks (0 of 20 before the checkpoint); co-inclusion rate of the same local index 0.0506 vs `q^2 = 0.0025` if independent; single-process resume exact (auditor: applies to `DPTrainer`, the SFT and DPO trainers and every configured sampler, only under `world_size > 1` with a checkpoint resume and `ignore_data_skip=False`; not to single-process resume, DDP without resume, `ignore_data_skip=True`, or the example loops) | `verifier/k1_sampler_resume.py`, `.out`; `auditor/verifier_rerun.txt` |
-| K1b | privacy effect of the shared coin, own hockey-stick integration at `sigma = 0.5622, q = 5.12e-4` | CONFIRMED, under-stated by the design | per-step `delta(epsilon = 3)`: 3.1597e-11 independent vs 2.7587e-5 shared coin with an aligned partner (ratio 8.7e5); per-step `epsilon` at the accountant's `delta` 10.5 instead of 3; rigorous whole-run lower bound `epsilon(1e-6) >= 6.0`; with `W` ranks the partner mass can be `u = W - 1`, and the auditor's sweep shows the divergence saturates at the cap `q delta_G(3) = 5.75e-5` from `u >= 3` with `epsilon_1(1e-6)` rising only to 6.13, so the `u = 1` figures are within 2x (delta) and 0.12 (epsilon) of the worst case for any world size | `verifier/k1_hockey_stick.py`, `k1_run_bounds.py`, `.out`; `auditor/k1_u_sweep.py` |
-| K2a | accountant invariance in `_build_mechanism` | CONFIRMED | `num_groups` consumed only inside the adaptive-clipping closure (`_dp_trainer.py:4329, 4332-4340`); baseline `epsilon = 3.0004`; naive per-group `nm C_i` would be 11.84 | `verifier/k2_accounting.py`, `.out` |
-| K2b | allocator identity at six `rho` | CONFIRMED | `sigma_g/(nm C_g) = sqrt(1 + rho)` and the Mahalanobis sum `= 1/nm^2` to six digits | same |
-| K2c | "pay in epsilon" column | REPRODUCED, shown conservative | composed-inner call reproduces 3.234 / 3.703 (`rho` = 0.02 / 0.1) exactly; the mathematically identical joint Gaussian `poisson(gaussian(nm_eff), q) * T`, `nm_eff = nm sqrt((1 + rho)/(1 + 2 rho))`, gives 3.126 / 3.590: the accountant's generic-inner Poisson path is about 0.11 looser than its exact-Gaussian path; the column is informational only | `verifier/k2_composed_inner_v2.py`, `.out` |
-| K3 | structural bound `||d^{(L,E)}(x)|| <= sqrt(k L (1 - k/E))` (random, adversarial, exhaustive at E = 8) and the replace-one bound | CONFIRMED | equality attained in every cell; `T_x = 0` gives 0; replace-one per-layer bound is `sqrt(2 min(k, E - k) L)` = `sqrt(2 k L)` for `E >= 2k` (attained by disjoint expert sets); `sqrt(2 k L (1 - k/E))` is violated (5.29 vs 5.66 attained at E = 64, k = 8, L = 2) | `verifier/k3_structural_bound.py`, `.out` |
-| K4 | value-neutral surrogate `CE + alpha (S - sg[S])` | CONFIRMED | value bit-identical to `CE` (`torch.equal`); gradient bit-identical to `grad(CE + alpha S)` under `torch.func.grad` and under `vmap`, fp32 and fp64 | `verifier/k4_value_neutral.py`, `.out` |
+| check | what was tested | result | key numbers |
+|---|---|---|---|
+| V1 | separability identity on the patched model with ragged lengths: batch mean of per-example surrogate gradients at `f~ = f(B)` vs HF's own `load_balancing_loss_func` gradient | PASS | cosine 1.000010 (fp32 rounding), norm ratio 0.748046 vs predicted `T_tot/(B_bar T_bar)` = 0.748047; out-of-place aux vs HF's function rel-L2 0.0 |
+| V2 | pre-noise probe leaf equals `(lambda/B_bar) sum_x w_x d^{(L,E)}(x)`; structural bound never clipped, including the adversarial all-same-route example | PASS | max abs error 3.7e-9; adversarial norm 1.732051 = `Delta_L`; probe group norm max 1.944646 = `lambda Delta_L` vs `C_h` = 1.946591; examples clipped on the probe group: 0 |
+| V3 | Mahalanobis identity through the real `per_group_noise_stddev` and `gaussian_noise` | PASS | `(C_g/B)^2/sigma_g^2 + (C_h/B)^2/sigma_h^2 = 1/nm^2`, ratio 1.000000000000; gradient-noise inflation 1.157731 = `sqrt(1 + 0.34)` |
+| V4 | accountant invariance under both stacks | PASS | `poisson(gaussian(1.082), 1/32) * 300`: `epsilon = 2.998599` with and without the probe; `mf_gaussian(1.082, band_mf(4, 0.95), n_steps=50)`: 3.996299 both; neither factory takes a pytree or `PerGroup` |
+| V5 | 300-step DP-SGD, router and attention trainable, induced imbalance `delta_0 = 0.317`, arms OFF / ORACLE (exact non-private `f(B_t)`) / DP at `rho* = 0.34` / DP at `rho = 0.02`, plus noise-free ablations | PASS (6 of 6 criteria, one borderline) | held-out imbalance: OFF 0.317 to 0.420, ORACLE to 0.075, DP `rho*` to 0.165 (74 % of the ORACLE's reduction), DP `rho = 0.02` to 0.314 with the dead zone engaged on 86.7 % of steps (the noise floor above the imbalance, as the design's own formula predicts at `B_bar = 32`); noise-free DP ablation reaches 0.052 vs noise-free ORACLE 0.054 (lag and EMA cost nothing); cosine of the DP surrogate gradient to the population aux direction while active 0.825 (0.774 with a 64-example reference); realised pooled probe noise / predicted 0.999; probe never clipped; `z` stays 0; held-out CE identical across arms (4.804) |
+| V6 | 50 steps under `mf_gaussian_noise(band_mf_strategy(bands=4, momentum=0.95))` with `BMinSepSampler` | PASS (two undeclared deviations found by the auditor, both privacy-neutral) | constant-max_norm latch held for all 50 steps (`_validate_constant_max_norm` runs on every call and raises on change; the prototype hard-coded the flag, the auditor's patched copy asserts it explicitly); realised `noise_stddev` per group vs `base * row_l2(t)`: max rel error 3.4e-16; empirical probe-noise RMS / predicted 0.993; EMA-filtered factor 0.1488 vs 0.2146 under DP-SGD (x0.69 at bands 4); imbalance 0.317 to 0.161. The prototype passed `sampling_prob = q` instead of the paper's per-iteration `p = q/(1 - q(b - 1))` that the trainer derives, so its expected batch was 29.3 (observed 29.9) against `normalize_by = 32`; the auditor's one-line patch gives mean batch 31.98 with every identity unchanged (imbalance 0.317 to 0.170) |
+| V7 | gradient checkpointing on vs off (opaque HF checkpoint glue) | PASS | probe leaf rel-L2 0.0; max over all clipped leaves 0.0 |
+| K1a | DDP + checkpoint resume: does a restored sampler on rank `r != 0` re-derive a rank-specific key? (code reading plus a sampler-level reproduction for `PoissonSampler` and `BMinSepSampler`) | CONFIRMED (bug) | restored rank-1 stream key equals rank 0's; 20 of 20 post-resume inclusion masks identical across ranks (0 of 20 before the checkpoint); co-inclusion rate of the same local index 0.0506 vs `q^2 = 0.0025` if independent; single-process resume exact (auditor: applies to `DPTrainer`, the SFT and DPO trainers and every configured sampler, only under `world_size > 1` with a checkpoint resume and `ignore_data_skip=False`; not to single-process resume, DDP without resume, `ignore_data_skip=True`, or the example loops) |
+| K1b | privacy effect of the shared coin, own hockey-stick integration at `sigma = 0.5622, q = 5.12e-4` | CONFIRMED, under-stated by the design | per-step `delta(epsilon = 3)`: 3.1597e-11 independent vs 2.7587e-5 shared coin with an aligned partner (ratio 8.7e5); per-step `epsilon` at the accountant's `delta` 10.5 instead of 3; rigorous whole-run lower bound `epsilon(1e-6) >= 6.0`; with `W` ranks the partner mass can be `u = W - 1`, and the auditor's sweep shows the divergence saturates at the cap `q delta_G(3) = 5.75e-5` from `u >= 3` with `epsilon_1(1e-6)` rising only to 6.13, so the `u = 1` figures are within 2x (delta) and 0.12 (epsilon) of the worst case for any world size |
+| K2a | accountant invariance in `_build_mechanism` | CONFIRMED | `num_groups` consumed only inside the adaptive-clipping closure (`_dp_trainer.py:4329, 4332-4340`); baseline `epsilon = 3.0004`; naive per-group `nm C_i` would be 11.84 |
+| K2b | allocator identity at six `rho` | CONFIRMED | `sigma_g/(nm C_g) = sqrt(1 + rho)` and the Mahalanobis sum `= 1/nm^2` to six digits |
+| K2c | "pay in epsilon" column | REPRODUCED, shown conservative | composed-inner call reproduces 3.234 / 3.703 (`rho` = 0.02 / 0.1) exactly; the mathematically identical joint Gaussian `poisson(gaussian(nm_eff), q) * T`, `nm_eff = nm sqrt((1 + rho)/(1 + 2 rho))`, gives 3.126 / 3.590: the accountant's generic-inner Poisson path is about 0.11 looser than its exact-Gaussian path; the column is informational only |
+| K3 | structural bound `||d^{(L,E)}(x)|| <= sqrt(k L (1 - k/E))` (random, adversarial, exhaustive at E = 8) and the replace-one bound | CONFIRMED | equality attained in every cell; `T_x = 0` gives 0; replace-one per-layer bound is `sqrt(2 min(k, E - k) L)` = `sqrt(2 k L)` for `E >= 2k` (attained by disjoint expert sets); `sqrt(2 k L (1 - k/E))` is violated (5.29 vs 5.66 attained at E = 64, k = 8, L = 2) |
+| K4 | value-neutral surrogate `CE + alpha (S - sg[S])` | CONFIRMED | value bit-identical to `CE` (`torch.equal`); gradient bit-identical to `grad(CE + alpha S)` under `torch.func.grad` and under `vmap`, fp32 and fp64 |
 
 Established before that table (VERIFIED at toy scale): fp32 vmap-vs-HF-loop exactness 3.5e-7 across
 dense and grouped MoE, both layer types, right and left padding, `attention_mask=None`, gradient
@@ -796,7 +767,7 @@ steps at most 1.5 % with zero flips; (i) logged `grad_norm` equals the non-probe
    epsilon = 3`: per-step delta 3.16e-11 with independent coins vs 2.76e-5 with a shared coin and an
    aligned neighbour; `u = 0` reproduces the standard value exactly; the analytic estimate
    `q delta_Gauss ~ 5.7e-5` agrees in order
-   (`mellum-dp-research/scripts/phase2/refute-composition/corr_coins.py` / `corr_coins.out`, VERIFIED). Six
+   (VERIFIED by direct computation). Six
    orders of magnitude, on every step after the resume, for every release of the trainer. The validation
    phase confirmed the bug at the sampler level (20 of 20 post-resume inclusion masks identical across
    two ranks for `PoissonSampler` and `BMinSepSampler`, check K1a) and strengthened the impact (check K1b):
@@ -825,7 +796,7 @@ steps at most 1.5 % with zero flips; (i) logged `grad_norm` equals the non-probe
 4. **HF Trainer's gradient-accumulation aux artefact.** With accumulation `G`, HF Trainer optimises
    the per-microbatch aux with effective coefficient `G * coef` (`trainer.py:1961-1963` divides by the
    accumulation count only when the model does not accept loss kwargs; `MellumForCausalLM.forward`
-   has `**kwargs`; `mellum-dp-research/scripts/phase1/critic/expA_coef1.py` / `expA_coef1.json`, VERIFIED). At the presets' shape an HF reference run would use `f` on
+   has `**kwargs`; VERIFIED on a toy HF Trainer run). At the presets' shape an HF reference run would use `f` on
    8 sequences and coefficient 0.032. Anyone comparing against an HF Trainer baseline must know this;
    worth an upstream report.
 5. **Un-noised telemetry outside the accountant.** `metrics["loss"]`, `["grad_norm"]`, `["clip_rate"]`,
@@ -898,8 +869,7 @@ steps at most 1.5 % with zero flips; (i) logged `grad_norm` equals the non-probe
 
 ## 9. Sources
 
-Theorem and equation numbers marked VERIFIED were extracted from the primary PDFs
-(`mellum-dp-research/reports/phase1-critic.md`, R6; `mellum-dp-research/reports/phase1-literature.md`);
+Theorem and equation numbers marked VERIFIED were extracted from the primary PDFs during this research;
 PLAUSIBLE marks numbers taken from a citing document
 and not re-fetched. Nothing beyond what those reads established is cited.
 
@@ -929,14 +899,11 @@ Repository sources: `.junie/differential-privacy-review.md` (adjacency, evidence
 `docs/user-guide/{accounting,clipping,sampling,dp-ftrl}.md`; HF `models/mellum/modeling_mellum.py` and
 `configuration_mellum.py` (5.16.1); the model card https://huggingface.co/JetBrains/Mellum2-12B-A2.5B-Base.
 
-## Appendix A. Research artefacts
+## Appendix A. Provenance
 
-All research artefacts are committed next to this report under `mellum-dp-research/`:
-
-- `mellum-dp-research/design-spec.md`: the full design specification (the refutation-hardened v2, with its section 12 refutation log). This report condenses it; an implementer should read the specification's sections 9 and 10. Its errata are listed at its top.
-- `mellum-dp-research/reports/`: the agent reports of each phase. `00-brief.md` (the problem statement and model facts), `01-phase1-digest.md` (established facts F1 to F11 and gaps G1 to G10), `phase1-{divergence,primitives,literature,math,empirical,critic}.md`, `phase2-design-{faithful,minimal,optimal,skeptic}.md`, `phase2-judge-{dp,utility,impl}.md`, `phase2-final-design.md` (v1, superseded by `design-spec.md`), `phase2-refute-{sensitivity,composition,feasibility}.md`, `phase3-{prototype,verifier,audit}.md`.
-- `mellum-dp-research/scripts/phase1/`: the phase-1 experiments and their logs. `divergence/exp1_vmap_vs_loop.py` and `exp2_grouped_padding_ce.py` (vmap-vs-HF-loop exactness, grouped MoE, padding, checkpointing, chunked CE); `empirical/e1b_*.py`, `e2_routes.py`, `e3_norms.py`, `e4_aux.py`, `e4b_imbalanced.py`, `e5_load.py`, `e6_sens.py` with `*_results.json` (route flips, gradient norms, aux representations, load statistics); `math/validate_identities.py` and `.out` (every identity of the mathematics section in float64); `primitives/e1_accounting.py`, `e2_graft_group.py`, `e3_mellum_router_vmap.py` and `.out` (accountant numbers, the probe-leaf graft, router logits under vmap); `critic/expA_coef1.py`, `expA_hf_accum_aux.py`, `expB_aux_topk_dtype.py` (HF Trainer accumulation artefact, bf16 aux top-k).
-- `mellum-dp-research/scripts/phase2/`: `design-skeptic/a_fp32_router_flips.py` and `a_out.json` (the fp32-router refutation); `design-minimal/`, `design-optimal/` cost-table and MF-filter scripts; `judge-impl/mf_rownorm.py` (band-MF row norms at momentum 0.95); `judge-utility/recompute.py`; `judge-dp/`; `synthesizer/final_table.py`, `nm_mf_probe.py`; `refute-sensitivity/adversarial.py`, `edge.py`, `edge2.py`, `edge3.py`, `filters.py`, `costtable.py`, `nm_mf_small.py` (bound attacks through the real clipper, filter factors, the cost table); `refute-composition/corr_coins.py`, `probe_optimizer.py`, `t5_recorder_ckpt.py` (shared-coin hockey stick, probe through three optimizers, recorder under checkpointing); `refute-feasibility/feas_check.py`, `nm_bracket.py`, `mc_timing.py` (checks A to G, the un-amplified band-MF multiplier, the accountant timing); `reviser/checks.py` and `checks.out` (ragged token-weight identity, per-layer carrier, dead-zone tails, EMA gains).
-- `mellum-dp-research/scripts/phase3/`: `prototype/prototype_load_release.py` with `prototype_output.txt` (the end-to-end prototype; about 200 s on 4 CPU cores; `prototype_results.json` was too large to commit and is regenerated by the script); `verifier/k1_sampler_resume.py`, `k1_hockey_stick.py`, `k1_run_bounds.py`, `k2_accounting.py`, `k2_composed_inner_v2.py`, `k3_structural_bound.py`, `k4_value_neutral.py` with `.out`; `auditor/` (the re-run outputs and diffs).
-
-Not committed: the downloaded papers and their text extractions (phase-1 literature; the sources are listed in Section 9 with URLs), model checkpoints (`*.pt`), and the multi-hundred-megabyte tensors of the phase-1 empirical runs.
+The experiment scripts, their outputs, the per-phase agent reports and the full design specification were
+recorded in this branch's history under a companion `mellum-dp-research` directory and were removed once the
+feature landed. The numbers quoted in this report come from those runs. The mechanism is documented for
+users at `docs/mechanisms/dp-sgd/moe-load-balancing.md` and implemented in `opaque.transformers.moe_load`,
+`opaque.api.transformers.trainer._router_load`, and `opaque.api.patches.transformers.components.moe_stats` /
+`router`.
