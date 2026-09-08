@@ -3647,14 +3647,15 @@ loss options also fall back safely.
 Cohere and Granite logit scaling is applied inside each tile, avoiding a
 transformed copy of the full <code>lm_head</code> weight.</p>
 <p>Families outside the fused CUDA kernel's numerical envelope can use the
-portable chunked backend. Its peak probability-tile memory scales with
-<code>microbatch_size * prediction_tokens * chunk_width</code> in FP32. Configure the
-loss-only path and vocabulary-column width through:</p>
+portable chunked backend. It tiles both prediction tokens and vocabulary under
+an internal CPU/MPS-aware workspace bound. Configure the loss-only path and an
+optional maximum vocabulary-column tile width through:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">chunked_linear_cross_entropy</span><span class="o">=</span><span class="mi">2048</span><span class="p">)</span>
 </code></pre></div>
 <p>The fused flag enables the logits-free path; for the chunk-width setting,
-<code>True</code> selects the family default, while <code>False</code> or <code>0</code> disables the portable
-backend.</p>
+<code>True</code> selects automatic two-dimensional tiling, a positive integer caps the
+vocabulary width while token tiling remains automatic, and <code>False</code> or <code>0</code>
+disables the portable backend.</p>
 <h2 id="profiling">Profiling<a class="headerlink" href="#profiling" title="Permanent link">&para;</a></h2>
 <h3 id="step_perf-perfstate">step_perf + PerfState<a class="headerlink" href="#step_perf-perfstate" title="Permanent link">&para;</a></h3>
 <p>Use <code>step_perf</code> to measure individual training steps and <code>PerfState</code> to
