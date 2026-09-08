@@ -22,6 +22,8 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
+import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
 from opaque.exceptions import CheckpointError, ConfigurationError, OperationError
 from opaque.transformers import TrainingArguments
@@ -177,6 +179,375 @@ class TestDpFtrlTrain:
 
         assert logged
         assert logged == pytest.approx([out.metrics["privacy_epsilon"]] * len(logged))
+
+
+class TestPrivacyPolicyHardening:
+    def test_train_snapshot_restores_calibration_defaults(self, tmp_path):
+        args = _args(
+            output_dir=str(tmp_path / "calibration-defaults"),
+            mechanism="gaussian",
+            max_steps=2,
+        )
+        args.noise_calibration_kwargs = {}
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        invocation = trainer._resolve_train_invocation()
+
+        assert dict(invocation.privacy_policy.calibration_kwargs) == {
+            "min": 0.11,
+            "max": 10.0,
+            "tolerance": 1e-3,
+        }
+
+    def test_train_revalidates_mutated_privacy_args(self, tmp_path):
+        args = _args(
+            output_dir=str(tmp_path / "mutated"),
+            mechanism="gaussian",
+            max_steps=4,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        args.privacy_noise_mechanism = "mf_identity"
+        args.privacy_target_epsilon = 0.1
+
+        with pytest.raises(ConfigurationError, match="whole-horizon"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
+    def test_train_rejects_non_string_privacy_mapping_keys(self, tmp_path):
+        args = _args(
+            output_dir=str(tmp_path / "mapping-key"),
+            mechanism="gaussian",
+            max_steps=2,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        args.privacy_noise_mechanism_kwargs = {1: "bound"}
+
+        with pytest.raises(TypeError, match="keys must be str"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            pytest.param("seed", 1.5, id="fractional-seed"),
+            pytest.param("seed", True, id="boolean-seed"),
+            pytest.param("data_seed", 2.5, id="fractional-data-seed"),
+            pytest.param("data_seed", False, id="boolean-data-seed"),
+        ],
+    )
+    def test_train_rejects_non_integer_policy_seeds(
+        self,
+        tmp_path,
+        field,
+        value,
+    ):
+        args = _args(
+            output_dir=str(tmp_path / "invalid-seed"),
+            mechanism="gaussian",
+            max_steps=2,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        setattr(args, field, value)
+
+        with pytest.raises(ConfigurationError, match=rf"{field} must be an int"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
+    def test_realized_lifecycle_mismatch_is_rejected_before_optimizer(self, tmp_path):
+        class _UnexpectedHorizonTrainer(DPTrainer):
+            def _build_mechanism(self, *_args, participation, **_kwargs):
+                return lambda nm: acc.cached(
+                    dpsgd_acc.k_out_of_t(
+                        dpsgd_acc.gaussian(nm),
+                        k=1,
+                        t=participation.total_steps,
+                        allocation="block",
+                    )
+                )
+
+            def create_optimizer(self, *_args, **_kwargs):
+                raise AssertionError("optimizer construction must not run")
+
+        trainer = _UnexpectedHorizonTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "realized-horizon"),
+                mechanism="gaussian",
+                max_steps=4,
+                target_epsilon=1.0,
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        with pytest.raises(OperationError, match="lifecycle does not match"):
+            trainer.train()
+
+    def test_missing_horizon_is_rejected_before_optimizer(self, tmp_path):
+        class _IndependentProcessTrainer(DPTrainer):
+            def _build_mechanism(self, *_args, **_kwargs):
+                return lambda nm: dpsgd_acc.poisson(
+                    dpsgd_acc.gaussian(nm),
+                    sample_rate=0.1,
+                )
+
+            def create_optimizer(self, *_args, **_kwargs):
+                raise AssertionError("optimizer construction must not run")
+
+        trainer = _IndependentProcessTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "missing-horizon"),
+                mechanism="gaussian",
+                max_steps=4,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 1, "allocation": "block"},
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        with pytest.raises(OperationError, match="lifecycle does not match"):
+            trainer.train()
+
+    def test_resume_rejects_lifecycle_drift_before_optimizer(self, tmp_path):
+        outdir = tmp_path / "independent-checkpoint"
+        first = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="gaussian",
+                max_steps=2,
+                save_steps=1,
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        first.train()
+
+        class _NoOptimizerTrainer(DPTrainer):
+            def create_optimizer(self, *_args, **_kwargs):
+                raise AssertionError("optimizer construction must not run")
+
+        resumed = _NoOptimizerTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "horizon-resume"),
+                mechanism="gaussian",
+                max_steps=2,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 1, "allocation": "block"},
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="lifecycle does not match"):
+            resumed.train(resume_from_checkpoint=str(outdir / "checkpoint-1"))
+
+    @pytest.mark.parametrize(
+        ("factory", "message"),
+        [
+            pytest.param(lambda _nm, _steps: object(), "return a DpProcess", id="type"),
+            pytest.param(
+                lambda nm, steps: dpsgd_acc.k_out_of_t(
+                    dpsgd_acc.gaussian(nm),
+                    k=1,
+                    t=steps + 1,
+                    allocation="block",
+                ),
+                "does not match the training horizon",
+                id="horizon",
+            ),
+        ],
+    )
+    def test_invalid_realized_process_is_rejected_before_optimizer(
+        self,
+        tmp_path,
+        factory,
+        message,
+    ):
+        class _InvalidProcessTrainer(DPTrainer):
+            def _build_mechanism(self, *_args, participation, **_kwargs):
+                return lambda nm: factory(nm, participation.total_steps)
+
+            def create_optimizer(self, *_args, **_kwargs):
+                raise AssertionError("optimizer construction must not run")
+
+        trainer = _InvalidProcessTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "invalid-process"),
+                mechanism="gaussian",
+                max_steps=4,
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        with pytest.raises(OperationError, match=message):
+            trainer.train()
+
+    @pytest.mark.parametrize(
+        "wrap",
+        [
+            pytest.param(lambda process: process * 2, id="repeated"),
+            pytest.param(
+                lambda process: acc.eps_delta(0.1) | process,
+                id="composed",
+            ),
+            pytest.param(
+                lambda process: dpsgd_acc.poisson(process, sample_rate=0.1),
+                id="amplified",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "noise_multiplier",
+        [1.0, None],
+        ids=["fixed", "calibrated"],
+    )
+    def test_nested_horizon_process_is_rejected(
+        self,
+        tmp_path,
+        wrap,
+        noise_multiplier,
+    ):
+        class _NestedHorizonTrainer(DPTrainer):
+            def _build_mechanism(self, *_args, participation, **_kwargs):
+                return lambda nm: wrap(
+                    dpsgd_acc.k_out_of_t(
+                        dpsgd_acc.gaussian(nm),
+                        k=1,
+                        t=participation.total_steps,
+                        allocation="block",
+                    )
+                )
+
+            def create_optimizer(self, *_args, **_kwargs):
+                raise AssertionError("optimizer construction must not run")
+
+        trainer = _NestedHorizonTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "nested-horizon"),
+                mechanism="gaussian",
+                max_steps=4,
+                noise_multiplier=noise_multiplier,
+                target_epsilon=1.0,
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        with pytest.raises(OperationError, match="unambiguous trainer lifecycle"):
+            trainer.train()
+
+    def test_callback_cannot_mutate_active_privacy_policy(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        from transformers import TrainerCallback
+
+        from opaque.api.transformers.trainer import _checkpoint, _dpftrl
+        from opaque.random import key
+
+        outdir = tmp_path / "immutable-policy"
+        args = _args(
+            output_dir=str(outdir),
+            mechanism="gaussian",
+            max_steps=2,
+            save_steps=1,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        sampler_keys = []
+        original_build_sampler = _dpftrl.build_sampler
+
+        def recording_build_sampler(**kwargs):
+            sampler_keys.append(kwargs["key"])
+            return original_build_sampler(**kwargs)
+
+        monkeypatch.setattr(_dpftrl, "build_sampler", recording_build_sampler)
+
+        class _MutatePrivacyArgs(TrainerCallback):
+            def on_train_begin(self, args_, state_, control_, **_kwargs):
+                args_.seed = 456
+                args_.data_seed = 123
+                args_.privacy_noise_multiplier = 9.0
+                args_.privacy_target_epsilon = 0.001
+                args_.clipping_norm = 99.0
+
+        trainer.add_callback(_MutatePrivacyArgs())
+        assert trainer.train().global_step == 2
+
+        assert sampler_keys == [key(0)]
+        saved = _checkpoint.load_dp_runtime_state(
+            str(outdir / "checkpoint-1" / _checkpoint.DP_STATE_NAME)
+        )
+        assert saved.noise_multiplier == pytest.approx(1.0)
+        assert saved.target_epsilon is None
+
+    def test_realized_horizon_process_is_reused(self, tmp_path, monkeypatch):
+        from opaque.api.transformers.trainer import _dpftrl
+
+        original_build_factory = _dpftrl.build_amplifier_factory
+        realizations = 0
+
+        def counting_build_factory(**kwargs):
+            factory = original_build_factory(**kwargs)
+
+            def counted(noise_multiplier):
+                nonlocal realizations
+                realizations += 1
+                return factory(noise_multiplier)
+
+            return counted
+
+        monkeypatch.setattr(
+            _dpftrl,
+            "build_amplifier_factory",
+            counting_build_factory,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "single-realization"),
+                mechanism="mf_identity",
+                max_steps=4,
+                save_steps=2,
+            ),
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        assert trainer.train().global_step == 4
+        assert realizations == 1
 
 
 class TestDpFtrlSamplerDispatch:

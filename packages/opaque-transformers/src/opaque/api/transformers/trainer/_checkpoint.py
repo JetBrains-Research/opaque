@@ -614,9 +614,7 @@ def _validate_bundle_against_plan(
                 "whole-dataset Poisson stream.",
             )
         )
-    expected_horizon = (
-        plan.mechanism_kind != "gaussian" or plan.sampling_mode == "k_out_of_t"
-    )
+    expected_horizon = plan.requires_horizon_process
     scalar_pairs = (
         ("sample_rate", bundle.sample_rate, plan.sample_rate, float),
         (

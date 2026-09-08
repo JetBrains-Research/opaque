@@ -69,6 +69,7 @@ arguments are not part of this dataclass surface and naturally raise
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import logging
@@ -78,6 +79,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
+from numbers import Real
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -137,15 +139,23 @@ _DDP_BACKEND_ENV_DEPENDENT: tuple[str, ...] = ("xccl", "hccl", "cncl", "mccl")
 # OmegaConf ``DictConfig``), a JSON object string (``"{...}"``), an HF-style
 # comma-separated ``"key=value,key=value"`` string, or ``None``.  The
 # normalised result is ``dict[str, Any] | None`` for every entry.
-_DICT_FIELDS: tuple[str, ...] = (
-    "performance_kernels_config",
-    "lr_scheduler_kwargs",
-    "gradient_checkpointing_kwargs",
+_PRIVACY_DICT_FIELDS: tuple[str, ...] = (
     "clipping_kwargs",
     "sampling_kwargs",
     "noise_calibration_kwargs",
     "privacy_noise_mechanism_kwargs",
+)
+_DICT_FIELDS: tuple[str, ...] = (
+    "performance_kernels_config",
+    "lr_scheduler_kwargs",
+    "gradient_checkpointing_kwargs",
+    *_PRIVACY_DICT_FIELDS,
     "optim_args",
+)
+_NOISE_CALIBRATION_DEFAULTS: tuple[tuple[str, float], ...] = (
+    ("min", 0.11),
+    ("max", 10.0),
+    ("tolerance", 1e-3),
 )
 
 # Privacy noise mechanism surface.  ``"gaussian"`` is the DP-SGD baseline;
@@ -941,16 +951,11 @@ class TrainingArguments:
         # / ``performance_kernels_config`` / ``gradient_checkpointing_kwargs``
         # may legitimately be ``None`` (= unset, fall through to factory
         # defaults) and stay as-is.
-        for name in (
-            "clipping_kwargs",
-            "sampling_kwargs",
-            "noise_calibration_kwargs",
-            "privacy_noise_mechanism_kwargs",
-        ):
+        for name in _PRIVACY_DICT_FIELDS:
             if getattr(self, name) is None:
                 setattr(self, name, {})
         calibration = self.noise_calibration_kwargs
-        for key, default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
+        for key, default in _NOISE_CALIBRATION_DEFAULTS:
             calibration.setdefault(key, default)
 
         if self.eval_strategy not in _INTERVAL_STRATEGIES:
@@ -1034,6 +1039,26 @@ class TrainingArguments:
         _resolve_optimizer_name(self.optim)
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
 
+        for name in _PRIVACY_DICT_FIELDS:
+            for key in getattr(self, name):
+                if not isinstance(key, str):
+                    raise InputTypeError(
+                        *(
+                            f"{name} keys must be str; got "
+                            f"{type(key).__name__} key {key!r}.",
+                        )
+                    )
+        for name, value in (("seed", self.seed), ("data_seed", self.data_seed)):
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool)
+            ):
+                raise ConfigurationError(
+                    *(
+                        f"{name} must be an int so it can seed Opaque's random "
+                        f"stream; got {value!r}.",
+                    )
+                )
+
         # At least one of NM / target_epsilon must be set; NM=0.0 is allowed
         # as an explicit non-private baseline.
         if (
@@ -1047,9 +1072,32 @@ class TrainingArguments:
                     "budget); neither was provided.",
                 )
             )
+        if self.privacy_target_epsilon is not None and (
+            isinstance(self.privacy_target_epsilon, bool)
+            or not isinstance(self.privacy_target_epsilon, Real)
+            or not math.isfinite(self.privacy_target_epsilon)
+            or self.privacy_target_epsilon <= 0
+        ):
+            raise ConfigurationError(
+                *(
+                    "privacy_target_epsilon must be finite and > 0; "
+                    f"got {self.privacy_target_epsilon!r}.",
+                )
+            )
+        if self.privacy_noise_multiplier is not None and (
+            isinstance(self.privacy_noise_multiplier, bool)
+            or not isinstance(self.privacy_noise_multiplier, Real)
+            or not math.isfinite(self.privacy_noise_multiplier)
+            or self.privacy_noise_multiplier < 0
+        ):
+            raise ConfigurationError(
+                *(
+                    "privacy_noise_multiplier must be finite and >= 0; got "
+                    f"{self.privacy_noise_multiplier!r}.",
+                )
+            )
         if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier == 0.0
+            self.privacy_noise_multiplier == 0.0
             and self.privacy_target_epsilon is not None
         ):
             raise ConfigurationError(
@@ -1057,27 +1105,6 @@ class TrainingArguments:
                     "privacy_noise_multiplier=0.0 is the non-private path; "
                     "privacy_target_epsilon is meaningless there.  Drop the target "
                     "or set a positive noise multiplier.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is None
-            and self.privacy_target_epsilon is not None
-            and self.privacy_target_epsilon <= 0
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_target_epsilon must be > 0 when calibrating noise; "
-                    f"got {self.privacy_target_epsilon!r}.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier < 0
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_noise_multiplier must be >= 0; got "
-                    f"{self.privacy_noise_multiplier!r}.",
                 )
             )
 
@@ -1101,12 +1128,15 @@ class TrainingArguments:
                     "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm.",
                 )
             )
-        if self.privacy_target_delta is not None and not (
-            0 < self.privacy_target_delta < 1
+        if self.privacy_target_delta is not None and (
+            isinstance(self.privacy_target_delta, bool)
+            or not isinstance(self.privacy_target_delta, Real)
+            or not math.isfinite(self.privacy_target_delta)
+            or not 0 < self.privacy_target_delta < 1
         ):
             raise ConfigurationError(
                 *(
-                    "privacy_target_delta must lie in (0, 1); got "
+                    "privacy_target_delta must be finite and lie in (0, 1); got "
                     f"{self.privacy_target_delta!r}.",
                 )
             )
@@ -1230,6 +1260,23 @@ class TrainingArguments:
                     "'k' and 'allocation'.",
                 )
             )
+
+    def _validated_privacy_copy(self) -> TrainingArguments:
+        """Return normalized, revalidated privacy fields for one train call.
+
+        ``TrainingArguments`` is intentionally mutable for callback parity. A
+        trainer therefore cannot rely on constructor-time validation after a
+        caller has retained and changed the object. Only the privacy-shaped
+        mappings are copied here; the trainer separately resolves participation
+        into its immutable ``ResolvedParticipationPlan``.
+        """
+        validated = copy.copy(self)
+        for name in _PRIVACY_DICT_FIELDS:
+            setattr(validated, name, _normalize_dict_field(getattr(self, name)) or {})
+        for key, default in _NOISE_CALIBRATION_DEFAULTS:
+            validated.noise_calibration_kwargs.setdefault(key, default)
+        TrainingArguments._validate_privacy_fields(validated)
+        return validated
 
     # =================================================================
     # Distributed property contract (replaces HF `distributed_state`-driven
@@ -1631,7 +1678,7 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
             ) from exc
     if isinstance(value, (int, float)):
         out = float(value)
-        if out <= 0.0:
+        if math.isnan(out) or out <= 0.0:
             raise ConfigurationError(
                 *(
                     "clipping_norm must be strictly positive for DP-SGD clipping; "
@@ -1654,7 +1701,7 @@ def _coerce_clipping_norm(value: Any) -> float | dict[str, float]:
                     *(f"clipping_norm[{k!r}] must be numeric, not bool",)
                 )
             fv = float(v)
-            if fv <= 0.0:
+            if math.isnan(fv) or fv <= 0.0:
                 raise ConfigurationError(
                     *(f"clipping_norm[{k!r}] must be > 0; got {v!r}",)
                 )

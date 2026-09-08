@@ -781,6 +781,43 @@ def scenario_private_step_consensus(
     assert outcomes == [True] * world_size, outcomes
 
 
+def scenario_privacy_policy_consensus(
+    rank: int,
+    world_size: int,
+    output_dir: str,
+    use_cpu: bool = False,
+    **_,
+) -> None:
+    """Rank-local privacy requests fail before constructing different contexts."""
+    cfg = TinyConfig()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    trainer = DPTrainer(
+        model=TinyForCausalLM(cfg),
+        args=args,
+        train_dataset=TinyDataset(16, 4, cfg.vocab_size),
+        data_collator=_collate,
+    )
+    args.privacy_target_delta = 1e-5 if rank == 0 else 2e-5
+
+    failed = False
+    try:
+        trainer.train()
+    except OperationError as exc:
+        failed = "phases diverged" in str(exc)
+    outcomes = [None] * world_size
+    dist.all_gather_object(outcomes, failed)
+    assert outcomes == [True] * world_size, outcomes
+
+
 def scenario_token_policy_is_frozen(
     rank: int,
     world_size: int,
@@ -944,6 +981,7 @@ SCENARIOS = {
     "token_reduce_prep_oom_consensus": scenario_token_reduce_prep_oom_consensus,
     "on_save_exception_consensus": scenario_on_save_exception_consensus,
     "private_step_consensus": scenario_private_step_consensus,
+    "privacy_policy_consensus": scenario_privacy_policy_consensus,
     "token_policy_is_frozen": scenario_token_policy_is_frozen,
     "hub_publication_is_collective_safe": scenario_hub_publication_is_collective_safe,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,

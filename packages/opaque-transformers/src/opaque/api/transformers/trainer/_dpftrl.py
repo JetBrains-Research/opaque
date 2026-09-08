@@ -230,6 +230,7 @@ def build_sampler(
     key: RngKey,
     mf: MFContext | None,
     noise_multiplier: float | None,
+    process: Any | None = None,
 ) -> Any:
     """Construct the sampler from the accountant's resolved participation plan."""
     sampling_mode = plan.sampling_mode
@@ -248,8 +249,13 @@ def build_sampler(
             )
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         truncated_batch_size = int(tb_raw) if tb_raw is not None else None
-        process = (
-            validate_mf_process_for_plan(plan, mf, noise_multiplier)
+        resolved_process = (
+            validate_mf_process_for_plan(
+                plan,
+                mf,
+                noise_multiplier,
+                process=process,
+            )
             if mf is not None and noise_multiplier is not None
             else None
         )
@@ -265,7 +271,7 @@ def build_sampler(
             sampler,
             mf=mf,
             noise_multiplier=noise_multiplier,
-            process=process,
+            process=resolved_process,
         )
         return sampler
     if sampling_mode == "k_out_of_t":
@@ -303,7 +309,12 @@ def build_sampler(
                     "noise_multiplier=None.",
                 )
             )
-        amp = validate_mf_process_for_plan(plan, mf, noise_multiplier)
+        amp = validate_mf_process_for_plan(
+            plan,
+            mf,
+            noise_multiplier,
+            process=process,
+        )
         sampler = BMinSepSampler(
             dataset,
             bands=int(mf.strategy.bands),
@@ -327,7 +338,12 @@ def build_sampler(
                     "a calibrated noise_multiplier.",
                 )
             )
-        amp = validate_mf_process_for_plan(plan, mf, noise_multiplier)
+        amp = validate_mf_process_for_plan(
+            plan,
+            mf,
+            noise_multiplier,
+            process=process,
+        )
         sampler = BallsInBinsSampler(
             dataset,
             num_bins=plan.num_bins,
@@ -349,6 +365,8 @@ def validate_mf_process_for_plan(
     plan: ResolvedParticipationPlan,
     mf: MFContext,
     noise_multiplier: float,
+    *,
+    process: Any | None = None,
 ) -> Any:
     """Return the realized MF process after checking its participation contract."""
     if mf.participation_plan != plan:
@@ -356,7 +374,8 @@ def validate_mf_process_for_plan(
             *("MF process and sampler received different participation plans.",)
         )
     _validate_strategy_for_plan(plan, mf.strategy)
-    process = mf.amplifier_factory(noise_multiplier)
+    if process is None:
+        process = mf.amplifier_factory(noise_multiplier)
     expected_type = {
         "poisson": CyclicPoisson,
         "b_min_sep": BMinSep,

@@ -336,6 +336,11 @@ class ResolvedParticipationPlan:
         """Population represented by each rank-local sampler."""
         return self.population_size // self.world_size
 
+    @property
+    def requires_horizon_process(self) -> bool:
+        """Whether accounting must realize this complete declared horizon."""
+        return self.mechanism_kind != "gaussian" or self.sampling_mode == "k_out_of_t"
+
     def to_state_dict(self) -> dict[str, Any]:
         """Return canonical, data-only checkpoint provenance."""
         return {

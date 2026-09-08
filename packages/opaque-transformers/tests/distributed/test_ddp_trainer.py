@@ -279,6 +279,18 @@ def test_gloo_cross_rank_private_step_mismatch_fails(tmp_path) -> None:
 
 @pytest.mark.slow
 @pytest.mark.distributed
+def test_gloo_cross_rank_privacy_policy_mismatch_fails(tmp_path) -> None:
+    _run_ddp(
+        "privacy_policy_consensus",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=120.0,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
 def test_gloo_token_reduction_policy_is_invocation_frozen(tmp_path) -> None:
     _run_ddp(
         "token_policy_is_frozen",

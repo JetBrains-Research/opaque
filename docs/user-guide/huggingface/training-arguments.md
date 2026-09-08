@@ -56,7 +56,7 @@ The user-facing DP budget knobs:
 ```python
 args = TrainingArguments(
     privacy_target_epsilon=8.0,
-    privacy_target_delta=1e-5,          # default: 1 / (10 * dataset_size)
+    privacy_target_delta=1e-5,          # default: 1 / dataset_size**1.1
     clipping_norm=1.0,                  # scalar global clip, or per-group dict
     privacy_noise_multiplier=None,      # None ⇒ calibrate from epsilon
 )
@@ -66,6 +66,14 @@ args = TrainingArguments(
 smallest noise multiplier that achieves it under the configured
 sampler + composition.  Set `privacy_noise_multiplier` directly to
 skip calibration.
+
+At each `train()` entry, DPTrainer revalidates these values and freezes the
+noise, target, clipping, mechanism-kwargs, calibration, and DP-randomness
+policy for that invocation. Sampling mode, population, sample rate, logical
+batch, and horizon are frozen separately in the single participation plan
+shared by accounting, the sampler, and checkpoints. Callback mutations to the
+public arguments therefore apply only to a later `train()` call, not to the
+active privacy mechanism.
 
 **At least one of `privacy_noise_multiplier` / `privacy_target_epsilon`
 must be set.** Neither has a silent default — construction raises if
@@ -86,15 +94,12 @@ configuration mistake.
 ### Stop-at-ε
 
 When `privacy_target_epsilon` is set alongside a non-zero
-`privacy_noise_multiplier`, training halts at the first logging
-boundary where the accumulated ε from the privacy accountant meets or
-exceeds the target. The halt records `state.privacy_target_epsilon_reached
-= True` and surfaces as a normal early-stop control flow (callbacks see
-the final eval / save / log pass). The check runs every
-`logging_steps` (so setting `logging_steps=0` disables it silently —
-explicit logging is the contract for stop-at-ε visibility). This mode is
-supported only for independent DP-SGD mechanisms. Horizon mechanisms reject
-this combination because privacy-based early stopping is unsupported.
+`privacy_noise_multiplier`, the trainer predicts the first independently
+accounted step where ε meets or exceeds the target and stops immediately after
+that step. The halt records `state.privacy_target_epsilon_reached = True` and
+does not depend on logging cadence. This mode is supported only for independent
+DP-SGD mechanisms. Whole-horizon mechanisms reject the combination because an
+executed prefix does not have an independent privacy process.
 A resume against a checkpoint where the budget is already spent
 short-circuits before the first training step.
 

@@ -377,6 +377,68 @@ class TestEvalStepsFallback:
             )
 
 
+class TestPrivacyNumbers:
+    @pytest.mark.parametrize(
+        ("field", "message"),
+        [
+            ("privacy_noise_multiplier", "finite and >= 0"),
+            ("privacy_target_epsilon", "finite and > 0"),
+            ("privacy_target_delta", "finite and lie in"),
+        ],
+    )
+    @pytest.mark.parametrize("value", [False, True])
+    def test_privacy_numbers_reject_booleans(self, field, message, value):
+        kwargs = {"privacy_noise_multiplier": 1.0, field: value}
+        with pytest.raises(ValueError, match=message):
+            TrainingArguments(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            pytest.param("seed", 1.5, id="fractional-seed"),
+            pytest.param("seed", True, id="boolean-seed"),
+            pytest.param("data_seed", 2.5, id="fractional-data-seed"),
+            pytest.param("data_seed", False, id="boolean-data-seed"),
+        ],
+    )
+    def test_policy_seeds_must_be_integers(self, field, value):
+        with pytest.raises(ValueError, match=rf"{field} must be an int"):
+            TrainingArguments(privacy_noise_multiplier=1.0, **{field: value})
+
+    def test_privacy_mapping_keys_must_be_strings(self):
+        with pytest.raises(TypeError, match="keys must be str"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism_kwargs={1: "bound"},
+            )
+
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+    def test_noise_multiplier_must_be_finite(self, value):
+        with pytest.raises(ValueError, match="finite and >= 0"):
+            TrainingArguments(privacy_noise_multiplier=value)
+
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, 0.0, -1.0])
+    @pytest.mark.parametrize("noise_multiplier", [None, 1.0])
+    def test_target_epsilon_must_be_positive_and_finite(
+        self,
+        value,
+        noise_multiplier,
+    ):
+        with pytest.raises(ValueError, match="finite and > 0"):
+            TrainingArguments(
+                privacy_noise_multiplier=noise_multiplier,
+                privacy_target_epsilon=value,
+            )
+
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+    def test_target_delta_must_be_finite(self, value):
+        with pytest.raises(ValueError, match="finite and lie in"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_target_delta=value,
+            )
+
+
 class TestMaxGradNorm:
     """``clipping_norm`` is the DP clip bound: scalar or per-group dict."""
 
@@ -387,6 +449,10 @@ class TestMaxGradNorm:
     def test_non_positive_scalar_raises(self):
         with pytest.raises(ValueError, match="clipping_norm"):
             TrainingArguments(privacy_noise_multiplier=1.0, clipping_norm=0.0)
+
+    def test_nan_scalar_raises(self):
+        with pytest.raises(ValueError, match="clipping_norm"):
+            TrainingArguments(privacy_noise_multiplier=1.0, clipping_norm=math.nan)
 
     def test_dict_fallback_only_normalizes_to_float(self):
         args = TrainingArguments(

@@ -67,6 +67,7 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
         use_cpu=True,
     )
     trainer = DPTrainer(model=model, args=args, train_dataset=dataset)
+    privacy_policy = trainer._resolve_train_invocation().privacy_policy
     trainer._ddp = dataclasses.replace(
         trainer._ddp,
         is_distributed=True,
@@ -90,12 +91,14 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
     # take the training-branch path that shards the dataset.
     trainer._ctx = types.SimpleNamespace(
         participation=participation,
+        privacy_policy=privacy_policy,
         sample_rate=participation.sample_rate,
         expected_steps_per_epoch=1,
         total_steps=1,
         current_sampler=None,
         sampler_restart_step=None,
         mf=None,
+        horizon_process=None,
         noise_multiplier=None,
         dataloader_in_order=True,
     )

@@ -36,6 +36,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -48,7 +49,7 @@ import opaque.accounting as acc
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
-from opaque.accounting.types import DpHorizonProcess
+from opaque.accounting.types import CachedProcess, DpHorizonProcess, DpProcess
 from opaque.api.engine.clipping import clipped_grad
 from opaque.api.engine.device import (
     device_capabilities,
@@ -210,6 +211,112 @@ def _compile_strict_chunk(
     )
 
 
+def _snapshot_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Detach a mutable arguments mapping for one training invocation."""
+    try:
+        return MappingProxyType(copy.deepcopy(dict(value)))
+    except Exception as exc:
+        raise ConfigurationError(
+            *(
+                "privacy configuration mappings must be deepcopy-compatible "
+                "so callbacks cannot mutate the active policy.",
+            )
+        ) from exc
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _PrivacyPolicy:
+    """Requested privacy and randomness policy fixed for one ``train()`` call.
+
+    Participation facts deliberately do not live here. Mechanism/sampler pairing,
+    population, logical batch, sample rate, and horizon belong exclusively to
+    :class:`ResolvedParticipationPlan`.
+    """
+
+    noise_multiplier: float | None
+    target_epsilon: float | None
+    target_delta: float | None
+    mechanism_kwargs: Mapping[str, Any]
+    clipping_mode: str
+    clipping_norm: float | Mapping[str, float]
+    clipping_kwargs: Mapping[str, Any]
+    calibration_kwargs: Mapping[str, Any]
+    seed: int
+    data_seed: int | None
+
+    @classmethod
+    def capture(cls, validated: TrainingArguments) -> _PrivacyPolicy:
+        clipping_norm: float | Mapping[str, float]
+        if isinstance(validated.clipping_norm, Mapping):
+            clipping_norm = _snapshot_mapping(validated.clipping_norm)
+        else:
+            clipping_norm = float(validated.clipping_norm)
+        return cls(
+            noise_multiplier=(
+                float(validated.privacy_noise_multiplier)
+                if validated.privacy_noise_multiplier is not None
+                else None
+            ),
+            target_epsilon=(
+                float(validated.privacy_target_epsilon)
+                if validated.privacy_target_epsilon is not None
+                else None
+            ),
+            target_delta=(
+                float(validated.privacy_target_delta)
+                if validated.privacy_target_delta is not None
+                else None
+            ),
+            mechanism_kwargs=_snapshot_mapping(
+                validated.privacy_noise_mechanism_kwargs
+            ),
+            clipping_mode=validated.clipping_mode,
+            clipping_norm=clipping_norm,
+            clipping_kwargs=_snapshot_mapping(validated.clipping_kwargs),
+            calibration_kwargs=_snapshot_mapping(validated.noise_calibration_kwargs),
+            seed=validated.seed,
+            data_seed=validated.data_seed,
+        )
+
+    @property
+    def uses_fixed_noise(self) -> bool:
+        return self.noise_multiplier is not None
+
+    def consensus_key(self) -> tuple[Any, ...]:
+        """Return conservative rank-consensus material.
+
+        Known privacy kwargs normalize to primitive Python containers. ``repr``
+        retains the value-bearing, deterministic representation of supported
+        immutable recipe objects such as LR schedules.
+        """
+
+        def mapping_items(value: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+            return tuple(
+                sorted(
+                    ((key, repr(item)) for key, item in value.items()),
+                    key=lambda pair: pair[0],
+                )
+            )
+
+        clipping_norm = (
+            mapping_items(self.clipping_norm)
+            if isinstance(self.clipping_norm, Mapping)
+            else self.clipping_norm
+        )
+        return (
+            self.noise_multiplier,
+            self.target_epsilon,
+            self.target_delta,
+            mapping_items(self.mechanism_kwargs),
+            self.clipping_mode,
+            clipping_norm,
+            mapping_items(self.clipping_kwargs),
+            mapping_items(self.calibration_kwargs),
+            self.seed,
+            self.data_seed,
+        )
+
+
 @dataclasses.dataclass
 class _TrainingContext:
     """Mutable state carried through the training loop."""
@@ -228,14 +335,12 @@ class _TrainingContext:
     accounting: Accountant
     mechanism: Callable
     participation: ResolvedParticipationPlan
+    privacy_policy: _PrivacyPolicy
     # Cached process reused across independent step compositions. Whole-horizon
     # mechanisms are installed in ``accounting`` once and leave this as None.
     step_process: Any | None
     target_delta: float
-    sample_rate: float
     calibration_source: str
-    expected_steps_per_epoch: int
-    total_steps: int
     num_epochs: int
     collate_fn: Callable
     # Immutable resume policy captured before callbacks can mutate args.
@@ -274,8 +379,6 @@ class _TrainingContext:
     # mode reads the configured value directly because ``FixedClipState``
     # is a marker without per-state fields.
     clip_norm: Any = None
-    mechanism_kind: str = "gaussian"
-    is_horizon_process: bool = False
     horizon_process: DpHorizonProcess | None = None
     mf: _dpftrl.MFContext | None = None
     # Predicted stop-at-ε crossing step (absolute), or ``None`` when the
@@ -283,12 +386,33 @@ class _TrainingContext:
     # See :func:`predict_stop_step`.
     stop_at_step: int | None = None
 
+    @property
+    def sample_rate(self) -> float:
+        return self.participation.sample_rate
+
+    @property
+    def expected_steps_per_epoch(self) -> int:
+        return self.participation.num_bins
+
+    @property
+    def total_steps(self) -> int:
+        return self.participation.total_steps
+
+    @property
+    def mechanism_kind(self) -> str:
+        return self.participation.mechanism_kind
+
+    @property
+    def is_horizon_process(self) -> bool:
+        return self.participation.requires_horizon_process
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _TrainInvocation:
     """Privacy-critical inputs frozen once before any retry or callback."""
 
     participation: ResolvedParticipationPlan
+    privacy_policy: _PrivacyPolicy
     skip_sampler_state_on_resume: bool
     dataloader_in_order: bool
     include_num_input_tokens_seen: str
@@ -301,13 +425,154 @@ class _TrainInvocation:
     )
 
 
+def _validate_resolved_privacy(
+    *, noise_multiplier: float, target_delta: float, sample_rate: float
+) -> None:
+    if not math.isfinite(noise_multiplier) or noise_multiplier < 0:
+        raise OperationError(
+            *(
+                "Resolved privacy_noise_multiplier must be finite and >= 0; "
+                f"got {noise_multiplier!r}.",
+            )
+        )
+    if not math.isfinite(target_delta) or not 0 < target_delta < 1:
+        raise ConfigurationError(
+            *(
+                "Resolved privacy_target_delta must be finite and lie in (0, 1); "
+                f"got {target_delta!r}.",
+            )
+        )
+    if not math.isfinite(sample_rate) or not 0 < sample_rate <= 1:
+        raise OperationError(
+            *(f"Resolved sample_rate must lie in (0, 1]; got {sample_rate!r}.",)
+        )
+
+
+def _require_dp_process(process: Any) -> DpProcess:
+    if not isinstance(process, DpProcess):
+        raise OperationError(
+            *(
+                "The privacy mechanism factory must return a DpProcess; got "
+                f"{type(process).__name__}.",
+            )
+        )
+    return process
+
+
+def _classify_horizon_process(
+    process: DpProcess,
+    *,
+    expected_steps: int,
+) -> DpHorizonProcess | None:
+    """Classify a direct horizon and reject horizons hidden in process algebra.
+
+    Only ``DpProcess``-valued dataclass fields are traversed. This matches the
+    accounting process codec without reflecting through arbitrary application
+    dataclasses, mappings, or containers.
+    """
+    candidate = process
+    while isinstance(candidate, CachedProcess):
+        candidate = candidate.inner
+
+    if isinstance(candidate, DpHorizonProcess):
+        n_steps = candidate.n_steps
+        if type(n_steps) is not int or n_steps != expected_steps:
+            raise OperationError(
+                *(
+                    "Whole-horizon process does not match the training horizon: "
+                    f"{n_steps!r} != {expected_steps}.",
+                )
+            )
+        return candidate
+
+    pending = [candidate]
+    seen: set[int] = set()
+    while pending:
+        node = pending.pop()
+        identity = id(node)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        if isinstance(node, DpHorizonProcess):
+            raise OperationError(
+                *(
+                    "A DpHorizonProcess may only be returned directly or through "
+                    "acc.cached(); nesting it beneath composition, repetition, "
+                    "or amplification has no unambiguous trainer lifecycle.",
+                )
+            )
+        if dataclasses.is_dataclass(node):
+            pending.extend(
+                child
+                for field in dataclasses.fields(node)
+                if isinstance((child := getattr(node, field.name)), DpProcess)
+            )
+    return None
+
+
+def _classify_process_for_plan(
+    process: DpProcess,
+    participation: ResolvedParticipationPlan,
+) -> DpHorizonProcess | None:
+    """Require the realized lifecycle to match the participation contract."""
+    horizon = _classify_horizon_process(
+        process,
+        expected_steps=participation.total_steps,
+    )
+    expects_horizon = participation.requires_horizon_process
+    if (horizon is not None) != expects_horizon:
+        expected = "whole-horizon" if expects_horizon else "independent-step"
+        realized = "whole-horizon" if horizon is not None else "independent-step"
+        raise OperationError(
+            *(
+                "The realized accounting lifecycle does not match the resolved "
+                f"participation plan: expected {expected}, got {realized} for "
+                f"mechanism={participation.mechanism_kind!r}, "
+                f"sampling_mode={participation.sampling_mode!r}.",
+            )
+        )
+    return horizon
+
+
 def _initialize_accounting(
-    process: Any,
-) -> tuple[Accountant, Any | None, DpHorizonProcess | None]:
-    """Build accounting state for a complete horizon or an independent step."""
-    if isinstance(process, DpHorizonProcess):
-        return Accountant(prefix=acc.cached(process)), None, process
+    process: DpProcess,
+    privacy_policy: _PrivacyPolicy,
+    *,
+    participation: ResolvedParticipationPlan,
+) -> tuple[Accountant, DpProcess | None, DpHorizonProcess | None]:
+    """Build accounting state for a classified horizon or independent step."""
+    horizon = _classify_process_for_plan(process, participation)
+    if horizon is not None:
+        if (
+            privacy_policy.uses_fixed_noise
+            and privacy_policy.target_epsilon is not None
+        ):
+            raise ConfigurationError(
+                *(
+                    "privacy_target_epsilon cannot be combined with a fixed "
+                    "privacy_noise_multiplier for a whole-horizon process; "
+                    "partial-horizon privacy accounting and early stopping are "
+                    "unsupported. Set only privacy_target_epsilon to calibrate "
+                    "the complete horizon, or set only privacy_noise_multiplier.",
+                )
+            )
+        return Accountant(prefix=acc.cached(process)), None, horizon
     return Accountant(), acc.cached(process), None
+
+
+def _privacy_epsilon(process: Any, delta: float) -> float:
+    raw_value = process.epsilon_at(delta)
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise OperationError(
+            *(f"Privacy accounting returned a non-numeric epsilon: {raw_value!r}.",)
+        ) from exc
+    if math.isnan(value) or value < 0:
+        raise OperationError(
+            *(f"Privacy accounting returned invalid epsilon {value!r}.",)
+        )
+    return value
 
 
 def _account_independent_step(ctx: _TrainingContext) -> None:
@@ -335,9 +600,9 @@ def predict_stop_step(
     measured during the training loop.
 
     Returns the absolute step count in ``(k0, horizon]``, or ``None`` when
-    the target is not reached within the horizon or the ε sequence fails
-    the boundary monotonicity check (callers fall back to the log-boundary
-    stop check).
+    the target is not reached within the horizon. If the searched crossing
+    cannot be verified as a monotone boundary, the helper raises before
+    training rather than weakening enforcement to a logging boundary.
     """
     remaining = horizon - k0
     if remaining < 1:
@@ -352,7 +617,7 @@ def predict_stop_step(
                 if prefix_process is None
                 else prefix_process | (step_process * j)
             )
-            cache[j] = proc.epsilon_at(delta)
+            cache[j] = _privacy_epsilon(proc, delta)
         return cache[j]
 
     if eps(remaining) < target_epsilon:
@@ -368,12 +633,13 @@ def predict_stop_step(
     # genuine boundary (ε(M-1) < target <= ε(M)); both probes are cached
     # from the search, so the check is free.
     if eps(lo) < target_epsilon or (lo > 1 and eps(lo - 1) >= target_epsilon):
-        log.warning(
-            "stop-at-ε prediction failed the monotone-boundary check near "
-            "step %d; falling back to the log-boundary check.",
-            k0 + lo,
+        raise OperationError(
+            *(
+                "Stop-at-epsilon accounting violated its monotone boundary "
+                f"near step {k0 + lo}; refusing to start a run whose budget "
+                "cannot be enforced per accounted step.",
+            )
         )
-        return None
     return k0 + lo
 
 
@@ -1049,11 +1315,10 @@ class DPTrainer:
         - **Accountant on resume** preserves the mechanism lifecycle:
           independent releases load the saved ``Accountant`` as a prefix and
           calibrate remaining steps against it; whole-horizon mechanisms retain
-          their single declared process. Changing
-          ``privacy_noise_multiplier`` / ``privacy_target_epsilon`` between
-          checkpoint and resume warns but is allowed — the accountant
-          composes whatever process the user asks for, and the warning
-          guards against silent drift.
+          their single declared process. Independent-process drift is warned
+          and composed explicitly. Whole-horizon resumes reject calibration
+          mode, target, or fixed-multiplier drift because no valid prefix
+          process exists for reinterpretation.
         """
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
@@ -1070,6 +1335,8 @@ class DPTrainer:
         if self._train_dataset is None:
             raise ConfigurationError(*("DPTrainer.train() requires a train_dataset.",))
 
+        validated_privacy = self.args._validated_privacy_copy()
+        privacy_policy = _PrivacyPolicy.capture(validated_privacy)
         dataset_size = self._effective_train_dataset_size()
         if dataset_size <= 0:
             raise ConfigurationError(
@@ -1093,9 +1360,9 @@ class DPTrainer:
             )
         expected_steps_per_epoch, total_steps, _ = self._steps_breakdown(dataset_size)
         participation = ResolvedParticipationPlan.resolve(
-            mechanism_kind=self.args.privacy_noise_mechanism,
-            sampling_mode=self.args.sampling_mode,
-            sampling_kwargs=self.args.sampling_kwargs,
+            mechanism_kind=validated_privacy.privacy_noise_mechanism,
+            sampling_mode=validated_privacy.sampling_mode,
+            sampling_kwargs=validated_privacy.sampling_kwargs,
             population_size=dataset_size,
             expected_batch_size=expected_batch_size,
             sample_rate=sample_rate,
@@ -1161,6 +1428,7 @@ class DPTrainer:
                 ) from exc
         return _TrainInvocation(
             participation=participation,
+            privacy_policy=privacy_policy,
             skip_sampler_state_on_resume=skip_sampler_state_on_resume,
             dataloader_in_order=True,
             include_num_input_tokens_seen=include_num_input_tokens_seen,
@@ -1189,6 +1457,7 @@ class DPTrainer:
         self._cluster_protocol_failed = False
         resolved_resume_path: str | None = None
         invocation: _TrainInvocation | None = None
+        privacy_consensus: tuple[Any, ...] | None = None
         effective_microbatch_size = 1
         with self._cluster_local_phase(boundary="training invocation resolution"):
             if self._train_dataset is None:
@@ -1202,6 +1471,10 @@ class DPTrainer:
                 resume_from_checkpoint = self.args.resume_from_checkpoint
             resolved_resume_path = self._resolve_resume_path(resume_from_checkpoint)
             invocation = self._resolve_train_invocation()
+            # ``repr`` of user-supplied recipe values may itself fail. Build
+            # consensus material inside the synchronized local phase so one
+            # rank cannot strand its peers before the next collective.
+            privacy_consensus = invocation.privacy_policy.consensus_key()
 
             # This is a physical vmap chunk, not the logical DP batch.
             effective_microbatch_size = max(
@@ -1213,11 +1486,13 @@ class DPTrainer:
                 ),
             )
         assert invocation is not None
+        assert privacy_consensus is not None
         self._raise_cluster_phase_error(
             None,
             boundary=(
                 "resolved training invocation "
                 f"plan={invocation.participation.to_state_dict()!r},"
+                f"privacy={privacy_consensus!r},"
                 f"skip_sampler={invocation.skip_sampler_state_on_resume},"
                 f"fifo={invocation.dataloader_in_order},"
                 f"token_mode={invocation.include_num_input_tokens_seen!r},"
@@ -1420,7 +1695,10 @@ class DPTrainer:
             resume_step = self.state.global_step
             # Validate the complete DP/runtime/progress bundle before mutating
             # the live model with checkpoint weights.
-            self._validate_horizon_resume_calibration(runtime_payload)
+            self._validate_horizon_resume_calibration(
+                runtime_payload,
+                invocation.privacy_policy,
+            )
             self._load_model_weights(resume_path)
         else:
             # A fresh invocation starts at zero even when this trainer object
@@ -1470,22 +1748,22 @@ class DPTrainer:
                 self._load_callback_states()
             # Stop-at-ε on resume: if the restored accountant already
             # exceeds target, skip the training loop.
-            a = self.args
+            privacy_policy = ctx.privacy_policy
             if (
                 not ctx.is_horizon_process
-                and a.privacy_noise_multiplier is not None
-                and a.privacy_noise_multiplier > 0
-                and a.privacy_target_epsilon is not None
+                and privacy_policy.uses_fixed_noise
+                and ctx.noise_multiplier > 0
+                and privacy_policy.target_epsilon is not None
             ):
                 ctx.accounting = acc.cached(ctx.accounting)
-                resumed_eps = ctx.accounting.epsilon_at(ctx.target_delta)
-                if resumed_eps >= a.privacy_target_epsilon:
+                resumed_eps = _privacy_epsilon(ctx.accounting, ctx.target_delta)
+                if resumed_eps >= privacy_policy.target_epsilon:
                     self.state.privacy_target_epsilon_reached = True
                     log.info(
                         "stop-at-ε hit on resume: ε=%g >= target=%g; "
                         "skipping training loop",
                         resumed_eps,
-                        a.privacy_target_epsilon,
+                        privacy_policy.target_epsilon,
                     )
                     return TrainOutput(
                         self.state.global_step,
@@ -1500,20 +1778,19 @@ class DPTrainer:
         # deterministic): the crossing step is binary-searchable up front, so
         # the in-loop check becomes a free integer comparison (#392). This is
         # only defined for independently composed step mechanisms.
-        a = self.args
+        privacy_policy = ctx.privacy_policy
         if (
             not ctx.is_horizon_process
-            and a.privacy_noise_multiplier is not None
-            and a.privacy_noise_multiplier > 0
-            and a.privacy_target_epsilon is not None
-            and ctx.participation.sampling_mode not in ("b_min_sep", "balls_in_bins")
+            and privacy_policy.uses_fixed_noise
+            and ctx.noise_multiplier > 0
+            and privacy_policy.target_epsilon is not None
             and ctx.executed_global_step < ctx.total_steps
         ):
             with self._cluster_local_phase(boundary="privacy-stop prediction"):
                 ctx.stop_at_step = predict_stop_step(
                     ctx.accounting.process,
                     ctx.step_process,
-                    target_epsilon=a.privacy_target_epsilon,
+                    target_epsilon=privacy_policy.target_epsilon,
                     delta=ctx.target_delta,
                     k0=ctx.executed_global_step,
                     horizon=ctx.total_steps,
@@ -1524,7 +1801,7 @@ class DPTrainer:
                         "(target ε=%g at δ=%.2e)",
                         ctx.stop_at_step,
                         ctx.total_steps,
-                        a.privacy_target_epsilon,
+                        privacy_policy.target_epsilon,
                         ctx.target_delta,
                     )
 
@@ -1798,6 +2075,7 @@ class DPTrainer:
         if invocation is None:
             invocation = self._resolve_train_invocation()
         participation = invocation.participation
+        privacy_policy = invocation.privacy_policy
         skip_sampler_state_on_resume = invocation.skip_sampler_state_on_resume
         dataloader_in_order = invocation.dataloader_in_order
 
@@ -1959,8 +2237,8 @@ class DPTrainer:
         self.state.save_steps = save_steps_resolved
 
         # --- Clipping norm (scalar ``clipping_norm`` or per-group dict) ---
-        mgn = a.clipping_norm
-        if isinstance(mgn, dict):
+        mgn = privacy_policy.clipping_norm
+        if isinstance(mgn, Mapping):
             from opaque.api.engine.clipping import per_group as per_group_clipper
 
             fb = float(mgn["fallback"])
@@ -1981,15 +2259,15 @@ class DPTrainer:
         # gradients.  They must use independent streams for the composed
         # mechanism; reusing the root key makes both step-t streams identical.
         # Keep non-adaptive seeding unchanged for reproducibility.
-        quantile_noise_key = gradient_noise_key = key(a.seed)
-        if a.clipping_mode == "adaptive":
+        quantile_noise_key = gradient_noise_key = key(privacy_policy.seed)
+        if privacy_policy.clipping_mode == "adaptive":
             quantile_noise_key, gradient_noise_key = split(gradient_noise_key)
 
         # --- Clipping ---
         grad_fn, clip_state = self._create_grad_fn(
             per_example_loss_fn,
             batch_argnums,
-            a,
+            privacy_policy,
             clip_norm,
             expected_batch_size,
             microbatch_size,
@@ -2010,11 +2288,7 @@ class DPTrainer:
         if mechanism_kind != "gaussian":
             mf_strategy = _dpftrl.build_strategy(
                 mechanism_kind,
-                (
-                    a.privacy_noise_mechanism_kwargs
-                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
-                    else None
-                ),
+                privacy_policy.mechanism_kwargs or None,
                 lr_schedule=lr_schedule,
             )
             mf_amplifier_factory = _dpftrl.build_amplifier_factory(
@@ -2029,21 +2303,21 @@ class DPTrainer:
 
         # --- Privacy calibration ---
         target_delta = (
-            a.privacy_target_delta
-            if a.privacy_target_delta is not None
+            privacy_policy.target_delta
+            if privacy_policy.target_delta is not None
             else 1.0 / (dataset_size**1.1)
         )
         mechanism = self._build_mechanism(
-            a,
+            privacy_policy,
             expected_batch_size,
             clip_norm,
             participation=participation,
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
-            a,
+            privacy_policy,
             mechanism,
-            total_steps,
+            participation,
             target_delta,
             prefix_accountant=prefix_accountant,
             resume_horizon_noise_multiplier=(
@@ -2054,8 +2328,40 @@ class DPTrainer:
             global_step_already_done=global_step_already_done,
         )
         calibration_source = (
-            "fixed" if a.privacy_noise_multiplier is not None else "calibrated"
+            "fixed" if privacy_policy.uses_fixed_noise else "calibrated"
         )
+        _validate_resolved_privacy(
+            noise_multiplier=float(noise_multiplier),
+            target_delta=float(target_delta),
+            sample_rate=sample_rate,
+        )
+        noise_multiplier = float(noise_multiplier)
+        target_delta = float(target_delta)
+        realized_process = _require_dp_process(mechanism(noise_multiplier))
+        if mechanism_kind != "gaussian":
+            assert mf is not None
+            realized_process = _dpftrl.validate_mf_process_for_plan(
+                participation,
+                mf,
+                noise_multiplier,
+                process=realized_process,
+            )
+        accounting, step_process, horizon_process = _initialize_accounting(
+            realized_process,
+            privacy_policy,
+            participation=participation,
+        )
+        if resume_runtime is not None and bool(resume_runtime.is_horizon_process) != (
+            horizon_process is not None
+        ):
+            raise CheckpointError(
+                *(
+                    "Resume accounting lifecycle does not match the checkpoint: "
+                    f"saved horizon={bool(resume_runtime.is_horizon_process)}, "
+                    f"current horizon={horizon_process is not None}. Restart from "
+                    "scratch after changing the realized privacy mechanism.",
+                )
+            )
         self._set_resolved_privacy_args(
             target_delta=target_delta,
             noise_multiplier=noise_multiplier,
@@ -2084,7 +2390,6 @@ class DPTrainer:
             clip_state,
             noise_multiplier,
         )
-        realized_process = mechanism(noise_multiplier)
         # --- Noise ---
         # Sensitivity flows through the ``ClippedPytree`` returned by
         # ``clipped_grad`` (its ``.max_norm`` field).  ``noise_fn`` reads
@@ -2094,11 +2399,7 @@ class DPTrainer:
         if mechanism_kind == "gaussian":
             _gn_extra: dict[str, Any] = {
                 _k: _v
-                for _k, _v in (
-                    a.privacy_noise_mechanism_kwargs.items()
-                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
-                    else ()
-                )
+                for _k, _v in privacy_policy.mechanism_kwargs.items()
                 if _k in ("bound", "compute_dtype")
             }
             make_noise = (
@@ -2115,12 +2416,7 @@ class DPTrainer:
             # ``min_sep`` / ``max_participations``) off the raw amplifier so
             # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
-            _amp = _dpftrl.validate_mf_process_for_plan(
-                participation,
-                mf,
-                noise_multiplier,
-            )
-            realized_process = _amp
+            _amp = realized_process
             if int(_amp.n_steps) != total_steps:
                 raise OperationError(
                     *(
@@ -2135,17 +2431,13 @@ class DPTrainer:
                 min_sep=int(_amp.min_sep),
                 max_participations=int(_amp.max_participations),
                 noise_multiplier=noise_multiplier,
-                key=key(a.seed),
+                key=key(privacy_policy.seed),
             )
 
         # --- Collate ---
         # Same wrapper used by the eval dataloader so train and eval
         # share key validation + device move (no asymmetric crash modes).
         collate_fn = self._resolve_collate_fn()
-
-        accounting, step_process, horizon_process = _initialize_accounting(
-            realized_process
-        )
 
         return _TrainingContext(
             fmodel=fmodel,
@@ -2162,12 +2454,10 @@ class DPTrainer:
             accounting=accounting,
             mechanism=mechanism,
             participation=participation,
+            privacy_policy=privacy_policy,
             step_process=step_process,
             target_delta=target_delta,
-            sample_rate=sample_rate,
             calibration_source=calibration_source,
-            expected_steps_per_epoch=expected_steps_per_epoch,
-            total_steps=total_steps,
             num_epochs=num_epochs,
             collate_fn=collate_fn,
             skip_sampler_state_on_resume=skip_sampler_state_on_resume,
@@ -2188,8 +2478,6 @@ class DPTrainer:
             sampler_restart_step=sampler_restart_step,
             save_steps_resolved=save_steps_resolved,
             clip_norm=clip_norm,
-            mechanism_kind=mechanism_kind,
-            is_horizon_process=horizon_process is not None,
             horizon_process=horizon_process,
             mf=mf,
         )
@@ -2629,7 +2917,7 @@ class DPTrainer:
         train_loss = 0.0
         metrics: dict[str, Any] = {}
         with self._cluster_local_phase(boundary="final metric construction"):
-            final_epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
+            final_epsilon = _privacy_epsilon(ctx.accounting, ctx.target_delta)
             # Include any loss remaining after the last logging boundary.
             self._total_loss_scalar += self._tr_loss.item()
             effective_global_step = max(global_step, 0.001)
@@ -4388,7 +4676,12 @@ class DPTrainer:
         if ctx.current_sampler is None:
             from opaque.random import fold_in
 
-            sampler_key = key(a.data_seed if a.data_seed is not None else a.seed)
+            privacy_policy = ctx.privacy_policy
+            sampler_key = key(
+                privacy_policy.data_seed
+                if privacy_policy.data_seed is not None
+                else privacy_policy.seed
+            )
             if ctx.sampler_restart_step is not None:
                 # Restart ignored Poisson state on a cursor-derived stream so
                 # the post-resume steps do not replay the Bernoulli draws the
@@ -4410,6 +4703,7 @@ class DPTrainer:
                 key=sampler_key,
                 mf=ctx.mf,
                 noise_multiplier=ctx.noise_multiplier,
+                process=ctx.horizon_process,
             )
         sampler = ctx.current_sampler
 
@@ -4516,10 +4810,9 @@ class DPTrainer:
         ignores ``worker_init_fn`` in that case anyway, but spelling
         ``None`` keeps the spawn path explicit.
 
-        DP correctness is unaffected: the per-step DP RNG chain
-        (``key(args.seed)`` folded with ``state.epoch`` /
-        ``iter_count``) is independent of ``torch`` / NumPy / Python's
-        global generators.
+        DP correctness is unaffected: sampling and noise keys come from the
+        frozen train-invocation policy and are independent of ``torch`` /
+        NumPy / Python's global generators.
         """
         a = self.args
         if a.dataloader_num_workers <= 0:
@@ -4660,33 +4953,7 @@ class DPTrainer:
             # so subsequent ``epsilon_at`` queries within this window are
             # amortized.  Mirrors ``_after_evaluate`` and the manual loop.
             ctx.accounting = acc.cached(ctx.accounting)
-            epsilon = ctx.accounting.epsilon_at(ctx.target_delta)
-            # Stop-at-ε (fallback): owns the stop only when no crossing step
-            # was predicted (``ctx.stop_at_step is None`` — Monte-Carlo
-            # accountants, unreachable target); otherwise the in-loop integer
-            # check is the single stop owner and this block only computed ε
-            # for the log line.  Fixed-NM path only; the calibrated NM was
-            # sized to hit target_epsilon at max_steps, so stopping earlier
-            # would mean we over-noised the run.
-            a = self.args
-            if (
-                ctx.stop_at_step is None
-                and not ctx.is_horizon_process
-                and a.privacy_noise_multiplier is not None
-                and a.privacy_noise_multiplier > 0
-                and a.privacy_target_epsilon is not None
-                and epsilon >= a.privacy_target_epsilon
-            ):
-                # Horizon configurations cannot reach this fallback: combining
-                # fixed noise with a target is rejected during validation.
-                self.state.privacy_target_epsilon_reached = True
-                self._control.should_training_stop = True
-                log.info(
-                    "stop-at-ε hit: ε=%g >= target=%g at step %d",
-                    epsilon,
-                    a.privacy_target_epsilon,
-                    global_step,
-                )
+            epsilon = _privacy_epsilon(ctx.accounting, ctx.target_delta)
             # HF parity: ``loss`` is the *average* per-step loss across the
             # window since the last log boundary, not the per-step
             # instantaneous value.  Smooths out per-step variance that
@@ -4832,7 +5099,7 @@ class DPTrainer:
         self,
         loss_fn: Callable[..., Any],
         batch_argnums: tuple[int, ...],
-        a: TrainingArguments,
+        privacy_policy: _PrivacyPolicy,
         clip_norm: Any,
         expected_batch_size: int,
         microbatch_size: int,
@@ -4849,13 +5116,13 @@ class DPTrainer:
         When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
         """
-        ca = a.clipping_kwargs
+        ca = privacy_policy.clipping_kwargs
         target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
         clip_norm_max = float(ca.get("norm_max", 10.0))
         auto_gamma = float(ca.get("gamma", 0.01))
         compiler = self._grad_compiler()
 
-        if a.clipping_mode == "adaptive":
+        if privacy_policy.clipping_mode == "adaptive":
             grad_fn, state = adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
@@ -4870,7 +5137,7 @@ class DPTrainer:
                 normalize_by=expected_batch_size,
                 _chunk_compiler=compiler,
             )
-        elif a.clipping_mode == "auto":
+        elif privacy_policy.clipping_mode == "auto":
             grad_fn, state = auto_clipped_grad(
                 loss_fn,
                 argnums=0,
@@ -4899,7 +5166,7 @@ class DPTrainer:
 
     def _build_mechanism(
         self,
-        a: TrainingArguments,
+        privacy_policy: _PrivacyPolicy,
         expected_batch_size: int,
         clip_norm: Any,
         *,
@@ -4925,7 +5192,7 @@ class DPTrainer:
         num_groups = clip_norm.num_groups if isinstance(clip_norm, PerGroup) else 1
 
         base = dpsgd_acc.gaussian
-        if a.clipping_mode == "adaptive":
+        if privacy_policy.clipping_mode == "adaptive":
             _base = base
 
             def base(nm, _b=_base):
@@ -5004,9 +5271,9 @@ class DPTrainer:
 
     def _calibrate_noise(
         self,
-        a,
+        privacy_policy: _PrivacyPolicy,
         mechanism,
-        total_steps,
+        participation: ResolvedParticipationPlan,
         target_delta,
         *,
         prefix_accountant: Accountant | None = None,
@@ -5019,16 +5286,17 @@ class DPTrainer:
         remaining steps with the saved process composed on the left.
         Whole-horizon mechanisms calibrate the complete declared process.
         """
+        total_steps = participation.total_steps
         if resume_horizon_noise_multiplier is not None:
-            if a.privacy_noise_multiplier is not None and _drift_differs(
-                float(a.privacy_noise_multiplier),
+            if privacy_policy.noise_multiplier is not None and _drift_differs(
+                privacy_policy.noise_multiplier,
                 resume_horizon_noise_multiplier,
             ):
                 raise CheckpointError(
                     *(
                         "Whole-horizon resume forbids privacy_noise_multiplier "
                         f"drift: saved={resume_horizon_noise_multiplier!r}, "
-                        f"current={a.privacy_noise_multiplier!r}. Restart from "
+                        f"current={privacy_policy.noise_multiplier!r}. Restart from "
                         "scratch to use a different fixed multiplier.",
                     )
                 )
@@ -5037,24 +5305,24 @@ class DPTrainer:
                 resume_horizon_noise_multiplier,
             )
             return resume_horizon_noise_multiplier
-        if a.privacy_noise_multiplier is not None:
-            log.info("Using fixed noise multiplier: %.4f", a.privacy_noise_multiplier)
-            return a.privacy_noise_multiplier
+        if privacy_policy.noise_multiplier is not None:
+            log.info(
+                "Using fixed noise multiplier: %.4f",
+                privacy_policy.noise_multiplier,
+            )
+            return privacy_policy.noise_multiplier
 
         if prefix_accountant is None or global_step_already_done == 0:
             log.info(
                 "Calibrating privacy (target eps=%.2f, delta=%.2e)...",
-                a.privacy_target_epsilon,
+                privacy_policy.target_epsilon,
                 target_delta,
             )
 
             def objective(nm, _mechanism=mechanism, _steps=total_steps):
-                process = _mechanism(nm)
-                return (
-                    process
-                    if isinstance(process, DpHorizonProcess)
-                    else process * _steps
-                )
+                process = _require_dp_process(_mechanism(nm))
+                horizon = _classify_process_for_plan(process, participation)
+                return process if horizon is not None else process * _steps
         else:
             remaining_steps = max(1, total_steps - global_step_already_done)
             log.info(
@@ -5062,39 +5330,52 @@ class DPTrainer:
                 "(target eps=%.2f, delta=%.2e)...",
                 remaining_steps,
                 total_steps,
-                a.privacy_target_epsilon,
+                privacy_policy.target_epsilon,
                 target_delta,
             )
             prefix_process = prefix_accountant.process
 
             def objective(nm, _prefix=prefix_process, _rem=remaining_steps):
-                process = mechanism(nm)
-                return (
-                    process
-                    if isinstance(process, DpHorizonProcess)
-                    else _prefix | (process * _rem)
-                )
+                process = _require_dp_process(mechanism(nm))
+                horizon = _classify_process_for_plan(process, participation)
+                return process if horizon is not None else _prefix | (process * _rem)
 
-        ecal = a.noise_calibration_kwargs
+        ecal = privacy_policy.calibration_kwargs
         param_min = float(ecal["min"])
         param_max = float(ecal["max"])
         result = cal.calibrate(
-            cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
+            cal.epsilon_budget(privacy_policy.target_epsilon, delta=target_delta),
             objective,
             param_min=param_min,
             param_max=param_max,
             tolerance=float(ecal["tolerance"]),
         )
+        resolved_param = float(result.param)
+        achieved_epsilon = float(result.achieved)
+        if not math.isfinite(resolved_param) or resolved_param < 0:
+            raise OperationError(
+                *(
+                    "Noise calibration returned an invalid multiplier: "
+                    f"{resolved_param!r}.",
+                )
+            )
+        if math.isnan(achieved_epsilon) or achieved_epsilon < 0:
+            raise OperationError(
+                *(
+                    "Noise calibration returned an invalid achieved epsilon: "
+                    f"{achieved_epsilon!r}.",
+                )
+            )
         log.info(
             "Calibrated: noise_multiplier=%.4f, achieved eps=%.3f (converged=%s)",
-            result.param,
-            result.achieved,
+            resolved_param,
+            achieved_epsilon,
             result.converged,
         )
-        self.state.privacy_calibration_noise_multiplier = float(result.param)
-        self.state.privacy_calibration_achieved_epsilon = float(result.achieved)
+        self.state.privacy_calibration_noise_multiplier = resolved_param
+        self.state.privacy_calibration_achieved_epsilon = achieved_epsilon
         self.state.privacy_calibration_converged = bool(result.converged)
-        return result.param
+        return resolved_param
 
     def _restore_params(self, trainable_params: dict[str, Tensor]) -> None:
         """Load trained parameters back into the nn.Module.
@@ -5791,6 +6072,7 @@ class DPTrainer:
                 ctx.participation,
                 ctx.mf,
                 ctx.noise_multiplier,
+                process=ctx.horizon_process,
             )
             mf_n_steps: int | None = int(_amp.n_steps)
             mf_min_sep: int | None = int(_amp.min_sep)
@@ -5815,7 +6097,7 @@ class DPTrainer:
             sampler_cursor_origin=ctx.sampler_cursor_origin,
             is_horizon_process=ctx.is_horizon_process,
             calibration_source=ctx.calibration_source,
-            target_epsilon=a.privacy_target_epsilon,
+            target_epsilon=ctx.privacy_policy.target_epsilon,
             horizon_process_state=(
                 opaque_state_dict(ctx.horizon_process)
                 if ctx.horizon_process is not None
@@ -5848,8 +6130,8 @@ class DPTrainer:
         Each rank writes its own ``rng_state.pth`` (single-process) or
         ``rng_state_{rank}.pth`` (multi-rank) — every rank carries an
         independent non-DP RNG that affects collator stochasticity, model
-        init, eval shuffling, etc.  The DP RNG chain is keyed off
-        ``args.seed`` and folded by epoch / iter_count, so it is
+        init, eval shuffling, etc.  The DP RNG chain is keyed off the
+        invocation's frozen privacy seed, so it is
         deterministic and does not need a per-rank file.
         """
         torch.save(
@@ -6166,15 +6448,15 @@ class DPTrainer:
                 setattr(cb, attr_key, value)
 
     def _validate_horizon_resume_calibration(
-        self, runtime: ckpt.RuntimeCheckpoint
+        self,
+        runtime: ckpt.RuntimeCheckpoint,
+        privacy_policy: _PrivacyPolicy,
     ) -> None:
         """Reject calibration changes before restoring a horizon multiplier."""
         if not runtime.is_horizon_process:
             return
 
-        current_source = (
-            "fixed" if self.args.privacy_noise_multiplier is not None else "calibrated"
-        )
+        current_source = "fixed" if privacy_policy.uses_fixed_noise else "calibrated"
         if runtime.calibration_source != current_source:
             raise CheckpointError(
                 *(
@@ -6186,13 +6468,13 @@ class DPTrainer:
             )
         if current_source == "calibrated" and _drift_differs(
             runtime.target_epsilon,
-            self.args.privacy_target_epsilon,
+            privacy_policy.target_epsilon,
         ):
             raise CheckpointError(
                 *(
                     "Whole-horizon resume forbids privacy_target_epsilon drift: "
                     f"saved={runtime.target_epsilon!r}, "
-                    f"current={self.args.privacy_target_epsilon!r}. Restart from "
+                    f"current={privacy_policy.target_epsilon!r}. Restart from "
                     "scratch to calibrate against a different privacy budget.",
                 )
             )
@@ -6387,7 +6669,9 @@ class DPTrainer:
                 ctx.expected_steps_per_epoch if ctx is not None else None
             ),
             "mechanism_kind": (
-                ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+                ctx.participation.mechanism_kind
+                if ctx is not None
+                else a.privacy_noise_mechanism
             ),
             "participation_plan": (
                 ctx.participation.to_state_dict() if ctx is not None else None
@@ -6402,18 +6686,24 @@ class DPTrainer:
             # construction and surfaced via ctx.mf; before ctx exists we
             # can't compare, so return None to skip the check.
             "mf_n_steps": (
-                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).n_steps)
-                if ctx is not None and ctx.mf is not None
+                int(ctx.horizon_process.n_steps)
+                if ctx is not None
+                and ctx.mf is not None
+                and ctx.horizon_process is not None
                 else None
             ),
             "mf_min_sep": (
-                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).min_sep)
-                if ctx is not None and ctx.mf is not None
+                int(ctx.horizon_process.min_sep)
+                if ctx is not None
+                and ctx.mf is not None
+                and ctx.horizon_process is not None
                 else None
             ),
             "mf_max_participations": (
-                int(ctx.mf.amplifier_factory(ctx.noise_multiplier).max_participations)
-                if ctx is not None and ctx.mf is not None
+                int(ctx.horizon_process.max_participations)
+                if ctx is not None
+                and ctx.mf is not None
+                and ctx.horizon_process is not None
                 else None
             ),
             # LR-schedule shape (privacy-neutral; warn-only drift).

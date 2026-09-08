@@ -9,6 +9,7 @@ the trainer's default ``transformers.default_data_collator`` directly.
 
 from __future__ import annotations
 
+import math
 import multiprocessing
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from transformers import TrainerCallback as _HFTrainerCallback
 
 from opaque.api.transformers.trainer import _dpftrl
 from opaque.api.transformers.trainer._state import DPTrainerState
-from opaque.exceptions import CheckpointError, ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError, OperationError
 from opaque.random import fold_in, key, split
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 from opaque.transformers.trainer.types import EvaluationResult, TrainOutput
@@ -228,7 +229,7 @@ class TestIgnoreDataSkip:
 
 class TestStopAtEpsilon:
     """Stop-at-ε: when both NM>0 and target_epsilon are set, the trainer
-    halts at the first log boundary where the accumulated ε ≥ target.
+    halts at the first independently accounted step where ε ≥ target.
     """
 
     def test_stops_when_target_epsilon_reached(self, gpt2_with_lora, tiny_lm_dataset):
@@ -2862,3 +2863,23 @@ class TestPredictStopStep:
             horizon=horizon,
         )
         assert resumed == fresh
+
+    def test_invalid_accounting_epsilon_is_rejected(self):
+        from opaque.api.transformers.trainer._dp_trainer import predict_stop_step
+
+        class _NaNProcess:
+            def __mul__(self, count):
+                return self
+
+            def epsilon_at(self, delta):
+                return math.nan
+
+        with pytest.raises(OperationError, match="invalid epsilon"):
+            predict_stop_step(
+                None,
+                _NaNProcess(),
+                target_epsilon=1.0,
+                delta=1e-5,
+                k0=0,
+                horizon=2,
+            )

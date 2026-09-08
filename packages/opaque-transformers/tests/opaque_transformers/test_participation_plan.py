@@ -102,6 +102,30 @@ def test_plan_exposes_rank_local_population() -> None:
     assert plan.local_population_size == 32
 
 
+@pytest.mark.parametrize(
+    ("mechanism", "sampling_mode", "sampling_kwargs", "expected"),
+    [
+        ("gaussian", "poisson", {}, False),
+        ("gaussian", "k_out_of_t", {"k": 2, "allocation": "block"}, True),
+        ("mf_identity", "poisson", {}, True),
+        ("mf_band", "b_min_sep", {}, True),
+    ],
+)
+def test_plan_owns_accounting_lifecycle(
+    mechanism,
+    sampling_mode,
+    sampling_kwargs,
+    expected,
+) -> None:
+    plan = _resolve(
+        mechanism_kind=mechanism,
+        sampling_mode=sampling_mode,
+        sampling_kwargs=sampling_kwargs,
+    )
+
+    assert plan.requires_horizon_process is expected
+
+
 def test_plan_rejects_rank_local_truncation_under_ddp() -> None:
     with pytest.raises(
         ConfigurationError,
