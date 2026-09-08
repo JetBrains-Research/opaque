@@ -168,6 +168,45 @@ def test_chunked_linear_ce_bounds_probability_tile_width(monkeypatch):
     assert max(exp_widths) <= 2048
 
 
+@pytest.mark.parametrize("vmapped", [False, True], ids=["direct", "vmap"])
+@pytest.mark.parametrize("use_token_scaling", [False, True], ids=["plain", "scaled"])
+@pytest.mark.parametrize("has_ignored", [False, True], ids=["all-valid", "ignored"])
+def test_chunked_backward_reuses_forward_statistics(
+    monkeypatch, vmapped, use_token_scaling, has_ignored
+):
+    torch.manual_seed(1)
+    b, t, d, vocab = 2, 6, 8, 32
+    hidden = torch.randn(b, t, d)
+    weight = torch.randn(vocab, d)
+    labels = torch.randint(0, vocab, (b, t))
+    if has_ignored:
+        labels[:, 2] = -100
+
+    calls = 0
+    original = mod._stream_lse
+
+    def recording_stream_lse(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "_stream_lse", recording_stream_lse)
+
+    def loss(h, w, lab):
+        return linear_cross_entropy_chunked(
+            h, w, lab, use_token_scaling=use_token_scaling
+        )
+
+    if vmapped:
+        vmap(grad(loss, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    else:
+        hidden.requires_grad_(True)
+        weight.requires_grad_(True)
+        torch.autograd.grad(loss(hidden, weight, labels), (hidden, weight))
+
+    assert calls == 1
+
+
 @pytest.mark.mps
 def test_chunked_linear_ce_parity_mps():
     _check_parity("mps")

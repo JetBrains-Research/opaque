@@ -30,6 +30,7 @@ import torch
 
 # Vocab columns materialized per chunk by default. Callers can lower this for
 # large DP-vmap microbatches, where the physical tile also includes examples.
+# Backward recomputes one chunk at a time to form gradients.
 _CHUNK_VOCAB = 16384
 
 
@@ -75,8 +76,7 @@ def _stream_lse(
     all (softcapped) logits. ``logit_target`` / ``sum_logits`` are ``None``
     unless requested: each is a per-chunk accumulator, and computing one that
     isn't needed still pins every chunk's logits in the functorch ``vmap(grad)``
-    graph (the backward only needs the bare ``lse``). No ``(N, V)`` tensor lives
-    past a single chunk.
+    graph. No ``(N, V)`` tensor lives past a single chunk.
     """
     N = e.shape[0]
     V = weight.shape[0]
@@ -130,6 +130,11 @@ class _ChunkedLinearCE(torch.autograd.Function):
 
     generate_vmap_rule = True
 
+    @classmethod
+    def apply(cls, *args):
+        """Return per-token loss while retaining internal statistics outputs."""
+        return super().apply(*args)[0]
+
     @staticmethod
     def forward(
         e,
@@ -154,8 +159,11 @@ class _ChunkedLinearCE(torch.autograd.Function):
         )
         if use_token_scaling:
             # Detached confidence p_t = softmax(logits)[target] (DFT).
-            loss = torch.exp(logit_target - lse).detach() * loss
-        return loss
+            token_weight = torch.exp(logit_target - lse).detach()
+            loss = token_weight * loss
+        else:
+            token_weight = lse.new_empty(0)
+        return loss, lse, token_weight
 
     @staticmethod
     def setup_context(ctx, inputs, output):
@@ -168,15 +176,17 @@ class _ChunkedLinearCE(torch.autograd.Function):
             use_token_scaling,
             chunk_vocab,
         ) = inputs
-        ctx.save_for_backward(e, weight, targets)
+        _, lse, token_weight = output
+        ctx.mark_non_differentiable(lse, token_weight)
+        ctx.save_for_backward(e, weight, targets, lse, token_weight)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.label_smoothing = float(label_smoothing)
         ctx.use_token_scaling = bool(use_token_scaling)
         ctx.chunk_vocab = chunk_vocab
 
     @staticmethod
-    def backward(ctx, grad_loss):
-        e, weight, targets = ctx.saved_tensors
+    def backward(ctx, grad_loss, _grad_lse, _grad_token_weight):
+        e, weight, targets, lse, token_weight = ctx.saved_tensors
         softcap = ctx.softcap
         eps = ctx.label_smoothing
         compute_dc = ctx.needs_input_grad[1]
@@ -184,18 +194,10 @@ class _ChunkedLinearCE(torch.autograd.Function):
         chunks = _num_chunks(V, ctx.chunk_vocab)
         Vc = (V + chunks - 1) // chunks
 
-        lse, logit_target, _ = _stream_lse(
-            e,
-            weight,
-            targets,
-            softcap,
-            chunks,
-            need_logit_target=ctx.use_token_scaling,
-        )
         cdt = _compute_dtype(e, weight)
         row = grad_loss.to(cdt)
         if ctx.use_token_scaling:
-            row = row * torch.exp(logit_target - lse).detach()
+            row = row * token_weight
 
         # CE derivatives are FP32, then cross the same cast boundary as eager
         # BF16 logits before each linear backward matmul.

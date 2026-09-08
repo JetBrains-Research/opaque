@@ -29,6 +29,7 @@ from torch.func import grad, vmap
 
 pytest.importorskip("triton")
 
+import opaque.api.patches.kernels.linear_cross_entropy as linear_ce_mod
 from opaque.api.patches.kernels.linear_cross_entropy import (
     Opaque_LinearCrossEntropyLoss,
     opaque_linear_cross_entropy_loss,
@@ -408,6 +409,54 @@ class TestLinearCEBackward:
             atol=ATOL_BACKWARD,
             label="weight.grad",
         )
+
+
+@pytest.mark.parametrize("vmapped", [False, True], ids=["direct", "vmap"])
+@pytest.mark.parametrize("use_token_scaling", [False, True], ids=["plain", "scaled"])
+@pytest.mark.parametrize("has_ignored", [False, True], ids=["all-valid", "ignored"])
+def test_backward_reuses_forward_statistics(
+    monkeypatch, vmapped, use_token_scaling, has_ignored
+):
+    torch.manual_seed(46)
+    b, t, d, vocab = 2, 6, 16, 256
+    hidden = torch.randn(b, t, d, device="cuda", dtype=torch.bfloat16)
+    weight = torch.randn(vocab, d, device="cuda", dtype=torch.bfloat16)
+    labels = torch.randint(0, vocab, (b, t), device="cuda")
+    if has_ignored:
+        labels[:, 2] = -100
+
+    forward_calls = 0
+    valid_calls = 0
+    original_forward = linear_ce_mod._forward_impl
+    original_valids = linear_ce_mod._build_flat_valids
+
+    def recording_forward(*args, **kwargs):
+        nonlocal forward_calls
+        forward_calls += 1
+        return original_forward(*args, **kwargs)
+
+    def recording_valids(*args, **kwargs):
+        nonlocal valid_calls
+        valid_calls += 1
+        return original_valids(*args, **kwargs)
+
+    monkeypatch.setattr(linear_ce_mod, "_forward_impl", recording_forward)
+    monkeypatch.setattr(linear_ce_mod, "_build_flat_valids", recording_valids)
+
+    def loss(h, w, lab):
+        return Opaque_LinearCrossEntropyLoss.apply(
+            h, w, lab, -100, 0, 0.0, use_token_scaling
+        )
+
+    if vmapped:
+        vmap(grad(loss, (0, 1)), in_dims=(0, None, 0))(hidden, weight, labels)
+    else:
+        hidden.requires_grad_(True)
+        weight.requires_grad_(True)
+        torch.autograd.grad(loss(hidden, weight, labels), (hidden, weight))
+
+    assert forward_calls == 1
+    assert valid_calls == 1
 
 
 # ============================================================================
