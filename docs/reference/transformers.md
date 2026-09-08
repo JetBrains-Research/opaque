@@ -202,7 +202,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `use_compat_patches` | `bool` | `True` | vmap-safety patches (eager-attention, batchify, vmap-safe masking / collator / checkpoint hooks). |
 | `use_performance_kernels` | `bool` | `False` | CUDA + Triton kernel group.  Auto-`False` on hosts without CUDA + Triton. |
-| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat patch overrides. Keys include `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `chunked_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. `chunked_linear_cross_entropy` accepts `True`, a positive vocabulary tile width, or `False`/`0` to disable it. |
+| `performance_kernels_config` | `dict \| str \| None` | `None` | Flat patch overrides. Keys include `rope`, `rms_norm`, `activation`, `cross_entropy`, `fused_linear_cross_entropy`, `chunked_linear_cross_entropy`, `kv_cache`, `eager_attention`, `batchify`, `vmap_masking`, `empty_batches`, `vmap_checkpointing`. `chunked_linear_cross_entropy` accepts `True` for automatic 2-D tiling, a positive maximum vocabulary tile width, or `False`/`0` to disable it. |
 
 ### Compute and precision
 
