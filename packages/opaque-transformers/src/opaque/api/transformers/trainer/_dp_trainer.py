@@ -195,8 +195,14 @@ def _resolve_drift_disposition(
 
 
 def _compile_strict_chunk(fn: Callable, *, backend: str, mode: str) -> Callable:
-    """Compile one tensor-only gradient chunk without graph-break fallback."""
-    return torch.compile(fn, backend=backend, mode=mode, fullgraph=True)
+    """Compile one tensor-only gradient chunk as a strict dynamic graph."""
+    return torch.compile(
+        fn,
+        backend=backend,
+        mode=mode,
+        fullgraph=True,
+        dynamic=True,
+    )
 
 
 @dataclasses.dataclass
@@ -4179,9 +4185,9 @@ class DPTrainer:
 
         The clipping factories keep variable-size microbatch orchestration,
         diagnostics, and state updates eager.  The injected compiler sees only
-        ``vmap(grad_and_value)`` plus per-example clipping and reduction. Each
-        encountered chunk size gets a complete graph, bounding variants by the
-        configured microbatch size instead of realized Poisson batch sizes.
+        ``vmap(grad_and_value)`` plus per-example clipping and reduction, with a
+        symbolic leading chunk dimension. This avoids specializing on realized
+        Poisson or remainder batch sizes; PyTorch may retain a size-one variant.
         """
         a = self.args
         if not a.torch_compile:
