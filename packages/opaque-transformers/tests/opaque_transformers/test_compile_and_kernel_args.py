@@ -18,7 +18,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 
 from opaque.api.transformers.trainer._distributed import DDPState
 from opaque.api.transformers.trainer._dp_trainer import _compile_strict_chunk
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, OperationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ----------------------------------------------------------------------------
@@ -267,6 +267,7 @@ def _make_fake_distributed(trainer):
         backend="gloo",
         device=torch.device("cpu"),
     )
+    trainer._cluster_status = torch.zeros(8, dtype=torch.int64)
 
 
 def test_sibling_compile_failure_raises_before_gradient_collective(
@@ -275,16 +276,20 @@ def test_sibling_compile_failure_raises_before_gradient_collective(
     trainer, _ = _tiny_trainer(tmp_path)
     _make_fake_distributed(trainer)
 
-    def sibling_failed(flags, *, op):
-        flags[1] = 1.0
+    def sibling_failed(status, *, op):
+        status[4] = 1
+        status[5] = 1
 
     monkeypatch.setattr(torch.distributed, "all_reduce", sibling_failed)
 
-    with pytest.raises(RuntimeError, match="failed on a sibling rank"):
-        trainer._synchronize_grad_failure(None)
+    with pytest.raises(OperationError, match="failed on at least one rank"):
+        trainer._raise_cluster_phase_error(
+            None,
+            boundary="clipped-gradient construction",
+        )
 
 
-def test_local_compile_failure_is_synchronized_then_reraised(tmp_path, monkeypatch):
+def test_local_compile_failure_is_synchronized_and_reported(tmp_path, monkeypatch):
     trainer, _ = _tiny_trainer(tmp_path)
     _make_fake_distributed(trainer)
     calls = []
@@ -295,10 +300,13 @@ def test_local_compile_failure_is_synchronized_then_reraised(tmp_path, monkeypat
     )
     failure = torch._dynamo.exc.Unsupported("strict graph failed")
 
-    with pytest.raises(torch._dynamo.exc.Unsupported, match="strict graph failed"):
-        trainer._synchronize_grad_failure(failure)
+    with pytest.raises(OperationError, match="strict graph failed"):
+        trainer._raise_cluster_phase_error(
+            failure,
+            boundary="clipped-gradient construction",
+        )
 
-    assert calls[0].tolist() == [0.0, 1.0]
+    assert calls[0].tolist()[4:7] == [1, 1, 0]
 
 
 # ----------------------------------------------------------------------------
