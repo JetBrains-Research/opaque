@@ -541,9 +541,10 @@ class DPOTrainer(DPTrainer):
             column_names = list(dataset.column_names)
 
         max_length = args.max_length
+        tokenize_fn = self.tokenize_row
 
         def tokenize_row(example: dict) -> dict:
-            return self.tokenize_row(example, processing_class, max_length)
+            return tokenize_fn(example, processing_class, max_length)
 
         return dataset.map(
             tokenize_row,
@@ -552,8 +553,9 @@ class DPOTrainer(DPTrainer):
             desc="Tokenizing preference dataset",
         )
 
+    @staticmethod
     def tokenize_row(
-        self, example: dict, processing_class: Any, max_length: int | None
+        example: dict, processing_class: Any, max_length: int | None
     ) -> dict:
         """Tokenize one preference example into the collator's input schema.
 

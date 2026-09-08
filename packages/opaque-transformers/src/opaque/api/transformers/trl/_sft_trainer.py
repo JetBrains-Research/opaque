@@ -408,9 +408,11 @@ class SFTTrainer(DPTrainer):
         if "input_ids" in column_names:
             return dataset  # already tokenized
 
-        if self._formatting_func is not None:
+        formatting_func = self._formatting_func
+        if formatting_func is not None:
+            dataset_text_field = args.dataset_text_field
             dataset = dataset.map(
-                lambda ex: {args.dataset_text_field: self._formatting_func(ex)},
+                lambda ex: {dataset_text_field: formatting_func(ex)},
                 num_proc=args.dataset_num_proc,
             )
             column_names = list(dataset.column_names)
@@ -425,8 +427,10 @@ class SFTTrainer(DPTrainer):
                 processing_class
             )
 
+        tokenize_fn = self.tokenize_row
+
         def tokenize_row(example: dict) -> dict:
-            return self.tokenize_row(example, processing_class, args, chat_col=chat_col)
+            return tokenize_fn(example, processing_class, args, chat_col=chat_col)
 
         return dataset.map(
             tokenize_row,
@@ -435,8 +439,8 @@ class SFTTrainer(DPTrainer):
             desc=f"Tokenizing {dataset_name} dataset",
         )
 
+    @staticmethod
     def tokenize_row(
-        self,
         example: dict,
         processing_class: Any,
         args: SFTConfig,
