@@ -575,6 +575,22 @@ class Opaque_MoE(torch.autograd.Function):
 _SPARSE_MOE_MIN_EXPERTS = 16
 
 
+def _grouped_route_available() -> bool:
+    """Whether this host has a grouped-GEMM MoE route for ``opaque_moe``.
+
+    True on CUDA with Triton (the fused ``Opaque_FusedMoE`` kernel for bf16 /
+    fp16 activations) and wherever ``torch._grouped_mm`` or
+    ``torch.nn.functional.grouped_mm`` exists (the portable
+    ``Opaque_GroupedMoE`` on CPU / MPS). Availability is necessary, not
+    sufficient: :func:`opaque_moe` still routes to the dense ``Opaque_MoE``
+    below ``_SPARSE_MOE_MIN_EXPERTS`` experts, for CUDA fp32 activations, and
+    when the grouped workspace would exceed the device budget.
+    """
+    if _TRITON_AVAILABLE and torch.cuda.is_available():
+        return True
+    return hasattr(torch, "_grouped_mm") or hasattr(torch.nn.functional, "grouped_mm")
+
+
 def opaque_moe(x, gate_up_proj, down_proj, top_k_index, top_k_weights, *, grouped=True):
     """MoE expert FFN. Autograd + ``vmap(grad)`` (DP-SGD) flow through the
     two-Function pair above.

@@ -226,6 +226,33 @@ large-expert MoE (`E >= 16`) with `torch._grouped_mm` available uses the MPS/CPU
 `Opaque_GroupedMoE` variant. Smaller MoEs (e.g. Mixtral-8) and fp32 / no-Triton
 hosts stay on the dense path.
 
+The `grouped_moe` gate that selects between the two defaults to `kernels` *or*
+the host having a grouped route at all (`kernels or _grouped_route_available()`),
+so the grouped-GEMM path is taken by default wherever one exists, even when the
+Triton kernel group is off; the dense path runs every token through every expert
+and is only a sensible default where no sparse route exists. Pass
+`apply_model_patches(model, grouped_moe=False)` to force the dense compat path.
+The route is captured by the first class-level experts patch in a process and
+logged once at `INFO`.
+
+**fp32 router (opt-in).** `apply_model_patches(model, router_fp32=True)` binds an
+fp32-logit forward on the family's top-k router instances (Mellum 2.0's
+`MellumTopKRouter`): logits are computed as `F.linear(h.float(), W.float())`,
+followed by the fp32 softmax and top-k, with the scores cast back to the hidden
+dtype. This is the router precision Mellum 2.0 was pretrained with and it removes
+bf16 rounding ties, so the executed top-k set is well defined and matches the
+routes any load statistics derive from the logits. It is an instance-level swap
+rather than a class patch and can be undone with `router_fp32=False`. It is off by
+default because adapters served through stock HF run bf16 routes.
+
+**Packed-sequence policy.** `opaque.patches.set_packed_sequences(flag)` tells the
+vmap-safe causal-mask builder whether every collated row is fully valid. With
+`True` the SDPA `is_causal` fast path is allowed without inspecting the batch;
+with `False` the mask is always materialised when an attention mask is given, so
+an example's attention kernel never depends on whether a microbatch mate is
+padded; `None` (default) probes the batch as before. `packed_sequences()` reads
+the current setting.
+
 The original dense **Mellum** (`Mellum-4b`, `model_type="llama"`) needs no MoE
 support — it is a Llama checkpoint served by the `llama` family.
 

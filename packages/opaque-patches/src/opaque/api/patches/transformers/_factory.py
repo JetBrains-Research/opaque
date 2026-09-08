@@ -55,6 +55,10 @@ from opaque.api.patches.transformers.components.rms_norm import (
     _rmsnorm_fac_llama,
     _rmsnorm_fac_olmo2,
 )
+from opaque.api.patches.transformers.components.router import (
+    install_fp32_router,
+    remove_fp32_router,
+)
 from opaque.api.patches.transformers.components.swiglu import (
     _make_phi3_mlp_forward,
     _make_swiglu_mlp_forward,
@@ -69,6 +73,23 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+# The MoE route is captured by the first class-level experts patch in a
+# process, so the chosen path is reported once rather than per model.
+_moe_path_logged = False
+
+
+def _log_moe_path_once(family: str, grouped: bool) -> None:
+    global _moe_path_logged
+    if _moe_path_logged:
+        return
+    _moe_path_logged = True
+    log.info(
+        "opaque: %s MoE experts run on the %s path (grouped_moe=%s)",
+        family,
+        "grouped-GEMM" if grouped else "dense Opaque_MoE",
+        grouped,
+    )
 
 
 # Dispatch tables — single source of truth for which factory function
@@ -211,8 +232,10 @@ def make_apply_model_patches(
         module_path: Dotted path to the modeling module.
         classes: Mapping of role → HF class name.  Recognized roles:
             ``"mlp"``, ``"rms_norm"``, ``"decoder_layer"``,
-            ``"causal_lm"``.  Roles absent from the mapping are skipped
-            (e.g. Cohere has no RMSNorm; omit the ``"rms_norm"`` entry).
+            ``"causal_lm"``, ``"experts"``, ``"router"``.  Roles absent
+            from the mapping are skipped (e.g. Cohere has no RMSNorm; omit the
+            ``"rms_norm"`` entry). ``"router"`` names the top-k router module
+            that ``router_fp32=True`` rebinds to fp32 logits.
         activation_kind: Which gated-activation forward factory to use.
             Either a registered string name (``"swiglu"``,
             ``"geglu_exact"``, …), a callable used directly, or ``None``
@@ -240,14 +263,19 @@ def make_apply_model_patches(
         ``apply(model=None, *, performance=True, compat=True,
         kernels=None, **kwargs) -> None``.
         Per-concern kwargs default into the right group:
-        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``,
-        ``grouped_moe`` → ``kernels`` (itself defaulting to ``performance``
-        when ``None``); ``kv_cache`` → ``performance``;
-        ``eager_attention``, ``batchify``, ``moe`` → ``compat``.
-        ``moe`` installs the vmap-safe experts forward (DP-SGD needs it);
-        ``grouped_moe`` only chooses its grouped-GEMM fast path (kernel-fused
-        Triton on CUDA / ``torch._grouped_mm`` on MPS-CPU) vs the dense compat
-        path, so a dense run keeps a correct, vmap-safe MoE. ``fused_linear_cross_entropy``
+        ``rope``, ``rms_norm``, ``activation``, ``cross_entropy`` →
+        ``kernels`` (itself defaulting to ``performance`` when ``None``);
+        ``kv_cache`` → ``performance``; ``eager_attention``, ``batchify``,
+        ``moe`` → ``compat``. ``moe`` installs the vmap-safe experts forward
+        (DP-SGD needs it); ``grouped_moe`` only chooses its grouped-GEMM fast
+        path (kernel-fused Triton on CUDA / ``torch._grouped_mm`` on MPS-CPU)
+        vs the dense compat path, so a dense run keeps a correct, vmap-safe
+        MoE. It defaults to ``kernels or _grouped_route_available()``: the
+        grouped route is taken wherever the host offers one, and only an
+        explicit ``grouped_moe=False`` forces the dense path. ``router_fp32``
+        (default ``False``) binds an fp32-logit forward on the family's router
+        instances (``classes["router"]``); ``router_fp32=False`` removes a
+        previously installed swap. ``fused_linear_cross_entropy``
         defaults to ``False`` because the fused path returns
         ``logits=None``, which is incompatible with callers that read
         logits (e.g. SFTTrainer with ``compute_metrics`` /
@@ -305,10 +333,13 @@ def make_apply_model_patches(
         #      the perf gate: the vmap-safe forward must be present even for a
         #      dense (grouped_moe=False) run, on any host.
         #   2. WHICH path that forward takes is a performance gate: ``grouped_moe``
-        #      (-> ``kernels``) picks the grouped-GEMM fast path — kernel-fused
-        #      Triton on CUDA bf16/fp16, ``torch._grouped_mm`` on MPS/CPU — while
+        #      picks the grouped-GEMM fast path (kernel-fused Triton on CUDA
+        #      bf16/fp16, ``torch._grouped_mm`` on MPS/CPU) while
         #      ``grouped_moe=False`` forces the dense, always-correct ``Opaque_MoE``.
         #      Both grouped paths are performance variations; only dense is compat.
+        #      The default is ``kernels`` OR a grouped route existing on the host:
+        #      the dense path runs every token through every expert, so it must
+        #      never be the silent default where a sparse route is available.
         #
         # The ``moe`` gate is separate from ``activation`` since a model may have
         # both routed experts and dense MLP layers. Absent ``Experts`` class
@@ -316,12 +347,30 @@ def make_apply_model_patches(
         if moe_factory is not None and kwargs.get("moe", compat):
             experts_class = classes.get("experts")
             if experts_class is not None:
-                grouped_moe = kwargs.get("grouped_moe", kernels)
+                from opaque.api.patches.kernels.moe import _grouped_route_available
+
+                grouped_moe = bool(
+                    kwargs.get("grouped_moe", kernels or _grouped_route_available())
+                )
+                _log_moe_path_once(family, grouped_moe)
                 _patch_forward(
                     getattr(mod, experts_class, None),
                     functools.partial(moe_factory, grouped=grouped_moe),
                     model,
                 )
+
+        # fp32-logit router (opt-in): an instance-level, removable swap on the
+        # family's router modules. It changes the executed routing function on
+        # bf16 rounding ties (pretraining-faithful for Mellum 2.0), so it is off
+        # unless asked for; an explicit ``False`` undoes an earlier install.
+        router_fp32 = kwargs.get("router_fp32")
+        if router_fp32 is not None and model is not None:
+            router_class = classes.get("router")
+            router_cls = getattr(mod, router_class, None) if router_class else None
+            if router_fp32:
+                install_fp32_router(model, router_cls=router_cls)
+            else:
+                remove_fp32_router(model)
 
         # RMSNorm (unified standalone + fused-add). Triton kernel — ``triton_ok``
         # gates the default; explicit ``rms_norm=True`` honored.
