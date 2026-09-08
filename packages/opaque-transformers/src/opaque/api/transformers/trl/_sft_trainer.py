@@ -285,7 +285,7 @@ class SFTTrainer(DPTrainer):
         )
         forward_parameters = inspect.signature(self._model.forward).parameters.values()
         self._fused_forward_uses_marker = any(
-            parameter.name == "opaque_fused_loss_only"
+            parameter.name == "loss_only"
             or parameter.kind is inspect.Parameter.VAR_KEYWORD
             for parameter in forward_parameters
         )
@@ -582,7 +582,7 @@ class SFTTrainer(DPTrainer):
                 attention_mask=inputs["attention_mask"],
                 labels=inputs["labels"],
                 **(
-                    {"opaque_fused_loss_only": not return_logits}
+                    {"loss_only": not return_logits}
                     if self._fused_forward_uses_marker
                     else {}
                 ),
@@ -645,7 +645,7 @@ class SFTTrainer(DPTrainer):
             ) and self._fused_forward_uses_marker:
                 inputs = {
                     **inputs,
-                    "opaque_fused_loss_only": prediction_loss_only,
+                    "loss_only": prediction_loss_only,
                 }
             return super().prediction_step(
                 model, inputs, prediction_loss_only, ignore_keys

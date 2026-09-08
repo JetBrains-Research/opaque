@@ -249,10 +249,8 @@ def test_cross_entropy_sets_loss_function_on_model_instance(monkeypatch):
     assert untouched.loss_function is original_loss
 
 
-def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
-    """``fused_linear_cross_entropy`` defaults off; the safe loss_function
-    kernel ships under ``cross_entropy``, the forward replacement only
-    activates when the caller passes ``fused_linear_cross_entropy=True``."""
+def test_fused_linear_cross_entropy_follows_performance(monkeypatch):
+    """The conditional forward follows ``performance`` and supports overrides."""
     import torch
 
     from opaque.api.patches.transformers.components.cross_entropy import (
@@ -303,33 +301,42 @@ def test_fused_linear_cross_entropy_is_opt_in(monkeypatch):
         )
         return mod, FakeForCausalLM, original_loss, apply
 
-    # ``performance=True`` alone installs only the loss_function kernel —
-    # the fused-linear-CE forward stays untouched.
+    # The wrapper follows the normal performance bucket.
     _, FakeA, _original_loss, apply_a = _fresh_module("a")
     instance_a = FakeA()
     apply_a(instance_a, performance=True, compat=False)
     assert instance_a.loss_function is _opaque_causal_lm_loss
-    assert not hasattr(FakeA.forward, "__opaque_patched__")
+    assert getattr(FakeA.forward, "__opaque_patched__", False)
 
-    # Explicit opt-in installs the fused-linear-CE forward.
-    _, FakeB, _, apply_b = _fresh_module("b")
+    # Turning off performance keeps both CE patches off by default.
+    _, FakeB, original_loss_b, apply_b = _fresh_module("b")
     instance_b = FakeB()
-    apply_b(
-        instance_b,
+    apply_b(instance_b, performance=False, compat=False)
+    assert instance_b.loss_function is original_loss_b
+    assert not hasattr(FakeB.forward, "__opaque_patched__")
+
+    # Per-concern overrides remain available in both directions.
+    _, FakeC, original_loss_c, apply_c = _fresh_module("c")
+    instance_c = FakeC()
+    apply_c(
+        instance_c,
         performance=True,
+        compat=False,
+        cross_entropy=False,
+        fused_linear_cross_entropy=False,
+    )
+    assert instance_c.loss_function is original_loss_c
+    assert not hasattr(FakeC.forward, "__opaque_patched__")
+
+    _, FakeOverride, _, apply_override = _fresh_module("override")
+    instance_override = FakeOverride()
+    apply_override(
+        instance_override,
+        performance=False,
         compat=False,
         fused_linear_cross_entropy=True,
     )
-    assert instance_b.loss_function is _opaque_causal_lm_loss
-    assert getattr(FakeB.forward, "__opaque_patched__", False)
-
-    # ``cross_entropy=False`` keeps the original loss_function and does
-    # not install the fused forward by default.
-    _, FakeC, original_loss_c, apply_c = _fresh_module("c")
-    instance_c = FakeC()
-    apply_c(instance_c, performance=True, compat=False, cross_entropy=False)
-    assert instance_c.loss_function is original_loss_c
-    assert not hasattr(FakeC.forward, "__opaque_patched__")
+    assert getattr(FakeOverride.forward, "__opaque_patched__", False)
 
     # Families outside the measured backward-error envelope keep the original
     # forward even when a caller requests the fused loss.
