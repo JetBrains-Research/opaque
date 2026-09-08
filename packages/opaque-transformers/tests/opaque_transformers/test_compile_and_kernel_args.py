@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
+from torch._dynamo.testing import CompileCounterWithBackend
 from transformers import PretrainedConfig, PreTrainedModel
 
 from opaque.api.transformers.trainer._distributed import DDPState
@@ -197,11 +198,11 @@ def test_torch_compile_rejects_model_with_checkpointing_already_enabled(tmp_path
 # ----------------------------------------------------------------------------
 
 
-def test_strict_chunk_compiler_requests_fullgraph(monkeypatch):
+def test_strict_chunk_compiler_requests_dynamic_fullgraph(monkeypatch):
     compile_calls = []
 
-    def fake_compile(fn, *, backend, mode, fullgraph):
-        compile_calls.append((fn, backend, mode, fullgraph))
+    def fake_compile(fn, *, backend, mode, fullgraph, dynamic):
+        compile_calls.append((fn, backend, mode, fullgraph, dynamic))
         return fn
 
     monkeypatch.setattr(torch, "compile", fake_compile)
@@ -218,13 +219,30 @@ def test_strict_chunk_compiler_requests_fullgraph(monkeypatch):
         compiled(torch.tensor(1.0), torch.ones(3), torch.ones(3)),
         torch.tensor(7.0),
     )
-    assert compile_calls == [(chunk, "aot_eager", "default", True)]
+    assert compile_calls == [(chunk, "aot_eager", "default", True, True)]
+
+
+def test_strict_chunk_compiler_reuses_dynamic_graph_across_batch_sizes():
+    torch._dynamo.reset()
+    backend = CompileCounterWithBackend("aot_eager")
+
+    def chunk(x):
+        return x.sin().sum(dim=0)
+
+    compiled = _compile_strict_chunk(chunk, backend=backend, mode="default")
+    generator = torch.Generator().manual_seed(0)
+    for batch_size in (4, 2, 3, 1):
+        x = torch.randn(batch_size, 5, generator=generator)
+        torch.testing.assert_close(compiled(x), chunk(x))
+
+    # Symbolic dimensions specialize at size one on supported PyTorch versions.
+    assert 1 <= backend.frame_count <= 2
 
 
 def test_strict_chunk_compiler_propagates_lazy_compile_failure(monkeypatch):
     failure = torch._dynamo.exc.Unsupported("graph break")
 
-    def fake_compile(fn, *, backend, mode, fullgraph):
+    def fake_compile(fn, *, backend, mode, fullgraph, dynamic):
         def compiled(*args, **kwargs):
             raise failure
 
