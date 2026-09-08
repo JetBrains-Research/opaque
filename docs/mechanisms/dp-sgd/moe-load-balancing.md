@@ -22,7 +22,7 @@ $\rho$ is the share of the clipping budget given to the load group
 The feature is reached through `TrainingArguments.router_load_release`
 on `DPTrainer` (including the SFT and DPO trainers) and, for hand-written
 functional loops, through the helper module
-`opaque.api.transformers.moe_load` that the example scripts use. It
+`opaque.transformers.moe_load` that the example scripts use. It
 works with DP-SGD (Gaussian noise, Poisson sampling) and with every
 DP-FTRL matrix mechanism; the [DP-FTRL mechanisms
 page](../dp-ftrl/index.md#router-load-release-under-matrix-mechanisms)
@@ -250,11 +250,14 @@ $\hat y_t \in \mathbb{R}^{L \times E}$ (already divided by $\bar B$):
    relative deviation of an expert's load from its share) and its
    per-layer analogue $D^l_t$ from a per-layer filter.
 
-**Decision rule.** The trainer evaluates the monitor on the estimate
-that enters the surrogate (after the dead zone and the shrinkage) at
-the logging cadence; $D > \tau$ (`router_load_trip`, default 0.5: some
-expert carries at least 1.5 times or at most half its share) on two
-consecutive logged evaluations sets `router_load/tripped`. In
+**Decision rule.** One rule, `moe_load.decide_trip`, is applied by the
+trainer and by the example loops alike: the monitor is evaluated on the
+estimate that enters the surrogate (after the dead zone and the
+shrinkage, so a noise-dominated early estimate reads as zero; the raw
+bias-corrected `router_load/D` is a logged curve, not the decision
+input) at the logging cadence; $D > \tau$ (`router_load_trip`, default
+0.5: some expert carries at least 1.5 times or at most half its share)
+on two consecutive logged evaluations sets `router_load/tripped`. In
 `monitor_then_surrogate` the trip switches the surrogate coefficient
 from 0 to the configured value. The switch changes neither the clipping
 bound, nor the noise, nor the accountant, nor the matrix mechanism's
@@ -433,15 +436,23 @@ requires.
 
 ### Manual functional loops
 
-The mechanism is factored into `opaque.api.transformers.moe_load`, the
+The mechanism is factored into `opaque.transformers.moe_load`, the
 helper `examples/train_dpftrl.py` and `examples/train_dpo.py` call at
 four seams: `attach_probe` before `make_functional`, `probe_bounds` in
 place of the clipping-norm resolution, `router_load_terms` inside the
 per-example loss, and `initial_state` / `filter_factors` / `update`
-between the noise function and the optimizer update.
+between the noise function and the optimizer update. The same module
+carries the consumer pieces a loop should not re-implement:
+`resolve_moe_geometry` for $(L, E, k)$, `decide_trip` for the monitor
+rule, `check_resume_compatible` for the sidecar, and
+`telemetry_without_probe` for the probe-free gradient norms. A loop
+that runs the release must also derive the attention-kernel choice from
+the public packing statement (`set_packed_sequences(False)` when the
+rows are not declared packed), as the trainer and the example scripts
+do.
 
 ```python
-from opaque.api.transformers import moe_load
+from opaque.transformers import moe_load
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.functional import make_functional
 
@@ -511,6 +522,10 @@ for batch in loader:
     noisy.pytree[probe].zero_()  # the probe's update is 0
     f_tilde.copy_(state.f_tilde)  # next step's estimate
     params = optimizer_step(params, noisy)
+    if logged_step:  # the one decision rule, at the logging cadence
+        state, streak = moe_load.decide_trip(
+            state, streak, trip=0.5, mode=mode, alpha=alpha
+        )
 ```
 
 `RouterLoadState` round-trips through `opaque.serialization.state_dict`

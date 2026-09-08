@@ -2,7 +2,9 @@
 
 Small root over the trainer implementation package: the core
 :class:`~opaque.transformers.trainer.DPTrainer` primitives are re-exported here,
-and the TRL-style trainers live under :mod:`opaque.transformers.trl`.
+the TRL-style trainers live under :mod:`opaque.transformers.trl`, and the
+MoE router-load release helper for hand-written loops under
+:mod:`opaque.transformers.moe_load`.
 
 Importing this module does **not** mutate Hugging Face globals — ``DPTrainer``
 applies the runtime + per-model patches during construction. Scripts that use
@@ -20,7 +22,7 @@ from opaque.api.transformers.trainer import (
     TrainingArguments,
 )
 
-from . import trl
+from . import moe_load, trl
 
 try:
     __version__ = _pkg_version("opaque-transformers")
@@ -31,5 +33,6 @@ __all__ = [
     "DPTrainer",
     "TrainingArguments",
     "__version__",
+    "moe_load",
     "trl",
 ]

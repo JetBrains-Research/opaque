@@ -13,6 +13,7 @@ from __future__ import annotations
 import inspect
 import math
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -40,10 +41,14 @@ from opaque.api.transformers.moe_load import (
     PROBE_NAME,
     RouterLoadState,
     attach_probe,
+    check_resume_compatible,
+    decide_trip,
     filter_factors,
     initial_state,
     load_bound,
+    monitor_value,
     probe_bounds,
+    resolve_moe_geometry,
     router_load_terms,
     summary,
     telemetry_without_probe,
@@ -52,7 +57,7 @@ from opaque.api.transformers.moe_load import (
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
 from opaque.dpsgd.clipping import clipped_grad, per_group
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError, InputTypeError
 from opaque.random import key as rng_key
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import PerGroup, clipped
@@ -421,12 +426,53 @@ class TestProbeLeaf:
         assert clipped_out.max_norm.values[PROBE_NAME] == pytest.approx(
             max_norm.values[PROBE_NAME] / B_BAR
         )
-        # Telemetry over the non-probe groups is the fallback group alone here.
-        grad_norm, clipped_norm = telemetry_without_probe(aux)
-        assert torch.allclose(grad_norm, aux.group_norms["fallback"], rtol=1e-6)
-        assert torch.allclose(
-            clipped_norm, torch.minimum(grad_norm, torch.tensor(C_G)), rtol=1e-5
+        # Telemetry over the non-probe groups is the fallback group alone here:
+        # both norms are exact functions of that group's per-example norm.
+        grad_norm, clipped_norm = telemetry_without_probe(aux, max_norm)
+        assert torch.equal(grad_norm, aux.group_norms["fallback"])
+        assert torch.equal(clipped_norm, torch.clamp_max(grad_norm, C_G))
+
+    def test_telemetry_is_bit_identical_across_probe_scales(self, tiny):
+        """The logged norms do not depend on the probe leaf, not even by rounding."""
+        _, _, fmodel, trainable, frozen = tiny
+        ids, mask, labels = make_data(6, seed=17)
+        f = torch.full((NUM_EXPERTS,), SHARE)
+        outputs = []
+        for ratio in (0.02, 0.5):
+            max_norm, lam = _bounds(trainable, ratio=ratio)
+            ctx = {"f_tilde": f, "alpha": 0.0, "lam": lam, "mean_tokens": float(T_MAX)}
+            gf, st = clipped_grad(
+                make_loss_fn(fmodel, frozen, ctx),
+                has_aux=True,
+                clipping_norm=max_norm,
+                normalize_by=B_BAR,
+                batch_argnums=(1, 2, 3),
+                return_aux=True,
+            )
+            (_, aux), _ = gf(trainable, ids, mask, labels, state=st)
+            assert torch.count_nonzero(aux.group_norms[PROBE_NAME]) > 0
+            outputs.append(telemetry_without_probe(aux, max_norm))
+        (g_small, c_small), (g_large, c_large) = outputs
+        assert torch.equal(g_small, g_large)
+        assert torch.equal(c_small, c_large)
+
+    def test_telemetry_needs_the_per_group_bound(self, tiny):
+        _, _, fmodel, trainable, frozen = tiny
+        ids, mask, labels = make_data(2, seed=3)
+        max_norm, lam = _bounds(trainable)
+        ctx = {"f_tilde": torch.full((NUM_EXPERTS,), SHARE), "alpha": 0.0}
+        ctx.update(lam=lam, mean_tokens=float(T_MAX))
+        gf, st = clipped_grad(
+            make_loss_fn(fmodel, frozen, ctx),
+            has_aux=True,
+            clipping_norm=max_norm,
+            normalize_by=B_BAR,
+            batch_argnums=(1, 2, 3),
+            return_aux=True,
         )
+        (_, aux), _ = gf(trainable, ids, mask, labels, state=st)
+        with pytest.raises(InputTypeError, match="PerGroup"):
+            telemetry_without_probe(aux, C_G)
 
 
 def _adversarial_leaf(probe_bound: str):
@@ -973,3 +1019,133 @@ class TestAccountingInvariance:
             nm, band_mf_strategy(bands=4, momentum=0.95), n_steps=n_steps
         ).epsilon_at(1e-5)
         assert eps_with == eps_without
+
+
+# ===========================================================================
+# Shared consumer helpers: decision rule, resume compatibility, geometry
+# ===========================================================================
+
+
+def _consumer_state(**overrides) -> RouterLoadState:
+    trainable = {"w": torch.zeros(4), PROBE_NAME: torch.zeros(NUM_LAYERS, NUM_EXPERTS)}
+    max_norm, lam = _bounds(trainable)
+    kwargs = {
+        "num_layers": NUM_LAYERS,
+        "num_experts": NUM_EXPERTS,
+        "top_k": TOP_K,
+        "ratio": RATIO,
+        "lam": lam,
+        "max_norm": _per_step(max_norm),
+        "noise_multiplier": 1.0,
+        "alpha": 1e-4,
+        "mean_tokens": float(T_MAX),
+        "max_tokens": float(T_MAX),
+        "phi": filter_factors(
+            None, n_steps=100, kind="ema", beta=0.9, window=8, num_experts=NUM_EXPERTS
+        ),
+    }
+    kwargs.update(overrides)
+    return initial_state(**kwargs)
+
+
+class TestDecideTrip:
+    def test_reads_the_estimate_in_force_not_the_raw_monitor(self):
+        """A raw deviation inside the dead zone must not count toward the trip."""
+        state = _consumer_state()
+        # A pooled estimate whose raw D is far above the threshold ...
+        m = torch.zeros(NUM_EXPERTS)
+        m[0], m[1] = 0.6 * SHARE, -0.6 * SHARE
+        raw = replace(state, m=m, step=1, noise_std=10.0)  # ... but noise-dominated
+        assert summary(raw)["router_load/D"] > 0.5
+        assert monitor_value(raw) == 0.0  # f_tilde stayed at k/E
+        _, streak = decide_trip(raw, 0, trip=0.5, mode="monitor", alpha=1e-4)
+        assert streak == 0
+
+    def test_two_consecutive_evaluations_switch_the_surrogate_on(self):
+        state = _consumer_state(alpha=1e-4)
+        f = torch.full((NUM_EXPERTS,), SHARE)
+        f[0] = 2.0 * SHARE
+        f[1] = 0.0
+        over = replace(state, f_tilde=f, alpha_active=0.0)
+        s1, streak = decide_trip(
+            over, 0, trip=0.5, mode="monitor_then_surrogate", alpha=1e-4
+        )
+        assert streak == 1
+        assert not s1.tripped
+        assert s1.alpha_active == 0.0
+        s2, streak = decide_trip(
+            s1, streak, trip=0.5, mode="monitor_then_surrogate", alpha=1e-4
+        )
+        assert streak == 2
+        assert s2.tripped
+        assert s2.alpha_active == 1e-4
+        # A monitor-only run trips without touching alpha; a reset in between
+        # restarts the streak.
+        s3, streak = decide_trip(over, 0, trip=0.5, mode="monitor", alpha=1e-4)
+        assert streak == 1
+        _, streak = decide_trip(state, streak, trip=0.5, mode="monitor", alpha=1e-4)
+        assert streak == 0
+        s4, _ = decide_trip(s3, 1, trip=0.5, mode="monitor", alpha=1e-4)
+        assert s4.tripped
+        assert s4.alpha_active == 0.0
+
+    def test_a_tripped_state_is_left_alone(self):
+        state = replace(_consumer_state(), tripped=True, alpha_active=0.5)
+        f = torch.full((NUM_EXPERTS,), SHARE)
+        f[0] = 3.0 * SHARE
+        decided, streak = decide_trip(
+            replace(state, f_tilde=f),
+            5,
+            trip=0.5,
+            mode="monitor_then_surrogate",
+            alpha=1e-4,
+        )
+        assert streak == 6
+        assert decided.tripped
+        assert decided.alpha_active == 0.5
+
+
+class TestResumeCompatibility:
+    def test_same_release_passes_and_base_noise_std_is_not_compared(self):
+        saved = _consumer_state()
+        current = replace(_consumer_state(), base_noise_std=saved.base_noise_std * 3)
+        check_resume_compatible(saved, current)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [("ratio", 0.3), ("lam", 2.0), ("mean_tokens", 8.0), ("kind", "window")],
+    )
+    def test_public_constant_drift_is_rejected(self, field, value):
+        saved = _consumer_state()
+        with pytest.raises(CheckpointError, match=field):
+            check_resume_compatible(saved, replace(saved, **{field: value}))
+
+    def test_phi_drift_is_rejected(self):
+        """A different noise operator or horizon changes phi at equal length."""
+        saved = _consumer_state()
+        other = replace(saved, phi=saved.phi * 1.5)
+        with pytest.raises(CheckpointError, match="phi"):
+            check_resume_compatible(saved, other)
+        shorter = replace(saved, phi=saved.phi[:-1])
+        with pytest.raises(CheckpointError, match="phi"):
+            check_resume_compatible(saved, shorter)
+
+
+class TestGeometry:
+    def test_reads_layers_from_the_routers_and_shape_from_the_config(self, tiny):
+        model = tiny[0].lm
+        num_layers, num_experts, top_k, alpha = resolve_moe_geometry(model)
+        assert (num_layers, num_experts, top_k) == (NUM_LAYERS, NUM_EXPERTS, TOP_K)
+        assert alpha == float(getattr(model.config, "router_aux_loss_coef", 0.0) or 0.0)
+
+    def test_falls_back_to_the_routers_without_a_config(self, tiny):
+        # The test wrapper has no ``config``; the routers carry E and k.
+        wrapper = tiny[0]
+        assert not hasattr(wrapper, "config")
+        num_layers, num_experts, top_k, alpha = resolve_moe_geometry(wrapper)
+        assert (num_layers, num_experts, top_k) == (NUM_LAYERS, NUM_EXPERTS, TOP_K)
+        assert alpha == 0.0
+
+    def test_dense_model_is_rejected(self):
+        with pytest.raises(ConfigurationError, match="mixture-of-experts"):
+            resolve_moe_geometry(torch.nn.Linear(2, 2))

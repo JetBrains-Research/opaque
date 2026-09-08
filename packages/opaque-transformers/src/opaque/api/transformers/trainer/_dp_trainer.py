@@ -912,8 +912,12 @@ class DPTrainer:
         custom model. Non-HF ``nn.Module`` models log a warning and remain
         supported.
         """
+        # Masking policy the training runs apply (``None``: leave the
+        # process-level policy alone); resolved here, installed by
+        # ``_train_once`` for the duration of a run and restored afterwards.
+        self._packed_sequences_policy: bool | None = None
         try:
-            from opaque.patches import apply_model_patches, set_packed_sequences
+            from opaque.patches import apply_model_patches
         except ImportError:
             log.debug("opaque.patches unavailable; skipping model patches.")
             return
@@ -966,12 +970,15 @@ class DPTrainer:
                         "the request and return no router logits).",
                     )
                 )
+            # The release needs a mixture-of-experts model: fail at
+            # construction, not inside ``train()``.
+            resolve_moe_geometry(self._model)
             # Attention-kernel selection under the release is derived from
             # the public packing statement, never from the batch content: an
             # unset flag materialises the mask on every microbatch.
-            set_packed_sequences(bool(a.packed_sequences))
+            self._packed_sequences_policy = bool(a.packed_sequences)
         elif a.packed_sequences is not None:
-            set_packed_sequences(bool(a.packed_sequences))
+            self._packed_sequences_policy = bool(a.packed_sequences)
 
     def _setup_precision(self) -> None:
         """Resolve compute precision (TF32, bf16 autocast).
@@ -1287,6 +1294,45 @@ class DPTrainer:
             resume_from_checkpoint = self.args.resume_from_checkpoint
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
 
+        # The vmap-safe mask builder's packed-sequences policy is a
+        # process-wide setting (not thread-local); install this trainer's
+        # policy for the run and put the previous value back afterwards so
+        # a later trainer or model in the same process is not affected.
+        previous_packed_policy = self._install_packed_sequences_policy()
+        try:
+            return self._train_once_with_policy(
+                resume_path=resume_path,
+                microbatch_size_override=microbatch_size_override,
+                ignore_keys_for_eval=ignore_keys_for_eval,
+            )
+        finally:
+            self._restore_packed_sequences_policy(previous_packed_policy)
+
+    def _install_packed_sequences_policy(self) -> bool | None:
+        """Apply this trainer's packed-sequences policy; return the previous one."""
+        policy = getattr(self, "_packed_sequences_policy", None)
+        if policy is None:
+            return None
+        from opaque.patches import packed_sequences, set_packed_sequences
+
+        previous = packed_sequences()
+        set_packed_sequences(policy)
+        return previous
+
+    def _restore_packed_sequences_policy(self, previous: bool | None) -> None:
+        if getattr(self, "_packed_sequences_policy", None) is None:
+            return
+        from opaque.patches import set_packed_sequences
+
+        set_packed_sequences(previous)
+
+    def _train_once_with_policy(
+        self,
+        *,
+        resume_path: str | None,
+        microbatch_size_override: int | None,
+        ignore_keys_for_eval: list[str] | None,
+    ) -> TrainOutput:
         # Pre-load weights so make_functional starts from the saved values.
         prefix_accountant: Accountant | None = None
         runtime_payload: ckpt.RuntimeCheckpoint | None = None
@@ -1925,6 +1971,19 @@ class DPTrainer:
             row_max = getattr(
                 getattr(self._model, "config", None), "max_position_embeddings", None
             )
+            if row_max is not None:
+                log.warning(
+                    "router_load_release: no router_load_max_tokens (or "
+                    "max_length) given; the row bound falls back to the model "
+                    "context length max_position_embeddings=%s.  The bound "
+                    "stays valid, but with rows much shorter than that the "
+                    "token weight T_x / T_bar scales the release and the "
+                    "surrogate down by (T_bar_true / %s)^2; set "
+                    "router_load_max_tokens to the collator's row length (and "
+                    "router_load_mean_tokens to a public mean length).",
+                    row_max,
+                    row_max,
+                )
         if row_max is None:
             raise ConfigurationError(
                 *(
@@ -2747,8 +2806,10 @@ class DPTrainer:
             # function of the example's routing; the logged norms are taken
             # over the gradient groups only.  The probe's own norms are never
             # logged; the public monitor curves come from the noised release.
+            # ``ctx.clip_norm`` is the un-normalised two-group bound handed
+            # to ``clipped_grad`` (``grads.max_norm`` is the per-step bound).
             grad_norm, clipped_grad_norm = _moe_load.telemetry_without_probe(
-                aux, router_load.probe_name
+                aux, ctx.clip_norm, router_load.probe_name
             )
             metrics["grad_norm"] = grad_norm.mean().item()
             metrics["clipped_grad_norm"] = clipped_grad_norm.mean().item()

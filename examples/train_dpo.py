@@ -93,7 +93,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import dataclasses
 import hashlib
 import importlib.util
 import os
@@ -112,6 +111,7 @@ from peft import LoraConfig, get_peft_model
 from opaque.patches import (
     apply_model_patches,
     apply_runtime_patches,
+    packed_sequences,
     set_packed_sequences,
 )
 
@@ -128,9 +128,9 @@ import opaque.accounting as acc
 import opaque.auditing as auditing
 import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.accounting import calibration as cal, Accountant
-from opaque.api.transformers import moe_load
-from opaque.api.transformers.moe_load import PROBE_NAME, RouterLoadState
-from opaque.exceptions import CheckpointError, ConfigurationError
+from opaque.transformers import moe_load
+from opaque.transformers.moe_load import PROBE_NAME, RouterLoadState
+from opaque.exceptions import ConfigurationError, OperationError
 from opaque.serialization import from_state_dict, state_dict
 from opaque.dpsgd.clipping import auto_clipped_grad, clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
@@ -545,7 +545,7 @@ def _tokenize_preference_example(example, tokenizer, max_length):
 # ---------------------------------------------------------------------------
 #
 # A Switch-style load-balancing loss needs the batch load vector, which is
-# not per-example separable.  ``opaque.api.transformers.moe_load`` replaces
+# not per-example separable.  ``opaque.transformers.moe_load`` replaces
 # it by a public estimate ``f_tilde`` released through a zero probe parameter
 # that rides on the same clipped pytree as the gradient: the probe forms its
 # own ``PerGroup`` group with a structural (never active) bound, so the joint
@@ -564,21 +564,6 @@ def _tokenize_preference_example(example, tokenizer, max_length):
 _ROUTER_LOAD_MODES = ("off", "monitor", "surrogate", "monitor_then_surrogate")
 _ROUTER_LOAD_FILTER = {"kind": "ema", "beta": 0.99, "window": 256}
 _ROUTER_LOAD_DEAD_ZONE = 2.0
-_ROUTER_LOAD_SHRINK = True
-# Fields of ``RouterLoadState`` that must match when a sidecar is restored.
-_ROUTER_LOAD_STATE_KEYS = (
-    "ratio",
-    "kind",
-    "beta",
-    "window",
-    "dead_zone",
-    "num_experts",
-    "top_k",
-    "num_layers",
-    "mean_tokens",
-    "max_tokens",
-    "lam",
-)
 
 
 def _validate_router_load_args(args) -> None:
@@ -617,25 +602,12 @@ def _validate_router_load_args(args) -> None:
 def _moe_geometry(model) -> tuple[int, int, int]:
     """``(num_layers, num_experts, top_k)`` of the routed MoE layers of ``model``.
 
-    ``num_layers`` counts the top-k router modules, which is the number of
-    router-logit tensors the backbone records per example (a family with
-    dense layers records fewer than ``config.num_hidden_layers``).
+    ``moe_load.resolve_moe_geometry`` counts the top-k router modules (the
+    number of router-logit tensors the backbone records per example) and
+    reads ``E`` / ``k`` off the config or the routers.
     """
-    routers = [m for m in model.modules() if "TopKRouter" in type(m).__name__]
-    if not routers:
-        raise ConfigurationError(
-            *(
-                "--router-load-release needs a stacked-expert MoE family with a "
-                "top-k router (for example Mellum 2); the model has none.",
-            )
-        )
-    shapes = {(int(r.num_experts), int(r.top_k)) for r in routers}
-    if len(shapes) != 1:
-        raise ConfigurationError(
-            *(f"routers disagree on (num_experts, top_k): {sorted(shapes)}.",)
-        )
-    (num_experts, top_k) = next(iter(shapes))
-    return len(routers), num_experts, top_k
+    num_layers, num_experts, top_k, _config_alpha = moe_load.resolve_moe_geometry(model)
+    return num_layers, num_experts, top_k
 
 
 def _resolve_backbone(model) -> tuple[object, str, str]:
@@ -696,27 +668,9 @@ def _load_router_load_state(path: str, template: RouterLoadState) -> RouterLoadS
     loaded = from_state_dict(
         template, torch.load(path, map_location="cpu", weights_only=True)
     )
-    mismatched = {
-        k: (getattr(loaded, k), getattr(template, k))
-        for k in _ROUTER_LOAD_STATE_KEYS
-        if getattr(loaded, k) != getattr(template, k)
-    }
-    if mismatched:
-        raise CheckpointError(
-            *(
-                f"router-load sidecar {path} was written for a different release "
-                f"configuration (saved, current): {mismatched}.",
-            )
-        )
-    if loaded.phi.shape != template.phi.shape or not torch.allclose(
-        loaded.phi, template.phi
-    ):
-        raise CheckpointError(
-            *(
-                f"router-load sidecar {path} was written for a different noise "
-                "operator or horizon (filter factors differ).",
-            )
-        )
+    # Same rule as the trainer: the public constants and the filter factors
+    # must describe the release configured now (CheckpointError otherwise).
+    moe_load.check_resume_compatible(loaded, template)
     return loaded
 
 
@@ -859,7 +813,7 @@ class _RouterLoadRun:
     def check_probe_zero(self, trainable) -> None:
         """The probe is a public constant zero; any drift is a hard error."""
         if int(torch.count_nonzero(trainable[PROBE_NAME])) != 0:
-            raise RuntimeError(
+            raise OperationError(
                 *(
                     "router-load probe parameter drifted from zero: the optimizer "
                     "update of the probe must be exactly zero.",
@@ -879,27 +833,25 @@ class _RouterLoadRun:
     def on_eval(self) -> dict[str, float]:
         """Trip rule at a logged evaluation, then the sidecar save.
 
-        ``D > trip`` on two consecutive evaluations sets ``tripped``; in
-        ``monitor_then_surrogate`` it also switches the surrogate on.
+        ``moe_load.decide_trip`` (the rule the trainer applies): the monitor
+        of the shrunk estimate above ``trip`` on two consecutive evaluations
+        sets ``tripped``; in ``monitor_then_surrogate`` it also switches the
+        surrogate on.
         """
-        stats = self.metrics()
-        self._trip_streak = (
-            self._trip_streak + 1 if stats["router_load/D"] > self.trip else 0
+        was_tripped = self.state.tripped
+        self.state, self._trip_streak = moe_load.decide_trip(
+            self.state,
+            self._trip_streak,
+            trip=self.trip,
+            mode=self.mode,
+            alpha=self.alpha,
         )
-        if self._trip_streak >= 2 and not self.state.tripped:  # noqa: PLR2004
-            alpha_active = (
-                self.alpha
-                if self.mode == "monitor_then_surrogate"
-                else self.state.alpha_active
+        if self.state.tripped and not was_tripped and self.is_main_process:
+            print(
+                "  Router-load monitor tripped "
+                f"(D={moe_load.monitor_value(self.state):.3f} > {self.trip} twice); "
+                f"surrogate coefficient now {self.state.alpha_active:g}"
             )
-            self.state = dataclasses.replace(
-                self.state, tripped=True, alpha_active=alpha_active
-            )
-            if self.is_main_process:
-                print(
-                    f"  Router-load monitor tripped (D={stats['router_load/D']:.3f} "
-                    f"> {self.trip} twice); surrogate coefficient now {alpha_active:g}"
-                )
         self.save()
         return self.metrics()
 
@@ -1600,8 +1552,17 @@ def parse_args():
         "--router-load-trip",
         type=float,
         default=0.5,
-        help="Imbalance threshold on D = max_e |d_e| / (k/E); exceeded on two "
-        "consecutive evaluations it sets the tripped flag (default 0.5).",
+        help="Imbalance threshold on D = max_e |d_e| / (k/E) of the estimate in "
+        "force; exceeded on two consecutive evaluations it sets the tripped "
+        "flag (default 0.5).",
+    )
+    moe_group.add_argument(
+        "--router-load-shrink",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply the dead zone and the James-Stein shrinkage before the "
+        "estimate enters the surrogate and the trip rule (default on; "
+        "--no-router-load-shrink evaluates the raw bias-corrected estimate).",
     )
     moe_group.add_argument(
         "--router-load-state-path",
@@ -2317,6 +2278,11 @@ def main():
         apply_model_patches(model)
     if args.packed_sequences is not None:
         set_packed_sequences(args.packed_sequences)
+    elif use_router_load:
+        # Under the release the attention-kernel choice is derived from the
+        # public packing statement, never from the microbatch content: with
+        # no statement the mask is materialised on every microbatch.
+        set_packed_sequences(False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -3114,7 +3080,7 @@ def main():
                 beta=_ROUTER_LOAD_FILTER["beta"],
                 window=_ROUTER_LOAD_FILTER["window"],
                 dead_zone=_ROUTER_LOAD_DEAD_ZONE,
-                shrink=_ROUTER_LOAD_SHRINK,
+                shrink=bool(args.router_load_shrink),
                 alpha=router_load.alpha_active,
                 mean_tokens=router_load.mean_tokens,
                 max_tokens=2.0 * args.max_length,
@@ -3146,17 +3112,22 @@ def main():
         )
         print(
             f"  Filter: {_ROUTER_LOAD_FILTER['kind']} "
-            f"(beta={_ROUTER_LOAD_FILTER['beta']}); dead zone c={_ROUTER_LOAD_DEAD_ZONE}"
+            f"(beta={_ROUTER_LOAD_FILTER['beta']}); dead zone c={_ROUTER_LOAD_DEAD_ZONE}; "
+            f"shrink={'on' if args.router_load_shrink else 'off'}"
         )
         print(
             f"  Smoothed load noise s_inf={s_inf:.3e} ({s_inf / share:.3f} of k/E); "
             f"dead-zone radius {(_ROUTER_LOAD_DEAD_ZONE * num_experts) ** 0.5 * s_inf:.3e}"
         )
-        if args.packed_sequences is None:
-            print(
-                "  Attention-mask policy: batch-probed (pass --no-packed-sequences "
-                "to derive the kernel choice from the public packing flag)"
+        print(
+            "  Attention-mask policy: "
+            + (
+                "packed rows declared (SDPA fast path allowed)"
+                if packed_sequences()
+                else "mask materialised on every microbatch (kernel choice "
+                "derived from the public packing statement, not the batch)"
             )
+        )
     if args.noise_mechanism == "bounded_gaussian":
         # Pass ``bound`` unconditionally: at ``noise_multiplier=0`` the bounded
         # path still clamps the input to the interval, keeping the mechanism
@@ -3289,9 +3260,12 @@ def main():
                 # excluded).  Gradient norms over the gradient groups only:
                 # the probe's norm is a function of the pair's routing and is
                 # never logged.
-                clip_rate = _probe_free_clip_rate(aux, step_clip_norm, batch_size)
+                # ``clip_norm`` is the un-normalised bound handed to
+                # ``clipped_grad`` (``step_clip_norm`` is the per-step
+                # bound, divided by the batch size).
+                clip_rate = _probe_free_clip_rate(aux, clip_norm, batch_size)
                 probe_free_norms, probe_free_clipped = moe_load.telemetry_without_probe(
-                    aux
+                    aux, clip_norm
                 )
                 mean_grad_norm = probe_free_norms.mean().item()
                 mean_clipped_grad_norm = probe_free_clipped.mean().item()

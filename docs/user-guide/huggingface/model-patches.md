@@ -258,7 +258,9 @@ followed by the fp32 softmax and top-k, with the scores cast back to the hidden
 dtype. This is the router precision Mellum 2.0 was pretrained with and it removes
 bf16 rounding ties, so the executed top-k set is well defined and matches the
 routes any load statistics derive from the logits. It is an instance-level swap
-rather than a class patch and can be undone with `router_fp32=False`. It is off by
+rather than a class patch and can be undone with `router_fp32=False`; a model
+with no matching router raises `ConfigurationError` rather than installing
+nothing. It is off by
 default because adapters served through stock HF run bf16 routes, and it is not
 a fix for routing drift: the ties originate in the bf16 hidden states, and the
 swap changes the executed routing function on those tokens, not the weights

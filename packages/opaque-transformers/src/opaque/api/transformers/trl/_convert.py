@@ -103,7 +103,7 @@ def _router_aux_loss_transform(
         if value < 0:
             warnings.warn(
                 f"opaque: dropping trl_{config_name.lower()}.router_aux_loss_coef="
-                f"{value!r} — a negative MoE load-balancing coefficient has no "
+                f"{value!r}: a negative MoE load-balancing coefficient has no "
                 "opaque equivalent and is being discarded.",
                 RuntimeWarning,
                 stacklevel=4,

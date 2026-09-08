@@ -157,7 +157,7 @@ whole-run accountant is unchanged and the gradient noise grows by
 $\sqrt{1+\rho}$ (see
 [router-load release under matrix mechanisms](../mechanisms/dp-ftrl/index.md#router-load-release-under-matrix-mechanisms)).
 `DPTrainer` builds the group itself from `router_load_release`; the
-example script does it through `opaque.api.transformers.moe_load`.
+example script does it through `opaque.transformers.moe_load`.
 
 ## 4. Noise
 

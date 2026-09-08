@@ -169,7 +169,7 @@ def _run_loop(*, n_loop_steps: int, resume_at: int | None = None):
         updates, opt_state = optimizer.update(noisy, opt_state, params=params)
         params = torchopt.apply_updates(params, updates)
 
-        grad_norm, clipped_norm = telemetry_without_probe(aux)
+        grad_norm, clipped_norm = telemetry_without_probe(aux, max_norm)
         trace.append(
             {
                 "batch_size": int(aux.batch_size),

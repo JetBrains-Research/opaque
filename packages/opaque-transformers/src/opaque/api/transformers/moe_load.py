@@ -26,6 +26,12 @@ This module owns the four seams a training loop needs:
    monitor; :func:`summary` and :func:`telemetry_without_probe` expose the
    public curves and the probe-free gradient norms.
 
+The consumer-side pieces every loop needs the same way are here as well:
+:func:`resolve_moe_geometry` reads ``(L, E, k)`` off the model,
+:func:`decide_trip` is the one monitor decision rule, and
+:func:`check_resume_compatible` rejects a sidecar written for a different
+release.
+
 Every quantity computed from private examples stays inside the gradient
 transform; only the noised probe leaf and its post-processing are public.
 """
@@ -42,7 +48,7 @@ import torch
 
 from opaque.api.engine.noise_allocation import per_group_noise_stddev
 from opaque.api.engine.types import PerGroup
-from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.exceptions import CheckpointError, ConfigurationError, InputTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -258,7 +264,13 @@ def probe_bounds(
         top_k: Experts per token ``k``.
         mean_tokens: Public token-count constant ``T_bar`` of ``w_x``.
         max_tokens: Public row length ``T_max`` (``T_x <= T_max``).
-        guard: Relative headroom on the probe bound.
+        guard: Relative headroom on the probe bound.  The clipper shrinks
+            every scale factor by a device-dependent round-off margin so a
+            norm exactly at its bound is never scaled above one; the
+            default ``1e-3`` exceeds the measured shrink on every backend
+            (about ``2e-7`` on CPU / CUDA, ``1.3e-4`` on MPS) by at least
+            an order of magnitude, which is what keeps the probe group a
+            bound that never clips.
         name: Probe parameter and group name.
 
     Returns:
@@ -813,19 +825,26 @@ def summary(state: RouterLoadState) -> dict[str, float]:
 
 
 def telemetry_without_probe(
-    aux: Any, probe_name: str = PROBE_NAME
+    aux: Any, max_norm: PerGroup, probe_name: str = PROBE_NAME
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-example gradient norms over the non-probe groups.
 
-    ``grad_norm`` is ``sqrt(sum_{g != probe} group_norms_g^2)``.  The
-    probe group is a structural bound that never clips (its clipped norm
-    equals its raw norm), so the clipped norm over the other groups is
-    ``sqrt(clipped_grad_norms^2 - group_norms_probe^2)``.  Both are
-    functions of the gradient leaves only, not of the example's routing.
+    ``grad_norm`` is ``sqrt(sum_{g != probe} group_norms_g^2)`` and
+    ``clipped_grad_norm`` is ``sqrt(sum_{g != probe} min(group_norms_g,
+    C_g)^2)`` with ``C_g`` the group's bound in ``max_norm``.  Both are
+    computed from the per-group norms of the gradient leaves alone, so
+    they are bit-identical between runs that differ only in the probe
+    scale: the engine's total ``clipped_grad_norms`` is a floating-point
+    norm over the whole pytree, probe included, and subtracting the probe
+    afterwards would leave its rounding behind.  The clipper's relative
+    guard shrink makes this an over-estimate of the clipped norm by less
+    than one part in ``1e6``, which is irrelevant for telemetry.
 
     Args:
         aux: ``ClippedGradAux`` from ``clipped_grad(..., return_aux=True)``
             with per-group norms (``PerGroup`` clipping).
+        max_norm: The ``PerGroup`` handed to ``clipped_grad`` (the
+            un-normalised bounds returned by :func:`probe_bounds`).
         probe_name: Group name of the probe.
 
     Returns:
@@ -839,23 +858,220 @@ def telemetry_without_probe(
                 f"{probe_name!r} group (per-group clipping).",
             )
         )
-    others = [v.double() for k, v in group_norms.items() if k != probe_name]
-    grad_norm = torch.sqrt(torch.stack(others, 0).pow(2).sum(0))
-    probe = group_norms[probe_name].double()
-    clipped_total = aux.clipped_grad_norms.double()
-    clipped = torch.sqrt((clipped_total.pow(2) - probe.pow(2)).clamp_min(0.0))
+    bounds = getattr(max_norm, "values", None)
+    if bounds is None:
+        raise InputTypeError(
+            *(
+                "telemetry_without_probe needs the PerGroup bound handed to "
+                f"clipped_grad, got {type(max_norm).__name__}.",
+            )
+        )
+    missing = sorted(k for k in group_norms if k != probe_name and k not in bounds)
+    if missing:
+        raise ConfigurationError(
+            *(f"max_norm has no bound for the gradient groups {missing[:3]}.",)
+        )
+    others = {k: v.double() for k, v in group_norms.items() if k != probe_name}
+    raw = torch.stack(list(others.values()), 0)
+    clipped_groups = torch.stack(
+        [torch.clamp_max(v, float(bounds[k])) for k, v in others.items()], 0
+    )
+    grad_norm = torch.sqrt(raw.pow(2).sum(0))
+    clipped = torch.sqrt(clipped_groups.pow(2).sum(0))
     dtype = aux.clipped_grad_norms.dtype
     return grad_norm.to(dtype), clipped.to(dtype)
 
 
+# ---------------------------------------------------------------------------
+# Shared consumer helpers: geometry, decision rule, resume compatibility
+# ---------------------------------------------------------------------------
+
+
+def is_router_module(module: nn.Module) -> bool:
+    """Whether ``module`` is a top-k router the backbone records logits for.
+
+    The single router predicate of
+    :mod:`opaque.api.patches.transformers.components.router` (class name
+    containing ``"TopKRouter"`` or the stock router attributes), shared with
+    the fp32-router installer so every consumer counts the same modules.
+    """
+    from opaque.api.patches.transformers.components.router import (
+        is_router_module as _is_router,
+    )
+
+    return _is_router(module)
+
+
+def resolve_moe_geometry(model: nn.Module) -> tuple[int, int, int, float]:
+    """``(num_layers, num_experts, top_k, config_aux_coef)`` of a MoE model.
+
+    ``num_layers`` counts the router modules the backbone records logits
+    for (dense layers of a mixed model do not count); ``num_experts`` and
+    ``top_k`` come from ``model.config`` (``num_experts`` /
+    ``num_experts_per_tok``) or, when the config lacks them, from the
+    routers themselves.  ``config_aux_coef`` is the checkpoint's own
+    ``router_aux_loss_coef`` (``0`` when absent).
+
+    Raises:
+        ConfigurationError: for a family without a router, or when the
+            routers disagree on ``(num_experts, top_k)``.
+    """
+    config = getattr(model, "config", None)
+    routers = [module for module in model.modules() if is_router_module(module)]
+    num_experts = getattr(config, "num_experts", None)
+    top_k = getattr(config, "num_experts_per_tok", None)
+    if routers and (num_experts is None or top_k is None):
+        shapes = {
+            (int(getattr(r, "num_experts", 0)), int(getattr(r, "top_k", 0)))
+            for r in routers
+        }
+        if len(shapes) != 1:
+            raise ConfigurationError(
+                *(f"routers disagree on (num_experts, top_k): {sorted(shapes)}.",)
+            )
+        num_experts, top_k = next(iter(shapes))
+    if not routers or not num_experts or not top_k:
+        raise ConfigurationError(
+            *(
+                "router_load_release needs a mixture-of-experts model whose "
+                "backbone records router logits (config.num_experts, "
+                "config.num_experts_per_tok and a top-k router module); "
+                f"{type(model).__name__} has none. Set router_load_release='off' "
+                "for a dense model.",
+            )
+        )
+    aux_coef = float(getattr(config, "router_aux_loss_coef", 0.0) or 0.0)
+    return len(routers), int(num_experts), int(top_k), aux_coef
+
+
+def monitor_value(state: RouterLoadState) -> float:
+    """``D_t = max_e |f_tilde_e - k/E| / (k/E)`` of the estimate in force.
+
+    This is the deviation of the estimate that enters the surrogate: after
+    the dead zone and the shrinkage when ``state.shrink`` is on (so a
+    noise-dominated early estimate reads as ``0``), the raw bias-corrected
+    ``router_load/D`` otherwise.
+    """
+    share = state.top_k / state.num_experts
+    return float((state.f_tilde - share).abs().max() / share)
+
+
+def decide_trip(
+    state: RouterLoadState,
+    streak: int,
+    *,
+    trip: float,
+    mode: str,
+    alpha: float,
+) -> tuple[RouterLoadState, int]:
+    """The monitor decision rule, shared by every consumer of the state.
+
+    Evaluates :func:`monitor_value` once (call it at the logging cadence):
+    ``D > trip`` extends the streak of consecutive evaluations over the
+    threshold, anything else resets it.  Two consecutive evaluations over
+    the threshold set ``tripped``; in ``"monitor_then_surrogate"`` the trip
+    also switches ``alpha_active`` to ``alpha``.  A state that already
+    tripped is returned unchanged apart from the streak.  Post-processing
+    of previous releases only: the bound, the noise and the accountant are
+    untouched.
+
+    Args:
+        state: State after the release just consumed.
+        streak: Consecutive logged evaluations over the threshold so far.
+        trip: Threshold ``tau`` on ``D``.
+        mode: ``"monitor"``, ``"surrogate"`` or ``"monitor_then_surrogate"``.
+        alpha: Surrogate coefficient to switch on at the trip.
+
+    Returns:
+        ``(state, streak)`` after the evaluation.
+    """
+    streak = streak + 1 if monitor_value(state) > trip else 0
+    if streak < 2 or state.tripped:  # noqa: PLR2004 - two consecutive evaluations
+        return state, streak
+    alpha_active = alpha if mode == "monitor_then_surrogate" else state.alpha_active
+    return replace(state, tripped=True, alpha_active=alpha_active), streak
+
+
+RESUME_MATCH_FIELDS: tuple[str, ...] = (
+    "ratio",
+    "kind",
+    "beta",
+    "window",
+    "dead_zone",
+    "shrink",
+    "num_experts",
+    "top_k",
+    "num_layers",
+    "mean_tokens",
+    "max_tokens",
+    "lam",
+)
+"""Fields of :class:`RouterLoadState` that must agree across a resume."""
+
+_RESUME_RELATIVE_TOLERANCE = 1e-9
+
+
+def _values_differ(saved: Any, current: Any) -> bool:
+    if isinstance(saved, float) or isinstance(current, float):
+        saved_f, current_f = float(saved), float(current)
+        scale = max(abs(saved_f), abs(current_f), 1e-300)
+        return abs(saved_f - current_f) > _RESUME_RELATIVE_TOLERANCE * scale
+    return saved != current
+
+
+def check_resume_compatible(saved: RouterLoadState, current: RouterLoadState) -> None:
+    """Reject a saved state that describes a different release than ``current``.
+
+    The public constants of :data:`RESUME_MATCH_FIELDS` (``ratio``, the
+    filter, the dead zone, ``E``, ``k``, ``L``, ``mean_tokens``,
+    ``max_tokens`` and the probe scale ``lam``, which encodes the gradient
+    bound) and the filter factors ``phi`` (which encode the noise operator
+    and, under a matrix mechanism, the horizon) must match, otherwise the
+    continued filter would mix releases of two different mechanisms.
+    ``base_noise_std`` is deliberately not compared: a target-epsilon run
+    re-calibrates the remaining steps on resume, and the consumer decides
+    how to carry the new value.
+
+    Raises:
+        CheckpointError: naming every mismatched field.
+    """
+    mismatched = [
+        f"{name}: saved={getattr(saved, name)!r}, current={getattr(current, name)!r}"
+        for name in RESUME_MATCH_FIELDS
+        if _values_differ(getattr(saved, name), getattr(current, name))
+    ]
+    if tuple(saved.phi.shape) != tuple(current.phi.shape) or not torch.allclose(
+        saved.phi.double(), current.phi.double(), rtol=1e-6, atol=1e-12
+    ):
+        mismatched.append(
+            "phi: the filter factors differ (a different noise operator or "
+            "matrix-mechanism horizon)"
+        )
+    if mismatched:
+        raise CheckpointError(
+            *(
+                "router_load_release configuration drift on resume; the saved "
+                "post-processing state was built for a different release: "
+                + "; ".join(mismatched)
+                + ". Restart from scratch to change these settings.",
+            )
+        )
+
+
 __all__ = [
     "PROBE_NAME",
+    "RESUME_MATCH_FIELDS",
     "RouterLoadState",
     "attach_probe",
+    "check_resume_compatible",
+    "decide_trip",
     "filter_factors",
     "initial_state",
+    "is_router_module",
     "load_bound",
+    "monitor_value",
     "probe_bounds",
+    "resolve_moe_geometry",
     "router_load_terms",
     "summary",
     "telemetry_without_probe",

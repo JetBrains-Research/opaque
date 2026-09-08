@@ -15,80 +15,28 @@ from __future__ import annotations
 import dataclasses
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 
 from opaque.api.transformers.moe_load import (
     PROBE_NAME,
     RouterLoadState,
+    check_resume_compatible,
+    decide_trip,
+    monitor_value,
+    resolve_moe_geometry,
     update,
 )
-from opaque.exceptions import CheckpointError, ConfigurationError
+from opaque.exceptions import CheckpointError
 from opaque.serialization import from_state_dict as opaque_from_state_dict
 from opaque.serialization import state_dict as opaque_state_dict
 from transformers.trainer_callback import TrainerCallback
-
-if TYPE_CHECKING:
-    from torch import nn
 
 log = logging.getLogger(__name__)
 
 ROUTER_LOAD_STATE_NAME = "router_load_state.pt"
 _SIDECAR_VERSION = 1
-# Fields of :class:`RouterLoadState` that must agree between the saved state
-# and the freshly configured run for a resume to be meaningful.
-_RESUME_MATCH_FIELDS: tuple[str, ...] = (
-    "ratio",
-    "kind",
-    "beta",
-    "window",
-    "dead_zone",
-    "shrink",
-    "num_experts",
-    "top_k",
-    "num_layers",
-    "mean_tokens",
-    "max_tokens",
-    "lam",
-)
-_RESUME_RELATIVE_TOLERANCE = 1e-9
-_ROUTER_ATTRS = ("top_k", "num_experts", "weight")
-
-
-def _is_router_module(module: nn.Module) -> bool:
-    if "TopKRouter" in type(module).__name__:
-        return True
-    return all(hasattr(module, attr) for attr in _ROUTER_ATTRS) and hasattr(
-        module, "norm_topk_prob"
-    )
-
-
-def resolve_moe_geometry(model: nn.Module) -> tuple[int, int, int, float]:
-    """``(num_layers, num_experts, top_k, config_aux_coef)`` of a MoE model.
-
-    ``num_layers`` counts the router modules the backbone records logits for
-    (dense layers of a mixed model do not count); ``num_experts`` and
-    ``top_k`` come from the model config.  Raises
-    :class:`~opaque.exceptions.ConfigurationError` for a family without a
-    router.
-    """
-    config = getattr(model, "config", None)
-    num_experts = getattr(config, "num_experts", None)
-    top_k = getattr(config, "num_experts_per_tok", None)
-    num_layers = sum(1 for module in model.modules() if _is_router_module(module))
-    if num_experts is None or top_k is None or num_layers < 1:
-        raise ConfigurationError(
-            *(
-                "router_load_release needs a mixture-of-experts model whose "
-                "backbone records router logits (config.num_experts, "
-                "config.num_experts_per_tok and a top-k router module); "
-                f"{type(model).__name__} has none. Set router_load_release='off' "
-                "for a dense model.",
-            )
-        )
-    aux_coef = float(getattr(config, "router_aux_loss_coef", 0.0) or 0.0)
-    return int(num_layers), int(num_experts), int(top_k), aux_coef
 
 
 @dataclasses.dataclass
@@ -158,16 +106,21 @@ class RouterLoadCallback(TrainerCallback):
     zeroes the leaf in place so the optimizer update of the probe is exactly
     zero.
 
-    Decision rule: the monitor ``D_t = max_e |f_tilde_e - k/E| / (k/E)`` of
-    the estimate that enters the surrogate (after the dead zone and the
+    Decision rule: :func:`opaque.api.transformers.moe_load.decide_trip`,
+    the one rule every consumer of the state applies, evaluated at the
+    logging cadence.  The monitor ``D_t = max_e |f_tilde_e - k/E| / (k/E)``
+    of the estimate that enters the surrogate (after the dead zone and the
     shrinkage, so a noise-dominated early estimate reads as zero; with
-    ``router_load_shrink=False`` it is the raw ``router_load/D``) is evaluated
-    at the logging cadence; ``D_t > trip`` on two consecutive logged
-    evaluations sets ``tripped``.  In ``"monitor_then_surrogate"`` the trip
-    switches the surrogate coefficient from ``0`` to the configured value;
-    the clipping bound, the noise and the accountant are untouched (an
-    adaptive choice of the next step's loss is post-processing of previous
-    releases).
+    ``router_load_shrink=False`` it is the raw ``router_load/D``) above
+    ``trip`` on two consecutive logged evaluations sets ``tripped``.  In
+    ``"monitor_then_surrogate"`` the trip switches the surrogate
+    coefficient from ``0`` to the configured value; the clipping bound, the
+    noise and the accountant are untouched (an adaptive choice of the next
+    step's loss is post-processing of previous releases).
+
+    The callback stays registered after ``train()`` returns so the final
+    state remains readable; a later run without the release hands it a
+    pytree without the probe, which it leaves alone.
     """
 
     def __init__(
@@ -205,7 +158,8 @@ class RouterLoadCallback(TrainerCallback):
         **kwargs: Any,
     ) -> Any:
         del args, trainable_params, kwargs
-        if grads is None:
+        if grads is None or self.probe_name not in grads.pytree:
+            # No probe in this run (the release is off): nothing to consume.
             return control
         leaf = grads.pytree[self.probe_name]
         new_state = update(self.state, leaf)
@@ -228,26 +182,23 @@ class RouterLoadCallback(TrainerCallback):
     ) -> RouterLoadState:
         if not self._logged_evaluation(trainer_state):
             return new_state
-        share = new_state.top_k / new_state.num_experts
-        monitor = float((new_state.f_tilde - share).abs().max() / share)
-        if monitor > self.trip:
-            self.consecutive_over_trip += 1
-        else:
-            self.consecutive_over_trip = 0
-        if self.consecutive_over_trip < 2 or new_state.tripped:  # noqa: PLR2004
-            return new_state
-        alpha_active = new_state.alpha_active
-        if self.mode == "monitor_then_surrogate":
-            alpha_active = self.alpha
-        log.info(
-            "router_load: shrunk monitor D=%.3f exceeded trip=%.3f on two "
-            "consecutive logged evaluations at step %d (alpha_active=%g)",
-            monitor,
-            self.trip,
-            int(getattr(trainer_state, "global_step", 0)) + 1,
-            alpha_active,
+        decided, self.consecutive_over_trip = decide_trip(
+            new_state,
+            self.consecutive_over_trip,
+            trip=self.trip,
+            mode=self.mode,
+            alpha=self.alpha,
         )
-        return dataclasses.replace(new_state, tripped=True, alpha_active=alpha_active)
+        if decided.tripped and not new_state.tripped:
+            log.info(
+                "router_load: monitor D=%.3f exceeded trip=%.3f on two "
+                "consecutive logged evaluations at step %d (alpha_active=%g)",
+                monitor_value(decided),
+                self.trip,
+                int(getattr(trainer_state, "global_step", 0)) + 1,
+                decided.alpha_active,
+            )
+        return decided
 
 
 # ---------------------------------------------------------------------------
@@ -267,23 +218,21 @@ def save_router_load_state(ckpt_dir: str, callback: RouterLoadCallback) -> str:
     return str(path)
 
 
-def _values_differ(saved: Any, current: Any) -> bool:
-    if isinstance(saved, float) or isinstance(current, float):
-        saved_f, current_f = float(saved), float(current)
-        scale = max(abs(saved_f), abs(current_f), 1e-300)
-        return abs(saved_f - current_f) > _RESUME_RELATIVE_TOLERANCE * scale
-    return saved != current
-
-
 def restore_router_load_state(ckpt_dir: str, callback: RouterLoadCallback) -> None:
     """Restore the sidecar onto ``callback`` and reject configuration drift.
 
     The restored state continues the filter bit for bit; the public
     constants it was built with (``ratio``, filter kind / beta / window,
-    ``dead_zone``, ``E``, ``k``, ``L``, ``mean_tokens``, ``max_tokens`` and
-    the probe scale ``lam``, which encodes the gradient bound ``C_g``) must
-    equal the freshly configured ones, otherwise the continued filter would
-    mix releases of two different mechanisms.
+    ``dead_zone``, ``E``, ``k``, ``L``, ``mean_tokens``, ``max_tokens``, the
+    probe scale ``lam``, which encodes the gradient bound ``C_g``, and the
+    filter factors ``phi``) must equal the freshly configured ones
+    (:func:`opaque.api.transformers.moe_load.check_resume_compatible`),
+    otherwise the continued filter would mix releases of two different
+    mechanisms.  ``base_noise_std`` is the one value allowed to change: a
+    target-epsilon run re-calibrates the noise multiplier for the remaining
+    steps, so the restored state carries the freshly calibrated value
+    forward (with a warning) and the known noise ``s_t`` of every later
+    estimate describes the noise actually added from here on.
     """
     path = Path(ckpt_dir) / ROUTER_LOAD_STATE_NAME
     if not path.exists():
@@ -295,7 +244,7 @@ def restore_router_load_state(ckpt_dir: str, callback: RouterLoadCallback) -> No
                 "run or set router_load_release='off'.",
             )
         )
-    payload = torch.load(str(path), map_location="cpu", weights_only=False)
+    payload = torch.load(str(path), map_location="cpu", weights_only=True)
     version = payload.get("version") if isinstance(payload, dict) else None
     if version != _SIDECAR_VERSION:
         raise CheckpointError(
@@ -305,29 +254,18 @@ def restore_router_load_state(ckpt_dir: str, callback: RouterLoadCallback) -> No
             )
         )
     restored = opaque_from_state_dict(callback.state, payload["state"])
-    mismatched = [
-        f"{name}: saved={getattr(restored, name)!r}, "
-        f"current={getattr(callback.state, name)!r}"
-        for name in _RESUME_MATCH_FIELDS
-        if _values_differ(getattr(restored, name), getattr(callback.state, name))
-    ]
-    if mismatched:
-        raise CheckpointError(
-            *(
-                "router_load_release configuration drift on resume; the saved "
-                "post-processing state was built for a different release: "
-                + "; ".join(mismatched)
-                + ". Restart from scratch to change these settings.",
-            )
-        )
-    if _values_differ(restored.base_noise_std, callback.state.base_noise_std):
+    check_resume_compatible(restored, callback.state)
+    current_base = float(callback.state.base_noise_std)
+    if restored.base_noise_std != current_base:
         log.warning(
             "router_load_release resume: the saved release noise std (%g) "
             "differs from the freshly calibrated one (%g); the restored filter "
-            "keeps the saved value.",
+            "continues with the new value, so the known noise of every later "
+            "estimate describes the noise added from here on.",
             restored.base_noise_std,
-            callback.state.base_noise_std,
+            current_base,
         )
+        restored = dataclasses.replace(restored, base_noise_std=current_base)
     callback.state = restored
     callback.consecutive_over_trip = int(payload.get("consecutive_over_trip", 0))
 

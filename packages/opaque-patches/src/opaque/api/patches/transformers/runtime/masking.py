@@ -29,6 +29,11 @@ def set_packed_sequences(flag: bool | None) -> None:
       attention mask is given, so every example's attention runs the same
       kernel regardless of its microbatch mates.
     - ``None`` (default): probe the batch as before.
+
+    The policy is a process-wide module setting, not thread-local: a caller
+    that sets it for one run (``DPTrainer`` does so for the duration of
+    ``train()``) should read :func:`packed_sequences` first and put the
+    previous value back afterwards.
     """
     global _PACKED_SEQUENCES
     if flag is not None and not isinstance(flag, bool):

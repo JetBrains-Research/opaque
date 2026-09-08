@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn.functional as F
 
+from opaque.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -49,12 +51,23 @@ def _fp32_router_forward(self, hidden_states: torch.Tensor):
 _fp32_router_forward.__opaque_fp32_router__ = True  # type: ignore[attr-defined]
 
 
-def _is_router(module: nn.Module, router_cls: type | None) -> bool:
-    if router_cls is not None:
-        return type(module) is router_cls
+def is_router_module(module: nn.Module) -> bool:
+    """Whether ``module`` is a stacked-expert top-k router.
+
+    The single router predicate of the package: a class name containing
+    ``"TopKRouter"`` or the stock router attributes (``top_k``,
+    ``num_experts``, ``norm_topk_prob``, ``weight``).  The fp32 installer,
+    the router-load release and the example loops all count routers with it.
+    """
     if "TopKRouter" in type(module).__name__:
         return True
     return all(hasattr(module, attr) for attr in _ROUTER_ATTRS)
+
+
+def _is_router(module: nn.Module, router_cls: type | None) -> bool:
+    if router_cls is not None:
+        return type(module) is router_cls
+    return is_router_module(module)
 
 
 def _has_fp32_router(module: nn.Module) -> bool:
@@ -67,19 +80,35 @@ def install_fp32_router(
 ) -> Callable[[], None]:
     """Bind the fp32-logit forward on every router module of ``model``.
 
-    Routers are matched by ``router_cls`` when given, otherwise by a class name
-    containing ``"TopKRouter"`` or by the stock router attributes (``top_k``,
-    ``num_experts``, ``norm_topk_prob``, ``weight``). Idempotent per module.
+    Routers are matched by ``router_cls`` when given, otherwise by
+    :func:`is_router_module`. Idempotent per module.
 
     Returns:
         A callable that removes the swap from ``model`` again.
+
+    Raises:
+        ConfigurationError: when no module of ``model`` matches, so a
+            requested fp32 router never silently installs nothing.
     """
+    installed = 0
     for module in model.modules():
-        if not _is_router(module, router_cls) or _has_fp32_router(module):
+        if not _is_router(module, router_cls):
+            continue
+        installed += 1
+        if _has_fp32_router(module):
             continue
         previous = module.__dict__.get("forward")
         module.__dict__[_PREVIOUS_FORWARD_ATTR] = previous
         module.forward = types.MethodType(_fp32_router_forward, module)
+    if installed == 0:
+        wanted = router_cls.__name__ if router_cls is not None else "a top-k router"
+        raise ConfigurationError(
+            *(
+                f"install_fp32_router: {type(model).__name__} has no module "
+                f"matching {wanted}; the fp32 router (router_fp32=True) has "
+                "nothing to install on this model.",
+            )
+        )
     return lambda: remove_fp32_router(model)
 
 
@@ -100,4 +129,9 @@ def has_fp32_router(model: nn.Module) -> bool:
     return any(_has_fp32_router(module) for module in model.modules())
 
 
-__all__ = ["has_fp32_router", "install_fp32_router", "remove_fp32_router"]
+__all__ = [
+    "has_fp32_router",
+    "install_fp32_router",
+    "is_router_module",
+    "remove_fp32_router",
+]

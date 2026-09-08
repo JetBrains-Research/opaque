@@ -180,7 +180,10 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
     routed layer, ``logits`` is ``None`` and ``aux_loss`` is ``None``. It implies
     loss-only evaluation and never adds HF's batch-coupled auxiliary loss to
     ``loss``; that HF contract is reached with ``output_router_logits=True``
-    instead, which still defers to the original forward.
+    instead, which still defers to the original forward. One exception to
+    ``logits=None``: on CUDA with fp32 hidden states the fused kernel is not
+    used, the eager ``lm_head`` branch runs and the full logits are returned
+    (the loss stays per-example and the router logits are still carried).
     """
 
     def forward(  # noqa: PLR0913, PLR0917

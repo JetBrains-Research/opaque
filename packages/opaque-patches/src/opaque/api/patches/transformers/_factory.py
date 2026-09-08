@@ -84,10 +84,16 @@ def _log_moe_path_once(family: str, grouped: bool) -> None:
     if _moe_path_logged:
         return
     _moe_path_logged = True
+    # The gate only allows or forbids the grouped route; ``opaque_moe`` still
+    # falls back to the dense kernel per call (few experts, CUDA fp32
+    # activations, workspace budget), so the line reports the gate, not the
+    # route taken.
     log.info(
-        "opaque: %s MoE experts run on the %s path (grouped_moe=%s)",
+        "opaque: %s MoE experts: grouped-GEMM route %s (grouped_moe=%s)",
         family,
-        "grouped-GEMM" if grouped else "dense Opaque_MoE",
+        "allowed, dense Opaque_MoE as the per-call fallback"
+        if grouped
+        else "disabled, dense Opaque_MoE forced",
         grouped,
     )
 

@@ -394,6 +394,24 @@ class TestFp32Router:
         other, _ = _tiny_mellum(device)
         assert not has_fp32_router(other)
 
+    def test_model_without_a_matching_router_is_rejected(self, device):
+        """A requested fp32 router never installs nothing silently."""
+        from opaque.exceptions import ConfigurationError
+
+        dense = torch.nn.Sequential(torch.nn.Linear(4, 4)).to(device)
+        with pytest.raises(ConfigurationError, match="nothing to install"):
+            install_fp32_router(dense)
+        # A class object that matches no module (remote-code / re-imported
+        # modeling modules) is rejected the same way.
+        model, _ = _tiny_mellum(device)
+
+        class NotTheRouter(torch.nn.Module):
+            pass
+
+        with pytest.raises(ConfigurationError, match="NotTheRouter"):
+            install_fp32_router(model, router_cls=NotTheRouter)
+        assert not has_fp32_router(model)
+
     def test_vmap_and_per_example_gradients(self, device):
         model, _ = _tiny_mellum(device)
         install_fp32_router(model)

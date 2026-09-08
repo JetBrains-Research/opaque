@@ -485,9 +485,57 @@ def test_checkpoint_sidecar_round_trips_and_resume_continues_the_filter(tmp_path
     assert resumed.states[0].step == 3
 
 
+def test_resume_with_a_new_noise_multiplier_carries_the_calibrated_std(
+    tmp_path, caplog
+):
+    """The restored filter continues; ``s_t`` describes the noise added now."""
+    _run_with_recorder(tmp_path, "run", save_strategy="steps", save_steps=2)
+    ckpt_dir = tmp_path / "run" / "checkpoint-2"
+    payload = torch.load(ckpt_dir / ROUTER_LOAD_STATE_NAME, weights_only=True)
+    assert payload["version"] == 1
+    resumed_trainer = _trainer(
+        tmp_path / "resumed",
+        router_load_release="monitor",
+        privacy_noise_multiplier=2.0,
+        max_steps=4,
+        resume_from_checkpoint=str(ckpt_dir),
+    )
+    resumed = _Recorder(resumed_trainer)
+    resumed_trainer.add_callback(resumed)
+    with caplog.at_level("WARNING"):
+        resumed_trainer.train()
+    assert "release noise std" in caplog.text
+    saved_state = from_state_dict(resumed.states[0], payload["state"])
+    fresh_base = resumed.states[0].base_noise_std
+    assert fresh_base == pytest.approx(2.0 * saved_state.base_noise_std)
+    # The filter continued from the saved accumulators (step 3 on resume) ...
+    assert resumed.states[0].step == 3
+    # ... and the known noise of the new releases uses the calibrated base.
+    correction = 1.0 - saved_state.beta**3
+    phi_3 = float(saved_state.phi[2])
+    assert resumed.states[0].noise_std == pytest.approx(fresh_base * phi_3 / correction)
+
+
 def test_resume_rejects_configuration_drift_and_a_missing_sidecar(tmp_path):
     _run_with_recorder(tmp_path, "run", save_strategy="steps", save_steps=2)
     ckpt_dir = tmp_path / "run" / "checkpoint-2"
+    # A different filter table at the same length (an MF horizon change is
+    # the realistic source) is rejected too.
+    sidecar = ckpt_dir / ROUTER_LOAD_STATE_NAME
+    payload = torch.load(sidecar, weights_only=True)
+    original = torch.load(sidecar, weights_only=True)
+    phi_key = next(k for k in payload["state"] if k.endswith("phi"))
+    payload["state"][phi_key] = payload["state"][phi_key] * 1.5
+    torch.save(payload, sidecar)
+    phi_drift = _trainer(
+        tmp_path / "phi",
+        router_load_release="monitor",
+        max_steps=4,
+        resume_from_checkpoint=str(ckpt_dir),
+    )
+    with pytest.raises(CheckpointError, match="phi"):
+        phi_drift.train()
+    torch.save(original, sidecar)
     drifted = _trainer(
         tmp_path / "drifted",
         router_load_release="monitor",
@@ -555,12 +603,15 @@ def test_logged_norms_exclude_the_probe_and_monitor_curves_are_the_summary(tmp_p
         others = torch.stack([v for k, v in aux.group_norms.items() if k != PROBE_NAME])
         expected_grad_norm = torch.sqrt((others**2).sum(0)).mean().item()
         assert metrics["grad_norm"] == pytest.approx(expected_grad_norm, rel=1e-5)
-        clipped = torch.sqrt(
-            aux.clipped_grad_norms**2 - aux.group_norms[PROBE_NAME] ** 2
+        clipped_groups = torch.stack(
+            [
+                torch.clamp_max(v, float(ctx.clip_norm.values[k]))
+                for k, v in aux.group_norms.items()
+                if k != PROBE_NAME
+            ]
         )
-        assert metrics["clipped_grad_norm"] == pytest.approx(
-            clipped.mean().item(), rel=1e-5
-        )
+        expected_clipped = torch.sqrt((clipped_groups**2).sum(0)).mean().item()
+        assert metrics["clipped_grad_norm"] == pytest.approx(expected_clipped, rel=1e-6)
         assert PROBE_NAME not in metrics["group_metrics"]
         assert set(metrics["group_metrics"]) == {"fallback"}
         assert metrics["loss"] == pytest.approx(aux.loss_values.mean().item())
@@ -693,14 +744,14 @@ def test_family_without_a_router_raises(tmp_path):
             num_key_value_heads=4,
         )
     )
-    trainer = DPTrainer(
-        model=model,
-        args=_args(tmp_path, router_load_release="monitor"),
-        train_dataset=_RaggedDataset(),
-        data_collator=_collate,
-    )
+    # The check runs at construction, not inside ``train()``.
     with pytest.raises(ConfigurationError, match="mixture-of-experts"):
-        trainer._setup_training()
+        DPTrainer(
+            model=model,
+            args=_args(tmp_path, router_load_release="monitor"),
+            train_dataset=_RaggedDataset(),
+            data_collator=_collate,
+        )
 
 
 def test_missing_chunked_forward_raises(tmp_path, monkeypatch):
@@ -711,16 +762,81 @@ def test_missing_chunked_forward_raises(tmp_path, monkeypatch):
         _trainer(tmp_path, router_load_release="monitor")
 
 
+class _PolicyProbe(TrainerCallback):
+    """Record the process-level packed-sequences policy while a step runs."""
+
+    def __init__(self) -> None:
+        self.seen: list[bool | None] = []
+
+    def on_step_begin(self, args, state, control, **kw):
+        self.seen.append(packed_sequences())
+
+
+def _policy_during_train(trainer: DPTrainer) -> set[bool | None]:
+    probe = _PolicyProbe()
+    trainer.add_callback(probe)
+    trainer.train()
+    assert probe.seen
+    return set(probe.seen)
+
+
 def test_packed_sequences_policy_follows_the_public_flag(tmp_path):
-    _trainer(tmp_path / "a", router_load_release="monitor")
-    assert packed_sequences() is False
-    _trainer(tmp_path / "b", router_load_release="monitor", packed_sequences=True)
-    assert packed_sequences() is True
-    _trainer(tmp_path / "c", router_load_release="off", packed_sequences=False)
-    assert packed_sequences() is False
+    """The policy is installed for the run and the previous value comes back.
+
+    A process-wide setting written at construction and never restored would
+    leak into a later trainer or model in the same process.
+    """
     from opaque.patches import set_packed_sequences
 
     set_packed_sequences(None)
+    # Construction alone leaves the process-level policy alone.
+    a = _trainer(tmp_path / "a", router_load_release="monitor", max_steps=1)
+    assert packed_sequences() is None
+    assert _policy_during_train(a) == {False}
+    assert packed_sequences() is None
+    b = _trainer(
+        tmp_path / "b",
+        router_load_release="monitor",
+        packed_sequences=True,
+        max_steps=1,
+    )
+    assert _policy_during_train(b) == {True}
+    assert packed_sequences() is None
+    set_packed_sequences(True)
+    c = _trainer(
+        tmp_path / "c", router_load_release="off", packed_sequences=False, max_steps=1
+    )
+    assert _policy_during_train(c) == {False}
+    assert packed_sequences() is True
+    # No policy at all: the run inherits and keeps whatever the process has.
+    d = _trainer(tmp_path / "d", router_load_release="off", max_steps=1)
+    assert _policy_during_train(d) == {True}
+    assert packed_sequences() is True
+    set_packed_sequences(None)
+
+
+def test_second_train_without_the_release_ignores_the_stale_callback(tmp_path):
+    """The callback registered by a release run must not break a later run."""
+    trainer = _trainer(tmp_path, router_load_release="monitor", max_steps=2)
+    trainer.train()
+    assert any(
+        isinstance(cb, RouterLoadCallback) for cb in trainer.callback_handler.callbacks
+    )
+    trainer.args.router_load_release = "off"
+    trainer.train()  # KeyError on the missing probe leaf before the fix
+    assert trainer._router_load is None
+    assert PROBE_NAME not in dict(trainer.model.named_parameters())
+
+
+def test_row_bound_fallback_to_the_context_length_warns(tmp_path, caplog):
+    trainer = _trainer(
+        tmp_path, router_load_release="monitor", router_load_max_tokens=None
+    )
+    with caplog.at_level("WARNING"):
+        mean_tokens, max_tokens, row_max = trainer._router_load_token_bounds()
+    assert row_max == trainer.model.config.max_position_embeddings
+    assert mean_tokens == max_tokens == float(row_max)
+    assert "max_position_embeddings" in caplog.text
 
 
 # ---------------------------------------------------------------------------
