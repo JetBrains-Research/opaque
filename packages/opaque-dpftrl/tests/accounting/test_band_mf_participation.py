@@ -71,6 +71,16 @@ def test_unamplified_pld_tracks_the_declared_participation_schema():
 # --- sensitivity became participation-aware.  These must not move.
 
 
+# Tolerance for the "this fix did not move the amplified routes" pins.  The
+# effect being excluded is a factor of sqrt(k') on the sensitivity -- 4x at the
+# configurations below -- so 1e-9 is eight orders of magnitude tighter than it
+# needs to be to catch a regression, while staying above the run-to-run spread
+# of the PLD convolution, which differs in the tenth significant digit across
+# platforms and xdist worker counts (observed 10.997151210414616 against
+# 10.997151210060439, a relative 3.2e-11).
+_PIN_REL = 1e-9
+
+
 def test_cyclic_poisson_epsilon_is_unchanged():
     strategy = band_mf_strategy(bands=8, momentum=0.95)
     inner = ftrl_acc.mf_gaussian(2.0, strategy)
@@ -79,10 +89,10 @@ def test_cyclic_poisson_epsilon_is_unchanged():
     sampled = ftrl_acc.poisson(inner, sample_rate=0.05, n_steps=128)
 
     assert unsampled.pld().epsilon_at(_DELTA) == pytest.approx(
-        10.997151210060439, rel=1e-12
+        10.997151210060439, rel=_PIN_REL
     )
     assert sampled.pld().epsilon_at(_DELTA) == pytest.approx(
-        0.5662867696910785, rel=1e-12
+        0.5662867696910785, rel=_PIN_REL
     )
 
 
@@ -92,7 +102,7 @@ def test_b_min_sep_epsilon_is_unchanged():
 
     pld = proc.pld(seed=123, mc_resolution=5e-3, mc_failure_probability=1e-2)
 
-    assert pld.epsilon_at(1e-2) == pytest.approx(0.8493924366281685, rel=1e-12)
+    assert pld.epsilon_at(1e-2) == pytest.approx(0.8493924366281685, rel=_PIN_REL)
 
 
 @pytest.mark.slow
@@ -104,4 +114,6 @@ def test_cyclic_poisson_production_anchor_is_unchanged():
         n_steps=15625,
     )
 
-    assert proc.pld().epsilon_at(_DELTA) == pytest.approx(2.9986033025122927, rel=1e-12)
+    assert proc.pld().epsilon_at(_DELTA) == pytest.approx(
+        2.9986033025122927, rel=_PIN_REL
+    )

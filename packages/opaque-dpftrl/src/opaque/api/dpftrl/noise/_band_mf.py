@@ -172,10 +172,12 @@ class BandMfStrategy:
         )
         if k == 1:
             return float(coefs.norm())
-        # ``minsep_sensitivity_upper_bound`` (not ``..._squared``) because
-        # the optimizer can emit coefficients a few ulp below zero (e.g.
-        # ``momentum=0.0``), which the strict closed form rejects; on the
-        # theorem domain the two agree exactly.
+        # Both this helper and the strict ``minsep_sensitivity_squared``
+        # return a SQUARED sensitivity, hence the ``sqrt`` below.  The bound
+        # is preferred over the strict form because the optimizer can emit
+        # coefficients a few ulp below zero (e.g. ``momentum=0.0``), which
+        # the strict form rejects; on the theorem domain the two agree
+        # exactly, so this costs nothing where the strict form applies.
         sens_sq = minsep_sensitivity_upper_bound(
             coefs,
             min_sep=min_sep,
