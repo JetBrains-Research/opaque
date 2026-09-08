@@ -7,7 +7,7 @@ from opaque.api.patches.peft.components._packing import (
 
 
 class _PackOwner(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, *, register_pack=True):
         super().__init__()
         self.weights = torch.nn.ParameterList(
             [
@@ -33,9 +33,10 @@ class _PackOwner(torch.nn.Module):
                 torch.nn.Parameter(torch.randn(3, 2)),
             ]
         )
-        _register_projection_pack(
-            self, "qkv", ("weight", "bias", "adapter_a", "adapter_b")
-        )
+        if register_pack:
+            _register_projection_pack(
+                self, "qkv", ("weight", "bias", "adapter_a", "adapter_b")
+            )
 
     def sources(self):
         adapters = tuple(
@@ -91,8 +92,10 @@ def test_projection_pack_cache_reuses_and_refreshes_nonpersistent_buffers():
 
 
 def test_projection_pack_falls_back_and_does_not_cache_external_tensors():
-    owner = _PackOwner()
+    owner = _PackOwner(register_pack=False)
     cached = _projection_packs(owner, "qkv", *owner.sources())
+    assert owner._opaque_projection_pack_keys
+    assert owner._opaque_qkv_weight_pack.numel() > 0
     cached_weight = cached[0]
     weights, biases, adapters = owner.sources()
 

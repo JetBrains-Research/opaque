@@ -166,6 +166,11 @@ def _projection_packs(
     torch.Tensor | None,
 ]:
     """Return refreshed base/bias/adapter packs for same-input projections."""
+    components = ["weight", "adapter_a", "adapter_b"]
+    if biases is not None:
+        components.append("bias")
+    _register_projection_pack(module, name, components)
+
     weight_name = f"_opaque_{name}_weight_pack"
     packed_weight = _cached_pack(
         module,
