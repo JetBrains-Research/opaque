@@ -1454,13 +1454,9 @@ class DPTrainer:
         # the *local* rate equals the *global* rate by construction.  The
         # accountant uses regular ``acc.poisson`` over the global rate.
         #
-        # ``dataset_size`` is the validated effective size — under DDP every
-        # rank must end up with an identical-length shard (avoids deadlocks
-        # for fixed-order FTRL samplers), which requires
-        # ``len(train_dataset)`` to already be an exact multiple of
-        # ``world_size``; see :meth:`_effective_train_dataset_size` for why
-        # this is now a fail-closed configuration error rather than a
-        # silent trim.  Computing ``sample_rate`` from this validated
+        # ``dataset_size`` is ``len(train_dataset)``, validated by
+        # :meth:`_effective_train_dataset_size` to be an exact multiple of
+        # ``world_size`` under DDP. Computing ``sample_rate`` from this
         # denominator means the accountant calibrates noise for exactly the
         # ``q`` the sampler will use — there is no "actual q vs accounted q"
         # drift.
@@ -3790,12 +3786,9 @@ class DPTrainer:
             from opaque.distributed import local_shard
 
             world_size = self._ddp.world_size
-            # ``_effective_train_dataset_size`` raises ``ConfigurationError``
-            # unless ``len(dataset)`` is an exact multiple of ``world_size``
-            # — re-validating here (instead of trimming a computed prefix)
-            # guarantees every rank's ``local_shard`` is the same length
-            # without ever deriving the shard boundary from the private
-            # dataset length.
+            # Raises ``ConfigurationError`` unless ``len(dataset)`` is an
+            # exact multiple of ``world_size``, guaranteeing every rank's
+            # ``local_shard`` is the same length.
             self._effective_train_dataset_size()
             dataset = local_shard(
                 dataset,
@@ -4565,31 +4558,16 @@ class DPTrainer:
     def _effective_train_dataset_size(self) -> int:
         """Length of ``self._train_dataset``, validated for DDP sharding.
 
-        Single source of truth for the training-time dataset size. Under DDP
-        every rank must operate on an identical-length local shard so that
-        fixed-order samplers (BLT-sequential, balls-in-bins) don't
-        desynchronise their batch counts across ranks, and so the Poisson
-        sample-rate denominator used for privacy accounting is a *public*
-        quantity — a function of ``world_size`` (a run-configuration value
-        fixed before training starts) rather than of ``len(train_dataset)``
-        itself.
-
-        An earlier revision enforced the equal-shard invariant by silently
-        dropping ``len(train_dataset) % world_size`` tail examples. Under
-        add/remove adjacency that trim is data-dependent: neighbouring
-        datasets of length ``N`` and ``N - 1`` can floor-divide to
-        *different* multiples of ``world_size``, so both which records are
-        excluded and the accounting denominator become a function of the
-        private dataset length — exactly the kind of data-dependent
-        mechanism selection differential privacy must avoid (see
-        ``.junie/differential-privacy-review.md``, "Query and sensitivity").
-        This method now fails closed instead: callers must supply a
-        ``train_dataset`` whose length is already an exact multiple of
-        ``world_size``, decided independently of any single record.
-
-        Callers that drive privacy accounting and the Poisson sampler must
-        agree on which denominator they're using; routing both through this
-        helper guarantees that.
+        Single source of truth for the training-time dataset size, and for
+        the accounting sample-rate denominator. Requires the assumed-public
+        population size to already be an exact multiple of ``world_size``
+        under DDP, so every rank gets an identical-length shard (fixed-order
+        samplers need this to keep batch counts in sync across ranks) and
+        the accountant's denominator is exactly ``len(train_dataset)`` with
+        no hidden trim. Fails closed instead of silently dropping
+        ``len(train_dataset) % world_size`` tail examples, which would
+        otherwise let the effective population and the accounting
+        denominator drift without the caller noticing.
 
         Raises:
             ConfigurationError: If ``world_size > 1`` and
@@ -4608,13 +4586,11 @@ class DPTrainer:
             raise ConfigurationError(
                 *(
                     f"Train dataset has {n} example(s), which is not evenly "
-                    f"divisible by world_size={world_size}. Silently "
-                    "dropping the remainder would make the DDP shard size "
-                    "(and the privacy accounting sample-rate denominator) "
-                    "depend on the private dataset length, which can differ "
-                    "between neighboring datasets under add/remove "
-                    "adjacency. Pass a train_dataset whose length is a "
-                    f"multiple of world_size (e.g. {lower} or {upper} "
+                    f"divisible by world_size={world_size}. Every rank must "
+                    "get an identical-length shard, and the accounting "
+                    "sample-rate denominator must equal len(train_dataset) "
+                    "with no hidden trim. Pass a train_dataset whose length "
+                    f"is a multiple of world_size (e.g. {lower} or {upper} "
                     "examples), or choose a world_size that divides "
                     "len(train_dataset).",
                 )

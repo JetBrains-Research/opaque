@@ -542,7 +542,7 @@ def scenario_checkpoint_save_failure(
 def scenario_non_divisible_population_rejected(
     rank: int, world_size: int, use_cpu: bool = False, **_
 ) -> None:
-    """Fail closed for a population that can't be evenly sharded across ranks."""
+    """Every rank rejects a population that isn't a multiple of world_size."""
     from opaque.exceptions import ConfigurationError
 
     cfg = TinyConfig()
@@ -557,8 +557,7 @@ def scenario_non_divisible_population_rejected(
         use_cpu=use_cpu,
         use_compat_patches=False,
     )
-    # ``world_size * 4 + 1`` is never a multiple of ``world_size`` for
-    # world_size > 1.
+    # ``world_size * 4 + 1`` is never a multiple of ``world_size``.
     n = world_size * 4 + 1
     ds = TinyDataset(n=n, seq_len=4, vocab=cfg.vocab_size)
     try:
