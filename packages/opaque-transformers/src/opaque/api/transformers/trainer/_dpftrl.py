@@ -113,6 +113,40 @@ def build_strategy(
     return factory(**extra)
 
 
+def _cyclic_poisson_group_rate(sample_rate: float, bands: int) -> float:
+    """Convert the trainer's global rate into the per-active-group rate.
+
+    ``sample_rate`` is the Trainer's ``expected_batch_size / dataset_size``
+    — the *global* fraction of the whole dataset drawn per round. Both
+    ``opaque.dpftrl.accounting.poisson`` (``CyclicPoisson``) and
+    ``CyclicPoissonSampler`` instead take the *conditional* probability that
+    an example is included given its group is active this round.
+
+    Choquette-Choo et al. (2023), informal Theorem 1 (Section 5): partition
+    the dataset into ``bands`` equal-size groups of ``m / bands`` examples
+    each and rotate one active group per step; each member of the active
+    group must then participate with probability ``bands * B / m`` for the
+    expected per-step batch size to remain ``B``. Passing the raw global
+    rate here instead of ``bands * sample_rate`` would realise a batch
+    ``bands`` times smaller than configured, and — paired with
+    :func:`opaque.dpftrl.accounting.poisson`, which already expects the
+    per-group rate — would silently *understate* the charged privacy cost
+    by the same factor (see issue #776).
+    """
+    bands = int(bands)
+    group_rate = float(sample_rate) * bands
+    if group_rate > 1.0:
+        raise ConfigurationError(
+            *(
+                "sampling_mode='cyclic_poisson' requires the per-band "
+                f"conditional rate (sample_rate={sample_rate!r} * "
+                f"bands={bands} = {group_rate!r}) to be <= 1. Reduce "
+                "expected_batch_size or increase bands.",
+            )
+        )
+    return group_rate
+
+
 def build_amplifier_factory(
     *,
     sampling_mode: str,
@@ -157,6 +191,17 @@ def build_amplifier_factory(
         ) -> Any:
             return _ftrl_b_min_sep(mf_gaussian(nm, _s), n_steps=_ns, p0=_p0)
 
+    elif sampling_mode == "cyclic_poisson":
+        group_rate = _cyclic_poisson_group_rate(sample_rate, strategy.bands)
+
+        def amp(
+            nm: float,
+            _s: Any = strategy,
+            _gr: float = group_rate,
+            _ns: int = n_steps,
+        ) -> Any:
+            return _ftrl_poisson(mf_gaussian(nm, _s), sample_rate=_gr, n_steps=_ns)
+
     elif sampling_mode == "balls_in_bins":
 
         def amp(
@@ -171,7 +216,8 @@ def build_amplifier_factory(
         raise ConfigurationError(
             *(
                 f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
-                f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'.",
+                "configured.  Valid: 'poisson', 'b_min_sep', "
+                "'cyclic_poisson', 'balls_in_bins'.",
             )
         )
     return amp
@@ -197,6 +243,12 @@ def build_sampler(
     or ``mechanism_kwargs`` — so the runtime sampler cannot desync from
     the accountant.  ``sampling_kwargs`` carries only sampler-ergonomics
     knobs (e.g. ``truncated_batch_size`` for Poisson cap).
+
+    ``cyclic_poisson`` additionally converts the trainer's global
+    ``sample_rate`` to the per-band conditional rate via
+    :func:`_cyclic_poisson_group_rate` — the same conversion
+    :func:`build_amplifier_factory` applies — so the runtime sampler and the
+    accountant always charge the same per-round inclusion probability.
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
     if sampling_mode == "poisson":
@@ -265,10 +317,11 @@ def build_sampler(
                     "got mf=None.",
                 )
             )
+        bands = int(mf.strategy.bands)
         return CyclicPoissonSampler(
             dataset,
-            sample_rate=sample_rate,
-            bands=int(mf.strategy.bands),
+            sample_rate=_cyclic_poisson_group_rate(sample_rate, bands),
+            bands=bands,
             n_steps=n_steps,
             key=key,
         )

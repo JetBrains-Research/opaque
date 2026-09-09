@@ -176,7 +176,7 @@ class TestDpFtrlSamplerDispatch:
         ("mechanism", "expected_sampler_module_name"),
         [
             ("mf_identity", "opaque.api.dpsgd.sampling._poisson"),
-            ("mf_band", "opaque.api.dpftrl.sampling._b_min_sep"),
+            ("mf_band", "opaque.api.dpftrl.sampling._poisson"),
             ("mf_blt", "opaque.api.dpftrl.sampling._balls_in_bins"),
             ("mf_bisr", "opaque.api.dpftrl.sampling._balls_in_bins"),
             ("mf_bsr", "opaque.api.dpftrl.sampling._balls_in_bins"),
@@ -218,6 +218,53 @@ class TestDpFtrlSamplerDispatch:
         trainer.train()
         assert "cls" in captured, "sampler was not captured at on_step_begin"
         assert captured["cls"].__module__ == expected_sampler_module_name
+
+    def test_mf_band_sampler_and_accountant_share_conditional_rate(self, tmp_path):
+        """End-to-end regression for issue #776: the ``CyclicPoissonSampler``
+        that ``mf_band`` (default ``sampling_mode="cyclic_poisson"``)
+        dispatches at runtime must use the exact same per-band conditional
+        rate as the ``CyclicPoisson`` accountant it is calibrated against —
+        both derived from the trainer's global ``expected_batch_size /
+        len(train_dataset)`` rate via ``bands * sample_rate``. A mismatch
+        here would mean the reported epsilon does not bound the sampler
+        the run actually uses."""
+        bands = 4
+        args = _args(
+            output_dir=str(tmp_path / "mf_band-rate-consistency"),
+            mechanism="mf_band",
+            max_steps=16,
+        )
+        torch.manual_seed(0)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        captured: dict[str, object] = {}
+
+        from transformers import TrainerCallback
+
+        class _Capture(TrainerCallback):
+            def on_step_begin(self, args_, state_, control_, **_kw):
+                ctx = getattr(trainer, "_ctx", None)
+                if ctx is not None and ctx.current_sampler is not None:
+                    captured.setdefault("sampler", ctx.current_sampler)
+                    captured.setdefault("ctx", ctx)
+
+        trainer.add_callback(_Capture())
+        trainer.train()
+        assert "sampler" in captured, "sampler was not captured at on_step_begin"
+
+        sampler = captured["sampler"]
+        ctx = captured["ctx"]
+        assert sampler.bands == bands
+
+        accountant_process = ctx.mf.amplifier_factory(ctx.noise_multiplier)
+        expected_group_rate = ctx.sample_rate * bands
+        assert sampler.sample_rate == pytest.approx(expected_group_rate)
+        assert accountant_process.sample_rate == pytest.approx(expected_group_rate)
+        assert sampler.sample_rate == pytest.approx(accountant_process.sample_rate)
 
 
 class TestDpTrainerAllocationModes:

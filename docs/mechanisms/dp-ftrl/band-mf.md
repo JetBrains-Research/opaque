@@ -292,7 +292,14 @@ for batch in loader:
   better per-group amplification but more composition steps.
 - BandMF requires knowing `n_steps` before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.
-- Pair with `CyclicPoissonSampler` for consistent sampling and accounting.
+- Pair with `CyclicPoissonSampler` for consistent sampling and accounting —
+  both take the per-active-group conditional rate (`q` above), not a
+  whole-dataset rate. `opaque.transformers.TrainingArguments` auto-resolves
+  `privacy_noise_mechanism="mf_band"` to `sampling_mode="cyclic_poisson"` and
+  converts its global `expected_batch_size / len(train_dataset)` rate to that
+  conditional rate for you (`bands * sample_rate`); a plain whole-dataset
+  Poisson sampler does not realize the grouped participation this
+  amplification assumes and is rejected.
 
 ## References
 

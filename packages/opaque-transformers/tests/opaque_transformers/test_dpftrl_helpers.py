@@ -161,6 +161,38 @@ class TestBuildAmplifierFactory:
         assert proc.n_steps == 100
         assert proc.min_sep == 4
 
+    def test_band_cyclic_poisson_converts_global_rate_to_group_rate(self):
+        """The accountant must see the per-band conditional rate
+        (``bands * sample_rate``), not the trainer's raw global rate —
+        otherwise the reported epsilon silently understates the true
+        privacy cost by a factor of ``bands`` (issue #776)."""
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        amp = _dpftrl.build_amplifier_factory(
+            sampling_mode="cyclic_poisson",
+            strategy=strategy,
+            sample_rate=0.05,
+            n_steps=100,
+            num_bins=10,
+            dataset_size=1000,
+            truncated_batch_size=None,
+        )
+        proc = amp(1.0)
+        assert proc.n_steps == 100
+        assert proc.sample_rate == pytest.approx(0.2)  # 0.05 * 4
+
+    def test_band_cyclic_poisson_rejects_rate_above_one(self):
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        with pytest.raises(ValueError, match="<= 1"):
+            _dpftrl.build_amplifier_factory(
+                sampling_mode="cyclic_poisson",
+                strategy=strategy,
+                sample_rate=0.3,  # 0.3 * 4 == 1.2 > 1
+                n_steps=100,
+                num_bins=10,
+                dataset_size=1000,
+                truncated_batch_size=None,
+            )
+
     def test_blt_balls_in_bins(self):
         strategy = _dpftrl.build_strategy("mf_blt", {"max_buffers": 4})
         amp = _dpftrl.build_amplifier_factory(
@@ -179,7 +211,7 @@ class TestBuildAmplifierFactory:
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
         with pytest.raises(ValueError, match="sampling_mode"):
             _dpftrl.build_amplifier_factory(
-                sampling_mode="cyclic_poisson",  # no accountant amplifier
+                sampling_mode="bogus",
                 strategy=strategy,
                 sample_rate=0.05,
                 n_steps=100,
@@ -314,6 +346,10 @@ class TestBuildSampler:
         assert sampler.num_bins == 4
 
     def test_cyclic_poisson(self):
+        """The runtime sampler must use the same per-band conditional rate
+        (``bands * sample_rate``) as the accountant — see
+        ``TestBuildAmplifierFactory.test_band_cyclic_poisson_converts_global_rate_to_group_rate``
+        (issue #776)."""
         dataset = _ListDataset(64)
         mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
         sampler = _dpftrl.build_sampler(
@@ -329,6 +365,41 @@ class TestBuildSampler:
             expected_batch_size=4,
         )
         assert isinstance(sampler, CyclicPoissonSampler)
+        assert sampler.bands == 4
+        assert sampler.sample_rate == pytest.approx(0.4)  # 0.1 * 4
+
+    def test_cyclic_poisson_without_mf_raises(self):
+        dataset = _ListDataset(64)
+        with pytest.raises(ValueError, match="requires a built MFContext"):
+            _dpftrl.build_sampler(
+                sampling_mode="cyclic_poisson",
+                dataset=dataset,
+                sample_rate=0.1,
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs=None,
+                mf=None,
+                noise_multiplier=1.0,
+                num_bins=4,
+                expected_batch_size=4,
+            )
+
+    def test_cyclic_poisson_rejects_rate_above_one(self):
+        dataset = _ListDataset(64)
+        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
+        with pytest.raises(ValueError, match="<= 1"):
+            _dpftrl.build_sampler(
+                sampling_mode="cyclic_poisson",
+                dataset=dataset,
+                sample_rate=0.3,  # 0.3 * 4 == 1.2 > 1
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs=None,
+                mf=mf,
+                noise_multiplier=1.0,
+                num_bins=4,
+                expected_batch_size=4,
+            )
 
     def test_sequential(self):
         dataset = _ListDataset(64)

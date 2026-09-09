@@ -3799,16 +3799,17 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode``.  Three modes are reachable through
+        # ``sampling_mode``.  Four modes are reachable through
         # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
-        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
-        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
-        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
-        # call it directly, but those are not exposed as config
-        # ``sampling_mode`` values (no matching accountant amplifier) and the
-        # config layer rejects them.  The sampler iterates end-to-end without
-        # per-epoch re-instantiation; the outer epoch loop is purely a
-        # synthetic boundary layer for HF callbacks.
+        # ``poisson`` (DP-SGD + ``mf_identity``), ``cyclic_poisson`` (the
+        # ``mf_band`` default) or its explicit ``b_min_sep`` alternative, and
+        # ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
+        # constructs ``sequential`` for subclasses that call it directly, but
+        # that is not exposed as a config ``sampling_mode`` value (no
+        # matching accountant amplifier) and the config layer rejects it.
+        # The sampler iterates end-to-end without per-epoch
+        # re-instantiation; the outer epoch loop is purely a synthetic
+        # boundary layer for HF callbacks.
         if ctx.current_sampler is None:
             from opaque.random import fold_in
 
