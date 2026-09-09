@@ -539,6 +539,40 @@ def scenario_checkpoint_save_failure(
     assert expected in message, message
 
 
+def scenario_non_divisible_population_rejected(
+    rank: int, world_size: int, use_cpu: bool = False, **_
+) -> None:
+    """Fail closed for a population that can't be evenly sharded across ranks."""
+    from opaque.exceptions import ConfigurationError
+
+    cfg = TinyConfig()
+    model = TinyForCausalLM(cfg)
+    args = TrainingArguments(
+        output_dir=tempfile.mkdtemp(prefix="dpt_ddp_reject_"),
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    # ``world_size * 4 + 1`` is never a multiple of ``world_size`` for
+    # world_size > 1.
+    n = world_size * 4 + 1
+    ds = TinyDataset(n=n, seq_len=4, vocab=cfg.vocab_size)
+    try:
+        DPTrainer(model=model, args=args, train_dataset=ds, data_collator=_collate)
+    except ConfigurationError as exc:
+        msg = str(exc)
+        assert "not evenly divisible" in msg
+        return
+    raise AssertionError(
+        f"Expected DPTrainer to reject a population of {n} example(s) under "
+        f"world_size={world_size} as not evenly divisible."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -554,6 +588,7 @@ SCENARIOS = {
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
     "checkpoint_save_failure": scenario_checkpoint_save_failure,
+    "non_divisible_population_rejected": scenario_non_divisible_population_rejected,
 }
 
 
