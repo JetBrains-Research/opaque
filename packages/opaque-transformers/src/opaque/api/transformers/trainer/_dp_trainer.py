@@ -4583,16 +4583,20 @@ class DPTrainer:
         if n % world_size != 0:
             lower = n - (n % world_size)
             upper = lower + world_size
+            nearby = (
+                f"e.g. {lower} or {upper} examples"
+                if lower > 0
+                else f"e.g. {upper} examples"
+            )
             raise ConfigurationError(
                 *(
                     f"Train dataset has {n} example(s), which is not evenly "
                     f"divisible by world_size={world_size}. Every rank must "
                     "get an identical-length shard, and the accounting "
                     "sample-rate denominator must equal len(train_dataset) "
-                    "with no hidden trim. Pass a train_dataset whose length "
-                    f"is a multiple of world_size (e.g. {lower} or {upper} "
-                    "examples), or choose a world_size that divides "
-                    "len(train_dataset).",
+                    f"with no hidden trim. Pass a train_dataset whose length "
+                    f"is a multiple of world_size ({nearby}), or choose a "
+                    "world_size that divides len(train_dataset).",
                 )
             )
         if n == 0:
