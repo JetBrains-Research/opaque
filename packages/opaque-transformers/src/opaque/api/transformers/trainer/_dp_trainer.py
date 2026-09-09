@@ -3799,9 +3799,10 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode``.  Four modes are reachable through
+        # ``sampling_mode``.  Five modes are reachable through
         # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
-        # ``poisson`` (DP-SGD + ``mf_identity``), ``cyclic_poisson`` (the
+        # ``poisson`` (DP-SGD + ``mf_identity``) or its explicit
+        # ``k_out_of_t`` alternative (gaussian), ``cyclic_poisson`` (the
         # ``mf_band`` default) or its explicit ``b_min_sep`` alternative, and
         # ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
         # constructs ``sequential`` for subclasses that call it directly, but

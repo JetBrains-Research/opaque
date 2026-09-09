@@ -172,8 +172,8 @@ len(train_dataset)` — the *global* fraction of the whole dataset drawn per
 round — but the sampler and accountant both operate on the *conditional*
 rate within the active group. `DPTrainer` converts consistently as
 `bands * sample_rate` for both the runtime sampler and the accountant, and
-rejects the configuration if that product exceeds `1` (raise `bands` or
-lower `expected_batch_size`). Plain `sampling_mode="poisson"` (whole-dataset
+rejects the configuration if that product exceeds `1` (lower `bands` or
+`expected_batch_size`). Plain `sampling_mode="poisson"` (whole-dataset
 subsampling every step, ignoring `bands`) is not a valid override for
 `mf_band`: it does not realize the grouped participation pattern
 `cyclic_poisson` accounting assumes, so it would silently understate the

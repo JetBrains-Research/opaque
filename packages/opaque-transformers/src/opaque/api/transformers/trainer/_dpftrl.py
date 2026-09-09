@@ -141,7 +141,7 @@ def _cyclic_poisson_group_rate(sample_rate: float, bands: int) -> float:
                 "sampling_mode='cyclic_poisson' requires the per-band "
                 f"conditional rate (sample_rate={sample_rate!r} * "
                 f"bands={bands} = {group_rate!r}) to be <= 1. Reduce "
-                "expected_batch_size or increase bands.",
+                "expected_batch_size or decrease bands.",
             )
         )
     return group_rate
