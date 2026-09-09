@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-import weakref
 from collections import OrderedDict
 from collections.abc import Callable, Hashable
 from threading import RLock
@@ -22,47 +21,15 @@ _CacheKey = tuple[DiscretizationConfig, Hashable, int | None]
 _MISSING = object()
 
 
-class _ProcessCache:
-    """A weak process reference and its bounded PLD entries."""
-
-    def __init__(self, process_ref: weakref.ReferenceType[object]) -> None:
-        self.process_ref = process_ref
-        self.entries: OrderedDict[_CacheKey, Pld] = OrderedDict()
-
-
 class _WeakIdentityPldCache:
-    """Keep bounded PLD entries without extending a process's lifetime."""
+    """Keep globally bounded PLD entries without retaining process objects."""
 
     def __init__(self, maxsize: int | None) -> None:
         self._maxsize = maxsize
-        self._entries: dict[int, _ProcessCache] = {}
         self._shared_entries: OrderedDict[_CacheKey, Pld] = OrderedDict()
         self._hits = 0
         self._misses = 0
         self._lock = RLock()
-        self._weak_self = weakref.ref(self)
-
-    def _entry_for(self, process: object) -> _ProcessCache:
-        process_id = id(process)
-        entry = self._entries.get(process_id)
-        if entry is not None and entry.process_ref() is process:
-            return entry
-
-        cache_ref = self._weak_self
-
-        def remove(ref: weakref.ReferenceType[object]) -> None:
-            cache = cache_ref()
-            if cache is None:
-                return
-            with cache._lock:
-                current = cache._entries.get(process_id)
-                if current is not None and current.process_ref is ref:
-                    del cache._entries[process_id]
-
-        process_ref = weakref.ref(process, remove)
-        entry = _ProcessCache(process_ref)
-        self._entries[process_id] = entry
-        return entry
 
     def _get_shared(self, key: _CacheKey) -> Pld | object:
         cached = self._shared_entries.get(key, _MISSING)
@@ -80,19 +47,10 @@ class _WeakIdentityPldCache:
             if len(entries) > self._maxsize:
                 entries.popitem(last=False)
 
-    def get_or_compute(
-        self, process: object, key: _CacheKey, compute: Callable[[], Pld]
-    ) -> Pld:
+    def get_or_compute(self, key: _CacheKey, compute: Callable[[], Pld]) -> Pld:
         with self._lock:
-            entry = self._entry_for(process)
-            cached = entry.entries.get(key, _MISSING)
-            if cached is not _MISSING:
-                entry.entries.move_to_end(key)
-                self._hits += 1
-                return cached
             cached = self._get_shared(key)
             if cached is not _MISSING:
-                self._store(entry.entries, key, cached)
                 self._hits += 1
                 return cached
             self._misses += 1
@@ -100,34 +58,20 @@ class _WeakIdentityPldCache:
         result = compute()
 
         with self._lock:
-            entry = self._entry_for(process)
-            cached = entry.entries.get(key, _MISSING)
-            if cached is not _MISSING:
-                entry.entries.move_to_end(key)
-                return cached
             cached = self._get_shared(key)
             if cached is _MISSING:
                 self._store(self._shared_entries, key, result)
                 cached = result
-            self._store(entry.entries, key, cached)
             return cached
 
     def cache_clear(self) -> None:
         with self._lock:
-            self._entries.clear()
             self._shared_entries.clear()
             self._hits = 0
             self._misses = 0
 
     def cache_info(self) -> functools._CacheInfo:
         with self._lock:
-            stale_entries = [
-                process_id
-                for process_id, entry in self._entries.items()
-                if entry.process_ref() is None
-            ]
-            for process_id in stale_entries:
-                del self._entries[process_id]
             return functools._CacheInfo(
                 self._hits,
                 self._misses,
@@ -185,7 +129,6 @@ def pld_cache(*, maxsize: int | None):
                 mc_failure_probability=mc_failure_probability,
             )
             return cache.get_or_compute(
-                self,
                 (config, self._pld_cache_key(), None),
                 lambda: _compute_pld(method, self, config),
             )
