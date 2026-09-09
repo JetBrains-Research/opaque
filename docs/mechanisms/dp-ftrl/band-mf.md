@@ -95,6 +95,10 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 
 This is computed efficiently with 2 FFTs (self-composition).
 
+This guarantee (Choquette-Choo et al. 2023, Theorem 4 / Algorithm 2) is
+proved under zero-out adjacency with the $(k, b)$-participation schedule
+held fixed across neighboring datasets.
+
 ```python
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy

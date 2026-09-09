@@ -131,8 +131,8 @@ class TestBuildStrategy:
 
 
 class TestBuildAmplifierFactory:
-    def test_band_poisson(self):
-        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+    def test_identity_poisson(self):
+        strategy = _dpftrl.build_strategy("mf_identity", {})
         amp = _dpftrl.build_amplifier_factory(
             sampling_mode="poisson",
             strategy=strategy,
@@ -145,6 +145,22 @@ class TestBuildAmplifierFactory:
         proc = amp(1.0)
         assert isinstance(proc, DpHorizonProcess)
         assert proc.n_steps == 100
+
+    def test_band_rejects_poisson_strategy_mismatch(self):
+        """A whole-dataset Poisson accountant does not realise BandMF's
+        grouped, rotating-active-group participation pattern — reject it
+        rather than silently mis-accounting (issue #776)."""
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        with pytest.raises(ValueError, match="cyclic_poisson"):
+            _dpftrl.build_amplifier_factory(
+                sampling_mode="poisson",
+                strategy=strategy,
+                sample_rate=0.05,
+                n_steps=100,
+                num_bins=10,
+                dataset_size=1000,
+                truncated_batch_size=None,
+            )
 
     def test_band_b_min_sep(self):
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
@@ -162,10 +178,8 @@ class TestBuildAmplifierFactory:
         assert proc.min_sep == 4
 
     def test_band_cyclic_poisson_converts_global_rate_to_group_rate(self):
-        """The accountant must see the per-band conditional rate
-        (``bands * sample_rate``), not the trainer's raw global rate —
-        otherwise the reported epsilon silently understates the true
-        privacy cost by a factor of ``bands`` (issue #776)."""
+        """The accountant sees the per-band conditional rate (``bands *
+        sample_rate``), not the trainer's global rate (issue #776)."""
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
         amp = _dpftrl.build_amplifier_factory(
             sampling_mode="cyclic_poisson",
@@ -191,6 +205,32 @@ class TestBuildAmplifierFactory:
                 num_bins=10,
                 dataset_size=1000,
                 truncated_batch_size=None,
+            )
+
+    def test_cyclic_poisson_rejects_non_band_strategy(self):
+        strategy = _dpftrl.build_strategy("mf_identity", {})
+        with pytest.raises(ValueError, match="BandMF"):
+            _dpftrl.build_amplifier_factory(
+                sampling_mode="cyclic_poisson",
+                strategy=strategy,
+                sample_rate=0.05,
+                n_steps=100,
+                num_bins=10,
+                dataset_size=1000,
+                truncated_batch_size=None,
+            )
+
+    def test_cyclic_poisson_rejects_truncated_batch_size(self):
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        with pytest.raises(ValueError, match="truncated_batch_size"):
+            _dpftrl.build_amplifier_factory(
+                sampling_mode="cyclic_poisson",
+                strategy=strategy,
+                sample_rate=0.05,
+                n_steps=100,
+                num_bins=10,
+                dataset_size=1000,
+                truncated_batch_size=16,
             )
 
     def test_blt_balls_in_bins(self):
@@ -236,6 +276,21 @@ def _mf_band_context(bands: int, sample_rate: float, n_steps: int) -> _dpftrl.MF
     return _dpftrl.MFContext(strategy=strategy, amplifier_factory=amplifier_factory)
 
 
+def _mf_identity_context(sample_rate: float, n_steps: int) -> _dpftrl.MFContext:
+    """Build an ``MFContext`` for IdentityStrategy tests (wrong-strategy cases)."""
+    strategy = _dpftrl.build_strategy("mf_identity", {})
+    amplifier_factory = _dpftrl.build_amplifier_factory(
+        sampling_mode="poisson",
+        strategy=strategy,
+        sample_rate=sample_rate,
+        n_steps=n_steps,
+        num_bins=0,
+        dataset_size=0,
+        truncated_batch_size=None,
+    )
+    return _dpftrl.MFContext(strategy=strategy, amplifier_factory=amplifier_factory)
+
+
 class TestBuildSampler:
     def test_poisson(self):
         dataset = _ListDataset(64)
@@ -252,6 +307,26 @@ class TestBuildSampler:
             expected_batch_size=4,
         )
         assert isinstance(sampler, PoissonSampler)
+
+    def test_poisson_rejects_band_mf_context(self):
+        """A whole-dataset Poisson sampler does not realise BandMF's grouped
+        participation pattern — reject it rather than silently
+        mis-accounting (issue #776)."""
+        dataset = _ListDataset(64)
+        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
+        with pytest.raises(ValueError, match="cyclic_poisson"):
+            _dpftrl.build_sampler(
+                sampling_mode="poisson",
+                dataset=dataset,
+                sample_rate=0.1,
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs=None,
+                mf=mf,
+                noise_multiplier=None,
+                num_bins=4,
+                expected_batch_size=4,
+            )
 
     def test_block_k_out_of_t(self):
         dataset = _ListDataset(64)
@@ -346,10 +421,8 @@ class TestBuildSampler:
         assert sampler.num_bins == 4
 
     def test_cyclic_poisson(self):
-        """The runtime sampler must use the same per-band conditional rate
-        (``bands * sample_rate``) as the accountant — see
-        ``TestBuildAmplifierFactory.test_band_cyclic_poisson_converts_global_rate_to_group_rate``
-        (issue #776)."""
+        """Sampler rate conversion matches
+        ``TestBuildAmplifierFactory.test_band_cyclic_poisson_converts_global_rate_to_group_rate``."""
         dataset = _ListDataset(64)
         mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
         sampler = _dpftrl.build_sampler(
@@ -395,6 +468,42 @@ class TestBuildSampler:
                 n_steps=8,
                 key=key(0),
                 sampling_kwargs=None,
+                mf=mf,
+                noise_multiplier=1.0,
+                num_bins=4,
+                expected_batch_size=4,
+            )
+
+    def test_cyclic_poisson_rejects_non_band_strategy(self):
+        dataset = _ListDataset(64)
+        mf = _mf_identity_context(sample_rate=0.1, n_steps=8)
+        with pytest.raises(ValueError, match="BandMF"):
+            _dpftrl.build_sampler(
+                sampling_mode="cyclic_poisson",
+                dataset=dataset,
+                sample_rate=0.1,
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs=None,
+                mf=mf,
+                noise_multiplier=1.0,
+                num_bins=4,
+                expected_batch_size=4,
+            )
+
+    def test_cyclic_poisson_rejects_sampling_kwargs(self):
+        """The BandMF accountant does not support truncation; fail closed
+        instead of silently dropping ``truncated_batch_size`` (issue #776)."""
+        dataset = _ListDataset(64)
+        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
+        with pytest.raises(ValueError, match="sampling_kwargs"):
+            _dpftrl.build_sampler(
+                sampling_mode="cyclic_poisson",
+                dataset=dataset,
+                sample_rate=0.1,
+                n_steps=8,
+                key=key(0),
+                sampling_kwargs={"truncated_batch_size": 4},
                 mf=mf,
                 noise_multiplier=1.0,
                 num_bins=4,

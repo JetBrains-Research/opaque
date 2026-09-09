@@ -620,10 +620,9 @@ class TestMechanismAndSamplerDefaults:
         assert args.sampling_mode == "b_min_sep"
 
     def test_mf_band_rejects_poisson_override(self):
-        """A plain whole-dataset Poisson sampler does not realize the
-        grouped participation pattern ``cyclic_poisson`` accounting
-        assumes for ``mf_band`` — it must fail closed rather than silently
-        under-report the true privacy cost (issue #776)."""
+        """``mf_band`` requires ``cyclic_poisson`` or ``b_min_sep``; a plain
+        Poisson sampler does not realize BandMF's grouped participation
+        pattern (issue #776)."""
         with pytest.raises(ValueError, match="sampling_mode"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,

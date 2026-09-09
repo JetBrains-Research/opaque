@@ -176,10 +176,9 @@ rejects the configuration if that product exceeds `1` (lower `bands` or
 `expected_batch_size`). Plain `sampling_mode="poisson"` (whole-dataset
 subsampling every step, ignoring `bands`) is not a valid override for
 `mf_band`: it does not realize the grouped participation pattern
-`cyclic_poisson` accounting assumes, so it would silently understate the
-true privacy cost. Use the explicit `sampling_mode="b_min_sep"` alternative
-([Dong & Ganesh 2026](https://arxiv.org/abs/2602.09338)) if cyclic rotation
-does not fit your data pipeline.
+`cyclic_poisson` accounting assumes. Use the explicit `sampling_mode="b_min_sep"`
+alternative ([Dong & Ganesh 2026](https://arxiv.org/abs/2602.09338)) if
+cyclic rotation does not fit your data pipeline.
 
 So the minimal DP-FTRL configuration is one field:
 

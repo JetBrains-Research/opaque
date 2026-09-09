@@ -191,8 +191,7 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 # everything else pins a single sampler.  Plain ``"poisson"`` (whole-dataset
 # subsampling, no group rotation) is deliberately *not* allowed for
 # ``mf_band``: it does not realise the grouped participation pattern the
-# accountant assumes, so it would silently under-report the true privacy
-# cost (issue #776).
+# accountant assumes (issue #776).
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "gaussian": frozenset({"poisson", "k_out_of_t"}),
     "mf_identity": frozenset({"poisson", "balls_in_bins"}),

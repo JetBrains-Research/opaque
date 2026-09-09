@@ -39,6 +39,7 @@ from opaque.dpftrl.accounting import mf_gaussian
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
+from opaque.dpftrl.noise.types import BandMfStrategy
 from opaque.dpsgd.sampling import (
     KOutOfTSampler,
     PoissonSampler,
@@ -117,21 +118,13 @@ def _cyclic_poisson_group_rate(sample_rate: float, bands: int) -> float:
     """Convert the trainer's global rate into the per-active-group rate.
 
     ``sample_rate`` is the Trainer's ``expected_batch_size / dataset_size``
-    — the *global* fraction of the whole dataset drawn per round. Both
-    ``opaque.dpftrl.accounting.poisson`` (``CyclicPoisson``) and
-    ``CyclicPoissonSampler`` instead take the *conditional* probability that
-    an example is included given its group is active this round.
-
-    Choquette-Choo et al. (2023), informal Theorem 1 (Section 5): partition
-    the dataset into ``bands`` equal-size groups of ``m / bands`` examples
-    each and rotate one active group per step; each member of the active
-    group must then participate with probability ``bands * B / m`` for the
-    expected per-step batch size to remain ``B``. Passing the raw global
-    rate here instead of ``bands * sample_rate`` would realise a batch
-    ``bands`` times smaller than configured, and — paired with
-    :func:`opaque.dpftrl.accounting.poisson`, which already expects the
-    per-group rate — would silently *understate* the charged privacy cost
-    by the same factor (see issue #776).
+    (a global per-example rate). ``opaque.dpftrl.accounting.poisson``
+    (``CyclicPoisson``) and ``CyclicPoissonSampler`` instead expect the
+    conditional probability that an example participates given its group
+    is active this round: ``bands * sample_rate`` (Choquette-Choo et al.
+    2023, informal Theorem 1, Section 5). Both call sites must apply this
+    same conversion so the runtime sampler realises the participation
+    pattern the accountant is calibrated against.
     """
     bands = int(bands)
     group_rate = float(sample_rate) * bands
@@ -164,6 +157,16 @@ def build_amplifier_factory(
     time to read off ``(n_steps, min_sep, max_participations)``.
     """
     if sampling_mode == "poisson":
+        if isinstance(strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='poisson' does not realise the grouped, "
+                    "rotating-active-group participation pattern BandMF's "
+                    "cyclic-Poisson accounting assumes; use "
+                    "sampling_mode='cyclic_poisson' or 'b_min_sep' for "
+                    "privacy_noise_mechanism='mf_band' instead.",
+                )
+            )
 
         def amp(
             nm: float,
@@ -192,6 +195,22 @@ def build_amplifier_factory(
             return _ftrl_b_min_sep(mf_gaussian(nm, _s), n_steps=_ns, p0=_p0)
 
     elif sampling_mode == "cyclic_poisson":
+        if not isinstance(strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a BandMF "
+                    f"strategy; got {type(strategy).__name__}.",
+                )
+            )
+        if truncated_batch_size is not None:
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' does not support "
+                    "sampling_kwargs['truncated_batch_size'] — the BandMF "
+                    "cyclic-Poisson accountant only supports truncation for "
+                    "IdentityStrategy (mf_identity).",
+                )
+            )
         group_rate = _cyclic_poisson_group_rate(sample_rate, strategy.bands)
 
         def amp(
@@ -242,16 +261,23 @@ def build_sampler(
     off the built ``mf`` recipe / amplifier — never off ``sampling_kwargs``
     or ``mechanism_kwargs`` — so the runtime sampler cannot desync from
     the accountant.  ``sampling_kwargs`` carries only sampler-ergonomics
-    knobs (e.g. ``truncated_batch_size`` for Poisson cap).
-
-    ``cyclic_poisson`` additionally converts the trainer's global
-    ``sample_rate`` to the per-band conditional rate via
-    :func:`_cyclic_poisson_group_rate` — the same conversion
-    :func:`build_amplifier_factory` applies — so the runtime sampler and the
-    accountant always charge the same per-round inclusion probability.
+    knobs (e.g. ``truncated_batch_size`` for Poisson cap); ``cyclic_poisson``
+    accepts none and converts ``sample_rate`` via
+    :func:`_cyclic_poisson_group_rate`, shared with
+    :func:`build_amplifier_factory`.
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
     if sampling_mode == "poisson":
+        if mf is not None and isinstance(mf.strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='poisson' does not realise the grouped, "
+                    "rotating-active-group participation pattern BandMF's "
+                    "cyclic-Poisson accounting assumes; use "
+                    "sampling_mode='cyclic_poisson' or 'b_min_sep' for "
+                    "privacy_noise_mechanism='mf_band' instead.",
+                )
+            )
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         truncated_batch_size = int(tb_raw) if tb_raw is not None else None
         return PoissonSampler(
@@ -315,6 +341,22 @@ def build_sampler(
                 *(
                     "sampling_mode='cyclic_poisson' requires a built MFContext; "
                     "got mf=None.",
+                )
+            )
+        if not isinstance(mf.strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a BandMF "
+                    f"strategy; got {type(mf.strategy).__name__}.",
+                )
+            )
+        if sk:
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' does not accept "
+                    f"sampling_kwargs; got {sorted(sk)!r}. bands and the "
+                    "per-band rate are derived from the MFContext, not from "
+                    "sampling_kwargs.",
                 )
             )
         bands = int(mf.strategy.bands)

@@ -220,14 +220,9 @@ class TestDpFtrlSamplerDispatch:
         assert captured["cls"].__module__ == expected_sampler_module_name
 
     def test_mf_band_sampler_and_accountant_share_conditional_rate(self, tmp_path):
-        """End-to-end regression for issue #776: the ``CyclicPoissonSampler``
-        that ``mf_band`` (default ``sampling_mode="cyclic_poisson"``)
-        dispatches at runtime must use the exact same per-band conditional
-        rate as the ``CyclicPoisson`` accountant it is calibrated against —
-        both derived from the trainer's global ``expected_batch_size /
-        len(train_dataset)`` rate via ``bands * sample_rate``. A mismatch
-        here would mean the reported epsilon does not bound the sampler
-        the run actually uses."""
+        """End-to-end regression for issue #776: the runtime
+        ``CyclicPoissonSampler`` and the ``CyclicPoisson`` accountant must
+        use the same per-band conditional rate (``bands * sample_rate``)."""
         bands = 4
         args = _args(
             output_dir=str(tmp_path / "mf_band-rate-consistency"),
