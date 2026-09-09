@@ -240,6 +240,10 @@ class _TrainingContext:
     current_sampler: Any = None
     # Checkpoint cursor for a distinct ignored-state Poisson stream.
     sampler_restart_step: int | None = None
+    # ``global_step`` value corresponding to ``current_sampler.consumed == 0``
+    # for this run — 0 unless a prior ``ignore_data_skip`` resume rebased the
+    # sampler stream. Set once in ``_inner_training_loop`` before iteration.
+    sampler_step_offset: int = 0
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
@@ -1720,6 +1724,52 @@ class DPTrainer:
             mf=mf,
         )
 
+    def _restore_sampler_and_build_loader(
+        self,
+        ctx: _TrainingContext,
+        global_step: int,
+        resume_path: str | None,
+        saved_sampler_state: dict[str, Any] | None,
+    ) -> DataLoader:
+        """Install the resumed sampler cursor, then build the train loader.
+
+        Resume restores the sampler's ``consumed`` cursor via the
+        ``opaque.serialization`` registry *before* ``DataLoader``
+        construction (its ``batch_sampler`` is immutable post-init).
+        Also snapshots ``ctx.sampler_step_offset`` — the ``global_step``
+        at which ``current_sampler.consumed`` is 0 — before ``iter()`` can
+        prefetch, so a later checkpoint can convert the (possibly rebased,
+        see ``ignore_data_skip``) live cursor back to an absolute step
+        count.
+        """
+        a = self.args
+        if (
+            resume_path is not None
+            and saved_sampler_state is not None
+            and not a.ignore_data_skip
+        ):
+            from opaque.serialization import from_state_dict
+
+            # Need a template sampler whose ``data_source`` matches the
+            # saved length so ``from_state_dict`` can validate.  Build
+            # one (without caching the loader yet), then replace it
+            # with the restored cursor before the actual loader binds.
+            if ctx.current_sampler is None:
+                self._train_dataloader = None
+                self.get_train_dataloader()  # populates ctx.current_sampler
+                self._train_dataloader = None  # drop the cached loader
+            ctx.current_sampler = from_state_dict(
+                ctx.current_sampler, saved_sampler_state
+            )
+
+        train_loader = self.get_train_dataloader()
+        ctx.sampler_step_offset = (
+            global_step - ctx.current_sampler.consumed
+            if ctx.current_sampler is not None
+            else 0
+        )
+        return train_loader
+
     def _inner_training_loop(
         self,
         ctx: _TrainingContext,
@@ -1810,35 +1860,13 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
-        # Build the train loader ONCE: a single
-        # ``PoissonSampler(n_steps=total_steps)`` drives every
-        # epoch; the outer loop's role is purely callback synthesis
-        # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
-        # handling.  Resume restores the sampler's ``consumed`` cursor
-        # via the opaque.serialization registry; the restored sampler
-        # is installed on ``ctx.current_sampler`` *before* loader
-        # construction so ``DataLoader`` binds to it (the
-        # ``batch_sampler`` attribute is immutable post-init).
-        if (
-            resume_path is not None
-            and saved_sampler_state is not None
-            and not a.ignore_data_skip
-        ):
-            from opaque.serialization import from_state_dict
-
-            # Need a template sampler whose ``data_source`` matches the
-            # saved length so ``from_state_dict`` can validate.  Build
-            # one (without caching the loader yet), then replace it
-            # with the restored cursor before the actual loader binds.
-            if ctx.current_sampler is None:
-                self._train_dataloader = None
-                self.get_train_dataloader()  # populates ctx.current_sampler
-                self._train_dataloader = None  # drop the cached loader
-            ctx.current_sampler = from_state_dict(
-                ctx.current_sampler, saved_sampler_state
-            )
-
-        train_loader = self.get_train_dataloader()
+        # Build the train loader ONCE: a single ``PoissonSampler(n_steps=
+        # total_steps)`` drives every epoch; the outer loop's role is purely
+        # callback synthesis (``on_epoch_begin`` / ``on_epoch_end``) and
+        # per-epoch break handling.
+        train_loader = self._restore_sampler_and_build_loader(
+            ctx, global_step, resume_path, saved_sampler_state
+        )
         train_loader_iter = iter(train_loader)
 
         for epoch in range(start_epoch, ctx.num_epochs):
@@ -5099,24 +5127,19 @@ class DPTrainer:
             if ctx.current_sampler is not None
             else None
         )
-        # ``dataloader_num_workers > 0`` makes ``_MultiProcessingDataLoaderIter``
-        # eagerly draw up to ``prefetch_factor * num_workers`` indices from the
-        # sampler (in the main process, to fill its prefetch queue) before the
-        # training loop's ``next(train_loader_iter)`` returns a batch to it —
-        # every registered sampler bumps its ``consumed`` cursor the instant its
-        # iterator yields, so the live cursor races ahead of the batches the
-        # trainer has actually consumed.  ``global_step`` increments exactly
-        # once per batch the training loop pulls (see
-        # ``_inner_training_loop``), so it is that count.  Clamp the
-        # checkpointed cursor to it — never persisting more than the trainer
-        # itself has consumed — so restore always replays the same allocation
-        # the accountant charged for, independent of prefetch depth.
+        # DataLoader worker prefetch (``dataloader_num_workers > 0``) draws
+        # sampler indices ahead of what the training loop has actually
+        # consumed, inflating the live ``consumed`` cursor past the trainer's
+        # own count. Clamp to ``global_step - sampler_step_offset`` — the
+        # number of batches the trainer has committed on this sampler stream
+        # (the offset accounts for an ``ignore_data_skip`` resume rebasing
+        # the stream mid-run) — so checkpoints never persist more than what
+        # was actually trained on.
         if sampler_state is not None and "consumed" in sampler_state:
+            trainer_consumed = self.state.global_step - ctx.sampler_step_offset
             sampler_state = {
                 **sampler_state,
-                "consumed": min(
-                    int(sampler_state["consumed"]), int(self.state.global_step)
-                ),
+                "consumed": min(int(sampler_state["consumed"]), int(trainer_consumed)),
             }
 
         if ctx.mf is not None:

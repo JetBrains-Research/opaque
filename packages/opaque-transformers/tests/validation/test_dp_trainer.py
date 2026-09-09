@@ -1654,20 +1654,12 @@ class TestDPTrainerCheckpointing:
     def test_dataloader_prefetch_checkpoints_trainer_consumed_not_sampler_cursor(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
-        """#791: ``dataloader_num_workers>0`` prefetch must not leak into the
-        checkpointed sampler cursor.
+        """#791: worker prefetch must not leak into the checkpointed cursor.
 
-        ``_MultiProcessingDataLoaderIter`` eagerly draws
-        ``prefetch_factor * num_workers`` indices from the ``batch_sampler``
-        (in the main process) to fill its queue before the training loop
-        ever calls ``next(train_loader_iter)``, and every registered sampler
-        bumps its ``consumed`` cursor the instant its iterator yields — so
-        the live sampler races ahead of ``global_step``.  With
-        ``max_steps=6`` and a lead of ``prefetch_factor * num_workers=4``,
-        the sampler is already exhausted (``consumed=6``) by the first save
-        at ``global_step=2``, well before the trainer has actually consumed
-        6 batches.  The checkpointed cursor must equal what the trainer
-        consumed (``global_step``), not the prefetch-inflated live value.
+        With ``num_workers=2, prefetch_factor=2`` (lead=4) and
+        ``max_steps=6``, the sampler is fully drawn (``consumed=6``) by the
+        first save at ``global_step=2``. The checkpoint must record what the
+        trainer actually consumed (2), not the prefetch-inflated cursor.
         """
         from opaque.api.transformers.trainer import _checkpoint as ckpt
 
@@ -1727,6 +1719,85 @@ class TestDPTrainerCheckpointing:
         )
         out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
         assert out2.global_step == 6
+
+    def test_chained_resume_after_ignore_data_skip_keeps_cursor_aligned(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """#791: clamping must account for an ``ignore_data_skip`` rebase.
+
+        ``ignore_data_skip=True`` builds a fresh sampler stream with
+        ``consumed=0`` at the resume point, while ``global_step`` keeps
+        counting absolutely — so a checkpoint saved after that resume must
+        clamp against ``global_step - offset``, not raw ``global_step``
+        (which would still leak prefetch-inflated draws through unclamped).
+        """
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        # Phase 1: plain run to checkpoint-2 (global_step=2).
+        model1, tokenizer1 = gpt2_with_lora
+        trainer1 = DPTrainer(
+            model=model1,
+            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            processing_class=tokenizer1,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer1.train()
+
+        # Phase 2: resume with ignore_data_skip=True (rebases the sampler
+        # stream to global_step=2) and worker prefetch enabled, running 2
+        # more steps to checkpoint-4.
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                ignore_data_skip=True,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+        assert out2.global_step == 4
+
+        # The 2 post-restart steps must be recorded — not global_step=4
+        # (unrebased clamp) and not a prefetch-inflated value.
+        payload = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-4" / ckpt.DP_STATE_NAME)
+        )
+        assert payload.sampler_state["consumed"] == 2
+
+        # Phase 3: normal resume from checkpoint-4 to completion. The
+        # restored sampler carries the phase-2 offset forward, so a further
+        # checkpoint under prefetch must still clamp correctly.
+        model3, tokenizer3 = gpt2_with_lora
+        trainer3 = DPTrainer(
+            model=model3,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer3,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out3 = trainer3.train(resume_from_checkpoint=str(tmp_path / "checkpoint-4"))
+        assert out3.global_step == 6
+
+        payload6 = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-6" / ckpt.DP_STATE_NAME)
+        )
+        assert payload6.sampler_state["consumed"] == 4
 
     def test_resume_continues_global_step(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
