@@ -205,6 +205,30 @@ def test_vendor_backend_fails_fast_without_runtime(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_router_load_release_is_rank_identical(tmp_path) -> None:
+    """T12: the noised probe leaf and ``RouterLoadState`` match across ranks."""
+    _run_ddp(
+        "router_load_release",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_resume_ranks_continue_their_own_sampler_streams(tmp_path) -> None:
+    """T25: after a checkpoint resume each rank replays its own Poisson coins."""
+    _run_ddp(
+        "resume_ranks",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+    )
+
+
+@pytest.mark.slow
 def test_mpi_launcher_smoke_when_available() -> None:
     if not torch.distributed.is_mpi_available():
         pytest.skip("PyTorch was built without MPI backend support")

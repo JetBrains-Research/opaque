@@ -34,10 +34,16 @@ class TestBandMfStrategy:
     def test_returns_correct_type(self):
         assert isinstance(band_mf_strategy(bands=10, momentum=0.95), BandMfStrategy)
 
-    def test_sensitivity_is_one(self):
-        """Optimized Toeplitz coefficients are L2-normalized."""
+    def test_single_participation_sensitivity_is_one(self):
+        """Optimized Toeplitz coefficients are L2-normalized.
+
+        The claim is about one column, so it is the single-participation
+        request that returns 1; repeat participation is strictly costlier.
+        """
         s = band_mf_strategy(bands=10, momentum=0.95)
-        assert s.sensitivity(**_BAND_PART) == pytest.approx(1.0, abs=1e-6)
+        single = {"n_steps": 100, "min_sep": 100, "max_participations": 1}
+        assert s.sensitivity(**single) == pytest.approx(1.0, abs=1e-6)
+        assert s.sensitivity(**_BAND_PART) > 1.0
 
     def test_no_gram_matrix(self):
         """BandMF uses Poisson amplification, not BnB — no Gram needed."""
@@ -62,7 +68,8 @@ class TestBandMfStrategy:
         lr[:10] = torch.linspace(0.001, 0.01, 10)
         schedule = lambda t: float(lr[t])  # noqa: E731 — Schedule callable
         s = band_mf_strategy(bands=10, momentum=0.95, lr_schedule=schedule)
-        assert s.sensitivity(**_BAND_PART) == pytest.approx(1.0, abs=1e-6)
+        single = {"n_steps": 100, "min_sep": 100, "max_participations": 1}
+        assert s.sensitivity(**single) == pytest.approx(1.0, abs=1e-6)
 
 
 # ── BltStrategy ─────────────────────────────────────────────────────────
@@ -198,7 +205,9 @@ class TestPldEquivalence:
             n_steps=n_steps,
         ).epsilon_at(self.delta)
         num_groups = math.ceil(n_steps / bands)
-        sens = s.sensitivity(n_steps=n_steps)
+        # Match the normalizer the cyclic-Poisson route uses: single
+        # participation, with repeat participation priced by the composition.
+        sens = s.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1)
         eps_manual = (
             dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0 / sens), sample_rate) * num_groups
         ).epsilon_at(self.delta)

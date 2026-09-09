@@ -39,6 +39,30 @@ factories — **all** parameterised by `n_steps`:
 Each amplification factory wraps a mechanism and produces a single
 `DpProcess` representing the full training run.
 
+## Router-load release under matrix mechanisms
+
+Mixture-of-experts load balancing under DP-FTRL uses the same
+[router-load release](../dp-sgd/moe-load-balancing.md) as DP-SGD: the
+zero probe parameter's group joins the `PerGroup` bound that
+`mf_gaussian_noise` latches on its first call, the correlated noise
+$C^{-1} Z$ is applied to the probe leaf like every other leaf, and the
+whole-run accountant `mf_gaussian(nm, strategy)` is unchanged (Denisov
+et al. 2022, Theorem 2.1, applied to the per-group-whitened stream).
+The participation pattern is shared across groups (same example, same
+step), so the gradient's `min_sep` / `max_participations` apply to the
+probe group as well.
+
+What differs from the per-step case is the post-processing: the
+smoothing filter's noise factors are computed at setup from the
+instantiated strategy's streaming Toeplitz inverse (never a dense
+solve), and the anti-correlated noise makes the smoothed load estimate
+two to three and a half times more accurate than under DP-SGD at the
+same multiplier. A strategy whose noise operator is not the Toeplitz
+inverse of its coefficients (DP-λCGD) is rejected at setup. The price
+is the same $\sqrt{1+\rho}$ gradient-noise inflation; the un-amplified
+band-MF multiplier bounds the cost from above (see the
+[cost table](../dp-sgd/moe-load-balancing.md#cost-table)).
+
 ## See also
 
 - [DP-FTRL end-to-end guide](../../user-guide/dp-ftrl.md) — full

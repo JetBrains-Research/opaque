@@ -155,10 +155,18 @@ class BMinSep(DpHorizonProcess):
             min_sep=self.min_sep,
             max_participations=self.max_participations,
         ).tolist()
+        # The warm-start recursion of https://arxiv.org/abs/2602.09338
+        # (Section 5, Eq. 1) scores each participation against a *single*
+        # column ``c_i`` of C and generates repeat participations itself by
+        # hopping ``bands`` rows ahead.  The Rust MC is therefore handed the
+        # raw coefficients at the raw σ, so the normaliser must be the
+        # single-participation column norm — ask for it explicitly rather
+        # than passing this process's schema, which describes the
+        # multi-participation pattern the recursion already accounts for.
         sensitivity = s.sensitivity(
             n_steps=self.n_steps,
-            min_sep=self.min_sep,
-            max_participations=self.max_participations,
+            min_sep=self.n_steps,
+            max_participations=1,
         )
         effective_nm = self.inner.noise_multiplier / sensitivity
         p = self.sampling_prob

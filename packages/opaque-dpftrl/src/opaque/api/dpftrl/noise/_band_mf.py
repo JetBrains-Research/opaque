@@ -23,7 +23,8 @@ from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.exceptions import ConfigurationError
 
 from ._schedule_fingerprint import materialize_schedule
-from ._toeplitz import inverse_as_streaming_matrix
+from ._sensitivity import minsep_true_max_participations
+from ._toeplitz import inverse_as_streaming_matrix, minsep_sensitivity_upper_bound
 from ._toeplitz import optimize as optimize_toeplitz
 
 if TYPE_CHECKING:
@@ -134,9 +135,56 @@ class BandMfStrategy:
         coefs = self.coefficients(n_steps=n_steps)
         return inverse_as_streaming_matrix(coefs)
 
-    def sensitivity(self, *, n_steps: int, **_) -> float:
+    def sensitivity(
+        self,
+        *,
+        n_steps: int,
+        min_sep: int = 1,
+        max_participations: int | None = None,
+    ) -> float:
+        r"""L2 sensitivity of ``C`` under the declared participation schema.
+
+        ``C`` is ``bands``-banded and lower triangular, so the columns of
+        any two participations separated by at least ``bands`` rows are
+        orthogonal and the schema sensitivity
+        :math:`\max_{\pi} \lVert \sum_{j \in \pi} C_{[:,j]} \rVert`
+        grows with the participation count — up to
+        :math:`\kappa \sqrt{k'}` for ``min_sep >= bands``
+        (https://arxiv.org/abs/2306.08153, Theorem 2).  Callers that want
+        the single-participation column norm :math:`\kappa` must ask for
+        it: ``min_sep=n_steps, max_participations=1``.
+
+        Args:
+            n_steps: Horizon ``n`` the coefficients are optimized for.
+            min_sep: Minimum separation between an example's
+                participations (``1`` ⇒ consecutive steps allowed).
+            max_participations: Upper bound on participations per example
+                (``None`` ⇒ ``ceil(n_steps / min_sep)``).
+
+        Returns:
+            The L2 sensitivity: exact for the non-negative, non-increasing
+            coefficients the BandMF optimizer produces, and a safe upper
+            bound for any recipe whose coefficients leave that domain.
+        """
         coefs = self.coefficients(n_steps=n_steps)
-        return float(coefs.norm())
+        k = minsep_true_max_participations(
+            n=n_steps, min_sep=min_sep, max_participations=max_participations
+        )
+        if k == 1:
+            return float(coefs.norm())
+        # Both this helper and the strict ``minsep_sensitivity_squared``
+        # return a SQUARED sensitivity, hence the ``sqrt`` below.  The bound
+        # is preferred over the strict form because the optimizer can emit
+        # coefficients a few ulp below zero (e.g. ``momentum=0.0``), which
+        # the strict form rejects; on the theorem domain the two agree
+        # exactly, so this costs nothing where the strict form applies.
+        sens_sq = minsep_sensitivity_upper_bound(
+            coefs,
+            min_sep=min_sep,
+            max_participations=max_participations,
+            n=n_steps,
+        )
+        return float(sens_sq.sqrt())
 
 
 def band_mf_strategy(

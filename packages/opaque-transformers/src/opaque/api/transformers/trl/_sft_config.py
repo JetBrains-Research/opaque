@@ -157,7 +157,12 @@ class SFTConfig(TrainingArguments):
         Fields TRL has that opaque does not implement raise
         ``ValueError``: ``packing``, ``padding_free``, ``eval_packing``,
         ``shuffle_dataset``, ``truncation_mode='keep_end'``, and ``pad_token``.
-        A nonzero ``router_aux_loss_coef`` warns and trains as if it were 0.
+        A user-set positive ``router_aux_loss_coef`` converts to
+        ``router_load_release="surrogate"`` with the coefficient forwarded (the
+        load-balancing objective at a DP estimate of the batch router load);
+        pass ``router_load_release="off"`` to opt out.  The release needs a
+        mixture-of-experts model, so a dense model with a user-set
+        coefficient raises ``ConfigurationError`` when the trainer is built.
 
         HF-inherited fields go through the same translation as
         :meth:`TrainingArguments.from_hf` — same DP-knob requirement, same

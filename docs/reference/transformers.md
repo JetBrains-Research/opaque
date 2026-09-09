@@ -24,6 +24,7 @@ from opaque.patches import apply_runtime_patches
 | `opaque.transformers.trainer.types.EvaluationResult` | Return type for `evaluation_loop` / `evaluate` / `predict`. |
 | `opaque.transformers.trainer.types.TrainOutput` | NamedTuple returned by `train()` — `(global_step, training_loss, metrics)`. |
 | `opaque.transformers.trl` | TRL-style configs/trainers: `SFTConfig`, `SFTTrainer`, `DPOConfig`, `DPOTrainer`. |
+| `opaque.transformers.moe_load` | MoE router-load release helper for hand-written functional loops (`attach_probe`, `probe_bounds`, `router_load_terms`, `initial_state`, `filter_factors`, `update`, `decide_trip`, ...). |
 | `opaque.patches.apply_runtime_patches` | Install the global HF runtime shims (only needed when using HF primitives without `DPTrainer`). |
 
 ## `DPTrainer`
@@ -563,6 +564,31 @@ head is in that set.
 pins `remove_unused_columns=False`, validates label-smoothing bounds /
 weight lengths / duplicate heads / TR-DPO reference-need, and auto-enables
 `bf16` on supporting hardware.
+
+## `opaque.transformers.moe_load` — router-load release helper
+
+```python
+from opaque.transformers import moe_load
+```
+
+The trainer-independent seams of the [MoE router-load
+release](../mechanisms/dp-sgd/moe-load-balancing.md) for hand-written
+functional loops. `DPTrainer` reaches the same mechanism through
+`TrainingArguments.router_load_release`.
+
+| Symbol | Purpose |
+|---|---|
+| `attach_probe(model, *, num_layers, num_experts)` | Register the zero `(L, E)` probe parameter before `make_functional`. |
+| `probe_bounds(clipping_norm, trainable, *, ratio, ...)` | Two-group `PerGroup` bound and the probe scale `lam`. |
+| `router_load_terms(loss, router_logits, attention_mask, params, *, f_tilde, ...)` | Value-neutral surrogate and probe terms inside the per-example loss. |
+| `filter_factors(strategy, *, n_steps, kind, beta, window, num_experts)` | Known-noise factors `phi_t` of the filtered release (DP-SGD or a Toeplitz MF strategy). |
+| `initial_state(...)` / `update(state, noised_probe_leaf)` | Public post-processing state and its per-step update. |
+| `decide_trip(state, streak, *, trip, mode, alpha)` | The monitor decision rule on the shrunk estimate. |
+| `summary(state)` | The public `router_load/*` curves. |
+| `telemetry_without_probe(aux, max_norm)` | Per-example gradient norms over the gradient groups only. |
+| `resolve_moe_geometry(model)` | `(num_layers, num_experts, top_k, config_aux_coef)` of a MoE model. |
+| `check_resume_compatible(saved, current)` | Reject a sidecar written for a different release. |
+| `RouterLoadState`, `PROBE_NAME`, `RESUME_MATCH_FIELDS`, `load_bound`, `monitor_value`, `is_router_module` | Types and constants. |
 
 ## Runtime patches
 

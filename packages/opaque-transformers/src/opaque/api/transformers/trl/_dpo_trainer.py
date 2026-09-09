@@ -35,6 +35,7 @@ from operator import attrgetter
 from typing import TYPE_CHECKING, Any
 
 import torch
+import torch.nn.functional as F
 
 from opaque.alignment.dpo.collator import preference_collator
 from opaque.alignment.dpo.data import extract_prompt
@@ -70,7 +71,7 @@ from opaque.api.transformers.trainer._distributed import resolve_ddp_state
 
 # Single source of truth for PEFT detection (handles PeftModel + PeftMixedModel).
 from opaque.api.transformers.trainer._dp_trainer import _is_peft_model
-from opaque.exceptions import ConfigurationError, InputTypeError
+from opaque.exceptions import ConfigurationError, InputTypeError, OperationError
 
 from ._dpo_config import _REFERENCE_FREE_HEADS, DPOConfig
 
@@ -271,6 +272,13 @@ def _resolve_fused_handles(model: Any, eligible: bool) -> tuple[str | None, str 
     return path_to_inner + prefix, lm_head_param_name
 
 
+@dataclasses.dataclass(frozen=True)
+class _PolicyLogits:
+    """Logits-only policy output of the router-load path (``.logits`` access)."""
+
+    logits: torch.Tensor
+
+
 class DPOTrainer(DPTrainer):
     """DP Direct Preference Optimization trainer.
 
@@ -387,12 +395,18 @@ class DPOTrainer(DPTrainer):
         # unwrapped ``"model"`` prefix and ``attrgetter`` would hit the inner
         # causal-LM (``CausalLMOutputWithPast``, no ``last_hidden_state``) at fused
         # time. ``None`` handles (ineligible / no backbone) keep the eager path.
+        router_load_on = args.router_load_release != "off"
         self._backbone_prefix, self._lm_head_param_name = _resolve_fused_handles(
-            model, self._fused_logp_eligible
+            model, self._fused_logp_eligible or router_load_on
         )
         self._use_fused_logp = (
             self._fused_logp_eligible and self._lm_head_param_name is not None
         )
+        if router_load_on:
+            # Both policy forwards go through the backbone (router logits
+            # recorded) and the output embedding is applied here, so the
+            # backbone prefix and the lm_head weight must resolve.
+            self._require_router_load_handles(model)
         if self._sync_ref_model and self._is_peft:
             raise ConfigurationError(
                 *(
@@ -809,6 +823,9 @@ class DPOTrainer(DPTrainer):
     def _augment_inputs(
         self, inputs: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
+        # Base hook first: the router-load release publishes ``f_tilde`` and
+        # checks the probe there.
+        inputs = super()._augment_inputs(inputs)
         # Training step: advance the EMA reference on cadence, then refresh the
         # per-step ref logps from it (overwriting the seeded columns).
         if not self._sync_ref_model or self._tr_ref is None:
@@ -997,13 +1014,56 @@ class DPOTrainer(DPTrainer):
     # ------------------------------------------------------------------
     # Fused logits-free policy logp (plan §E)
     # ------------------------------------------------------------------
+    def _require_router_load_handles(self, model: Any) -> None:
+        """Reject a policy whose backbone / output embedding cannot be split."""
+        if self._backbone_prefix is None or self._lm_head_param_name is None:
+            raise ConfigurationError(
+                *(
+                    "router_load_release on DPOTrainer needs a causal-LM policy "
+                    "exposing its backbone and output embeddings "
+                    f"({type(model).__name__} does not).",
+                )
+            )
+        inner = model.get_base_model() if hasattr(model, "peft_config") else model
+        output_embeddings = inner.get_output_embeddings()
+        if getattr(output_embeddings, "bias", None) is not None:
+            raise ConfigurationError(
+                *(
+                    "router_load_release on DPOTrainer supports bias-free output "
+                    "embeddings only.",
+                )
+            )
+
+    def _router_load_token_bounds(self) -> tuple[float, float, int]:
+        """Preference-pair bounds: ``T_c + T_r <= 2 T_max`` per protected unit.
+
+        The pair pools its load statistics over the chosen and rejected
+        completions with the common denominator ``L (T_c + T_r)`` and the
+        weight ``w = (T_c + T_r) / T_bar_pair``; ``router_load_mean_tokens``
+        is read as ``T_bar_pair`` and defaults to ``2 T_max``.
+        """
+        _mean, _max, row_max = super()._router_load_token_bounds()
+        pair_max = 2.0 * row_max
+        pair_mean = (
+            float(self.args.router_load_mean_tokens)
+            if self.args.router_load_mean_tokens is not None
+            else pair_max
+        )
+        return pair_mean, pair_max, row_max
+
     def _last_hidden_state(
         self,
         params: dict[str, Any],
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-    ) -> torch.Tensor:
+        *,
+        output_router_logits: bool = False,
+    ) -> Any:
         """Backbone last hidden state ``(T, H)`` only — no lm_head, no all-layers.
+
+        With ``output_router_logits=True`` the backbone records its per-layer
+        router logits and the result is ``(hidden, router_logits)`` with one
+        ``(T, E)`` tensor per routed layer.
 
         Calls the backbone submodule (resolved via :func:`_resolve_fused_handles`)
         functionally with the backbone-scoped slice of ``params`` (the keys under
@@ -1032,14 +1092,26 @@ class DPOTrainer(DPTrainer):
         if unbatched:
             input_ids = input_ids.unsqueeze(0)
             attention_mask = attention_mask.unsqueeze(0)
-        out = torch.func.functional_call(
-            backbone,
-            backbone_params,
-            (),
-            {"input_ids": input_ids, "attention_mask": attention_mask},
-        )
+        backbone_kwargs: dict[str, Any] = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+        }
+        if output_router_logits:
+            backbone_kwargs["output_router_logits"] = True
+        out = torch.func.functional_call(backbone, backbone_params, (), backbone_kwargs)
         hidden = out[0] if isinstance(out, tuple) else out.last_hidden_state
-        return hidden.squeeze(0) if unbatched else hidden
+        hidden = hidden.squeeze(0) if unbatched else hidden
+        if not output_router_logits:
+            return hidden
+        router_logits = getattr(out, "router_logits", None)
+        if not router_logits:
+            raise OperationError(
+                *(
+                    "router_load_release is on but the backbone returned no "
+                    "router_logits.",
+                )
+            )
+        return hidden, tuple(router_logits)
 
     def _fused_logp(
         self,
@@ -1082,6 +1154,7 @@ class DPOTrainer(DPTrainer):
         """
         c_cmask = inputs["chosen_completion_mask"]
         r_cmask = inputs["rejected_completion_mask"]
+        fused = self._use_fused_logp and not self._log_completion_metrics
 
         # FUSED PATH: on an eligible run compute the policy logps through
         # ``fused_sequence_logp`` over the backbone's last hidden state, never
@@ -1090,7 +1163,57 @@ class DPOTrainer(DPTrainer):
         # ``log_completion_metrics`` check disables the fused branch when rich
         # telemetry is on, because ``entropy`` / ``logits/*`` / ``mean_token_acc``
         # all consume full logits.
-        if self._use_fused_logp and not self._log_completion_metrics:
+        router_logits: list[torch.Tensor] | None = None
+        router_mask: torch.Tensor | None = None
+        if self._router_load is not None:
+            # ROUTER-LOAD RELEASE: both policy forwards run through the backbone
+            # with router-logit recording and the output embedding is applied
+            # here.  The pair is one protected unit, so its load statistics
+            # pool chosen + rejected over the common denominator
+            # ``L (T_c + T_r)``; concatenating the per-layer logits and masks
+            # gives exactly that pooling.  The reference forward (precomputed
+            # outside the gradient transform) never records router logits.
+            c_hidden, c_router = self._last_hidden_state(
+                params,
+                inputs["chosen_input_ids"],
+                inputs["chosen_attention_mask"],
+                output_router_logits=True,
+            )
+            r_hidden, r_router = self._last_hidden_state(
+                params,
+                inputs["rejected_input_ids"],
+                inputs["rejected_attention_mask"],
+                output_router_logits=True,
+            )
+            router_logits = [
+                torch.cat((zc, zr), dim=0)
+                for zc, zr in zip(c_router, r_router, strict=True)
+            ]
+            router_mask = torch.cat(
+                (inputs["chosen_attention_mask"], inputs["rejected_attention_mask"]),
+                dim=0,
+            )
+            lm_head_weight = params[self._lm_head_param_name]
+            if fused:
+                chosen_logp = fused_sequence_logp(
+                    c_hidden,
+                    lm_head_weight,
+                    inputs["chosen_input_ids"],
+                    c_cmask,
+                    length_normalized=False,
+                )
+                rejected_logp = fused_sequence_logp(
+                    r_hidden,
+                    lm_head_weight,
+                    inputs["rejected_input_ids"],
+                    r_cmask,
+                    length_normalized=False,
+                )
+                chosen_out = rejected_out = None
+            else:
+                chosen_out = _PolicyLogits(F.linear(c_hidden, lm_head_weight))
+                rejected_out = _PolicyLogits(F.linear(r_hidden, lm_head_weight))
+        elif fused:
             chosen_logp = self._fused_logp(
                 fmodel,
                 params,
@@ -1118,6 +1241,7 @@ class DPOTrainer(DPTrainer):
                 attention_mask=inputs["rejected_attention_mask"],
             )
 
+        if chosen_out is not None:
             c_lp_kwargs: dict[str, Any] = {}
             r_lp_kwargs: dict[str, Any] = {}
             if self._ld_alpha is not None:
@@ -1163,6 +1287,13 @@ class DPOTrainer(DPTrainer):
                 rejected_out.logits, inputs["rejected_input_ids"], r_cmask
             )
             loss = loss * weight
+
+        if router_logits is not None:
+            # Value-neutral: the pair's loss value is unchanged; the surrogate
+            # gradient and the probe's load gradient are added.
+            loss = self._apply_router_load_terms(
+                loss, router_logits, router_mask, params
+            )
 
         # On the fused branch ``chosen_out`` / ``rejected_out`` are ``None`` (no
         # logits were materialised). The logits-consuming telemetry inside

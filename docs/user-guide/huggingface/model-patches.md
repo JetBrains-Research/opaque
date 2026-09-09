@@ -201,8 +201,12 @@ MoE families are supported via the `moe` patch — a **vmap-safety enabler**
 (under the `compat` bucket, not a CUDA kernel): it swaps HF v5's stacked-weight
 `*Experts.forward` onto `Opaque_MoE`, which is `vmap(grad)`-safe. HF's own
 experts forward is *not* vmap-able, so this patch is what makes **DP-SGD MoE
-training possible** at all. The router, load-balancing aux loss, and parameters
-are left untouched. Disable with `apply_model_patches(model, moe=False)`.
+training possible** at all. The router and the parameters are left untouched;
+the batch-level load-balancing aux loss has no per-example gradient and is not
+part of the DP objective (the
+[MoE load balancing](../../mechanisms/dp-sgd/moe-load-balancing.md) mechanism
+replaces it with a DP release of the batch router load). Disable with
+`apply_model_patches(model, moe=False)`.
 
 | Model | `model_type` | Experts | RMSNorm | RoPE | CE | Notes |
 |---|---|---|---|---|---|---|
@@ -224,6 +228,53 @@ hosts with Triton use the fused Triton kernel (`Opaque_FusedMoE`); otherwise a
 large-expert MoE (`E >= 16`) with `torch._grouped_mm` available uses the MPS/CPU
 `Opaque_GroupedMoE` variant. Smaller MoEs (e.g. Mixtral-8) and fp32 / no-Triton
 hosts stay on the dense path.
+
+The `grouped_moe` gate that selects between the two defaults to `kernels` *or*
+the host having a grouped route at all (`kernels or _grouped_route_available()`),
+so the grouped-GEMM path is taken by default wherever one exists, even when the
+Triton kernel group is off; the dense path runs every token through every expert
+and is only a sensible default where no sparse route exists. Pass
+`apply_model_patches(model, grouped_moe=False)` to force the dense compat path.
+The route is captured by the first class-level experts patch in a process and
+logged once at `INFO`.
+
+**Router logits for a per-example objective.** With
+`fused_linear_cross_entropy=True` the patched causal-LM forward accepts a named
+`opaque_router_logits=True` keyword: the backbone records its per-layer router
+logits, the chunked / fused loss path is kept, and the result is a
+`MoeCausalLMOutputWithPast` with one `(T, E)` logits tensor per routed layer,
+`logits=None` and `aux_loss=None`. This is how a per-example loss under
+`vmap(grad)` reaches the routing statistics
+(`opaque.api.patches.transformers.components.moe_stats`) without the
+batch-coupled aux loss. Passing HF's own `output_router_logits=True` still
+defers to the stock forward, which adds the batch-level aux loss and does not
+run under `vmap` with a mask.
+
+**fp32 router (opt-in).** `apply_model_patches(model, router_fp32=True)` binds an
+fp32-logit forward on the family's top-k router instances (Mellum 2.0's
+`MellumTopKRouter`): logits are computed as `F.linear(h.float(), W.float())`,
+followed by the fp32 softmax and top-k, with the scores cast back to the hidden
+dtype. This is the router precision Mellum 2.0 was pretrained with and it removes
+bf16 rounding ties, so the executed top-k set is well defined and matches the
+routes any load statistics derive from the logits. It is an instance-level swap
+rather than a class patch and can be undone with `router_fp32=False`; a model
+with no matching router raises `ConfigurationError` rather than installing
+nothing. It is off by
+default because adapters served through stock HF run bf16 routes, and it is not
+a fix for routing drift: the ties originate in the bf16 hidden states, and the
+swap changes the executed routing function on those tokens, not the weights
+(see [Router precision](../../mechanisms/dp-sgd/moe-load-balancing.md#router-precision)).
+
+**Packed-sequence policy.** `opaque.patches.set_packed_sequences(flag)` tells the
+vmap-safe causal-mask builder whether every collated row is fully valid. With
+`True` the SDPA `is_causal` fast path is allowed without inspecting the batch;
+with `False` the mask is always materialised when an attention mask is given, so
+an example's attention kernel never depends on whether a microbatch mate is
+padded; `None` (default) probes the batch as before. `packed_sequences()` reads
+the current setting. Under DP training the kernel choice should be a public
+property of the data, which is why `DPTrainer` sets the policy from its
+`packed_sequences` argument (and treats `None` as `False` when the router-load
+release is on).
 
 The original dense **Mellum** (`Mellum-4b`, `model_type="llama"`) needs no MoE
 support — it is a Llama checkpoint served by the `llama` family.
@@ -444,10 +495,15 @@ the patch APIs directly:
 | `use_compat_patches` | `True` | Routed to `compat`.  Set `False` for custom models that don't need vmap-safety shims. |
 | `use_performance_kernels` | `False` | Routed to `kernels`.  Auto-`False` on hosts without CUDA + Triton. |
 | `performance_kernels_config` | `None` | Flat configuration forwarded as-is to `apply_model_patches` / `apply_runtime_patches` kwargs. Per-concern values are normally booleans; `chunked_linear_cross_entropy` also accepts a positive maximum vocabulary tile width while token tiling remains automatic. |
+| `router_fp32` | `False` | Routed to `router_fp32` (the fp32-logit router swap for MoE families). |
+| `packed_sequences` | `None` | Sets the packed-sequence policy of the mask builder; `None` keeps the probe unless `router_load_release` is on, where it behaves as `False`. |
 
 The trainer always passes `performance=True` (so `kv_cache` is on
 regardless), and `peft=True` so LoRA fusion engages when adapters
-are detected.  `performance_kernels_config` accepts any of the
+are detected.  With `router_load_release` other than `"off"` it also
+passes `fused_linear_cross_entropy=True`, because the router-load
+release needs the chunked forward's `opaque_router_logits` parameter.
+`performance_kernels_config` accepts any of the
 per-concern keys discussed above:
 
 ```python

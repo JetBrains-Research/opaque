@@ -407,6 +407,17 @@ stddev = noisy_grads.noise_stddev
 Accounting is simply `gaussian(nm)` — no composition penalty, regardless of
 the number of groups.
 
+The same property lets a non-gradient statistic ride on the clipped pytree
+as its own group. The
+[MoE router-load release](../mechanisms/dp-sgd/moe-load-balancing.md) adds a
+zero probe parameter whose per-example gradient is the token-weighted centred
+router load of the example; its group bound $C_h = \rho\, C_g\, (1 + g)$ is
+structural (the statistic can never exceed it, so the group never clips) and
+the batch load is released with the gradient for a $\sqrt{1+\rho}$ inflation
+of the gradient noise and no change to the accountant. The probe group is
+added by direct `PerGroup` construction rather than by a substring pattern,
+so it coexists with user patterns such as `router`.
+
 ### Per-group noise allocation
 
 For per-group bounds, `gaussian_noise` uses an MSE-optimal allocation that

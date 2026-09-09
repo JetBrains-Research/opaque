@@ -109,12 +109,14 @@ def apply_transformers_model_patches(
       (``kv_cache`` and the conditional fused-linear-CE wrapper).
     - ``compat`` — vmap-safety wrappers (``eager_attention``, ``batchify``).
     - ``kernels`` — "use accelerated kernels" (``rope``, ``rms_norm``,
-      ``activation``, ``cross_entropy``, ``grouped_moe``). Defaults to
-      ``performance`` when ``None``. The flag is unconditional; the **per-kernel
-      install** checks the environment (see the factory / family): the Triton-only
-      kernels gate on :func:`_has_kernel_runtime` so they're never installed
-      off-CUDA, while the portable ones (grouped-GEMM MoE on ``torch._grouped_mm``,
-      chunked CE) run on any host.
+      ``activation``, ``cross_entropy``). Defaults to ``performance`` when
+      ``None``. The flag is unconditional; the **per-kernel install** checks the
+      environment (see the factory / family): the Triton-only kernels gate on
+      :func:`_has_kernel_runtime` so they're never installed off-CUDA, while the
+      portable ones (grouped-GEMM MoE on ``torch._grouped_mm``, chunked CE) run
+      on any host. ``grouped_moe`` defaults to ``kernels`` or the host having a
+      grouped-GEMM route, so a dense MoE run needs an explicit
+      ``grouped_moe=False``.
 
     ``fused_linear_cross_entropy`` is promoted out of ``**kwargs`` and inherits
     from ``performance`` when unset. Its wrapper delegates to the original

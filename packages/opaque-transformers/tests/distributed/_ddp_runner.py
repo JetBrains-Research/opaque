@@ -23,6 +23,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.distributed as dist
@@ -483,6 +484,378 @@ def scenario_env_backend_diagnostic(
 
 
 # ---------------------------------------------------------------------------
+# Router-load release (T12) and rank-local sampler resume (T25) scenarios
+# ---------------------------------------------------------------------------
+
+
+class RecordingDataset(TinyDataset):
+    """``TinyDataset`` that logs every global index handed to ``__getitem__``.
+
+    Under DDP the trainer wraps the dataset in ``Subset`` / ``local_shard``
+    views, which forward each access to this base object with the *global*
+    index, so the log is a per-rank record of the Poisson inclusion draws.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.accesses: list[int] = []
+
+    def __getitem__(self, idx: int):
+        self.accesses.append(int(idx))
+        return super().__getitem__(idx)
+
+
+class _BatchRecorder:
+    """Cut the dataset access log into per-step inclusion sets.
+
+    The train loader (and its one-row collator priming) is built before
+    ``on_epoch_begin`` fires, and batch ``t`` is fetched right before
+    ``on_step_begin`` of step ``t``, so clearing at ``on_epoch_begin`` and
+    cutting at ``on_step_begin`` yields exactly one sorted index list per
+    optimizer step (an empty list for an empty Poisson round).  At
+    ``on_train_end`` the live sampler snapshot is captured while the
+    training context still exists.
+    """
+
+    def __init__(self, dataset: RecordingDataset) -> None:
+        from transformers.trainer_callback import TrainerCallback
+
+        recorder = self
+        dataset.accesses.clear()
+        self.dataset = dataset
+        self.batches: list[list[int]] = []
+        self.sampler_state: dict | None = None
+
+        class _Callback(TrainerCallback):
+            def __init__(self, trainer) -> None:
+                self.trainer = trainer
+
+            def on_epoch_begin(self, args, state, control, **kwargs):
+                recorder.dataset.accesses.clear()
+                return control
+
+            def on_step_begin(self, args, state, control, **kwargs):
+                recorder.batches.append(sorted(recorder.dataset.accesses))
+                recorder.dataset.accesses.clear()
+                return control
+
+            def on_train_end(self, args, state, control, **kwargs):
+                from opaque.serialization import state_dict
+
+                sampler = self.trainer._ctx.current_sampler
+                recorder.sampler_state = dict(state_dict(sampler))
+                return control
+
+        self._callback_cls = _Callback
+
+    def attach(self, trainer) -> None:
+        trainer.add_callback(self._callback_cls(trainer))
+
+
+def _resume_ranks_args(
+    output_dir: str, use_cpu: bool, **overrides
+) -> TrainingArguments:
+    defaults = {
+        "output_dir": output_dir,
+        "per_device_train_batch_size": 4,
+        "max_steps": 8,
+        "logging_steps": 1,
+        "save_strategy": "steps",
+        "save_steps": 3,
+        "seed": 7,
+        "privacy_noise_multiplier": 1.0,
+        "clipping_norm": 1.0,
+        "report_to": [],
+        "disable_tqdm": True,
+        "use_cpu": use_cpu,
+        "use_compat_patches": False,
+    }
+    defaults.update(overrides)
+    return TrainingArguments(**defaults)
+
+
+def scenario_resume_ranks(
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
+) -> None:
+    """Verify each rank resumes its *own* Poisson stream after a checkpoint.
+
+    A continuous 8-step run saves ``checkpoint-3`` (sampler snapshot written
+    by rank 0); a second trainer resumes from it for the remaining 5 steps.
+    Every rank's post-resume inclusion masks must equal steps 4..8 of its
+    own continuous run, the two ranks' masks must differ (independent
+    per-rank coins, which the amplification argument needs), and the
+    restored sampler must carry this rank's own rank-folded stream key
+    rather than the rank-0 key stored in the snapshot.
+    """
+    steps_before = 3
+    total_steps = 8
+    cfg = TinyConfig()
+
+    def _run(out_dir: str, resume: str | None) -> tuple[list[list[int]], dict]:
+        torch.manual_seed(0)
+        model = TinyForCausalLM(cfg)
+        ds = RecordingDataset(n=64, seq_len=8, vocab=cfg.vocab_size)
+        recorder = _BatchRecorder(ds)
+        args = _resume_ranks_args(out_dir, use_cpu, resume_from_checkpoint=resume)
+        trainer = DPTrainer(
+            model=model, args=args, train_dataset=ds, data_collator=_collate
+        )
+        assert trainer._ddp.world_size == world_size
+        recorder.attach(trainer)
+        trainer.train()
+        assert recorder.sampler_state is not None
+        return recorder.batches, recorder.sampler_state
+
+    continuous_dir = str(Path(output_dir) / "continuous")
+    continuous_batches, continuous_sampler = _run(continuous_dir, None)
+    assert len(continuous_batches) == total_steps, continuous_batches
+    assert continuous_sampler["consumed"] == total_steps
+    ckpt_dir = Path(continuous_dir) / f"checkpoint-{steps_before}"
+    # Rank 0 publishes the checkpoint directory; wait for it before resuming.
+    dist.barrier()
+    assert ckpt_dir.is_dir(), sorted(Path(continuous_dir).iterdir())
+    assert (ckpt_dir / f"rng_state_{rank}.pth").exists()
+
+    resumed_batches, resumed_sampler = _run(
+        str(Path(output_dir) / "resumed"), str(ckpt_dir)
+    )
+    assert len(resumed_batches) == total_steps - steps_before, resumed_batches
+    assert resumed_sampler["consumed"] == total_steps
+
+    # Each rank continues its own pre-checkpoint stream bit for bit.
+    assert resumed_batches == continuous_batches[steps_before:], (
+        f"rank {rank}: resumed {resumed_batches} != "
+        f"continuous tail {continuous_batches[steps_before:]}"
+    )
+    assert resumed_sampler["key_seed"] == continuous_sampler["key_seed"]
+    assert resumed_sampler == continuous_sampler
+
+    # Cross-rank: the streams are distinct (rank-folded keys), so the masks
+    # differ, and the snapshot written by rank 0 was re-keyed on rank 1.
+    gathered: list = [None] * world_size
+    dist.all_gather_object(
+        gathered,
+        {
+            "after": resumed_batches,
+            "key_seed": resumed_sampler["key_seed"],
+            "continuous_key_seed": continuous_sampler["key_seed"],
+        },
+    )
+    seeds = {g["key_seed"] for g in gathered}
+    assert len(seeds) == world_size, f"ranks share a sampler key: {gathered}"
+    for r in range(1, world_size):
+        assert gathered[r]["after"] != gathered[0]["after"], gathered
+        assert gathered[r]["key_seed"] != gathered[0]["continuous_key_seed"]
+    # Shards are disjoint: no rank ever draws another rank's records.
+    shard = 64 // world_size
+    for r, g in enumerate(gathered):
+        for batch in g["after"]:
+            assert all(r * shard <= i < (r + 1) * shard for i in batch), (r, batch)
+    # Sanity: the comparison above is not vacuous (some non-empty rounds).
+    assert any(batch for g in gathered for batch in g["after"])
+
+
+_MELLUM_NUM_EXPERTS = 8
+_MELLUM_TOP_K = 2
+_MELLUM_NUM_LAYERS = 2
+_MELLUM_T_MAX = 16
+_MELLUM_VOCAB = 128
+_MELLUM_TRAINABLE = ("q_proj", "k_proj", "v_proj", "o_proj", ".mlp.gate.")
+
+
+def _tiny_mellum():
+    from transformers import MellumConfig, MellumForCausalLM
+
+    torch.manual_seed(0)
+    config = MellumConfig(
+        vocab_size=_MELLUM_VOCAB,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=_MELLUM_NUM_LAYERS,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=128,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+        rope_theta=10000.0,
+        num_experts=_MELLUM_NUM_EXPERTS,
+        num_experts_per_tok=_MELLUM_TOP_K,
+        moe_intermediate_size=32,
+        router_aux_loss_coef=0.01,
+    )
+    model = MellumForCausalLM(config)
+    for name, p in model.named_parameters():
+        p.requires_grad_(any(s in name for s in _MELLUM_TRAINABLE))
+    return model.train()
+
+
+class RaggedDataset(Dataset):
+    """Right-padded ragged rows with an attention mask and ``-100`` labels."""
+
+    def __init__(self, n: int = 32, seed: int = 1) -> None:
+        g = torch.Generator().manual_seed(seed)
+        ids = torch.randint(3, _MELLUM_VOCAB, (n, _MELLUM_T_MAX), generator=g)
+        lengths = torch.randint(
+            _MELLUM_T_MAX // 2, _MELLUM_T_MAX + 1, (n,), generator=g
+        )
+        mask = (torch.arange(_MELLUM_T_MAX)[None] < lengths[:, None]).long()
+        self.input_ids = torch.where(mask.bool(), ids, torch.zeros_like(ids))
+        self.attention_mask = mask
+        self.labels = torch.where(mask.bool(), ids, torch.full_like(ids, -100))
+
+    def __len__(self) -> int:
+        return self.input_ids.shape[0]
+
+    def __getitem__(self, i: int) -> dict[str, torch.Tensor]:
+        return {
+            "input_ids": self.input_ids[i],
+            "attention_mask": self.attention_mask[i],
+            "labels": self.labels[i],
+        }
+
+
+def _collate_ragged(rows: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+    if len(rows) == 0:
+        return {
+            "input_ids": torch.zeros((0, _MELLUM_T_MAX), dtype=torch.long),
+            "attention_mask": torch.zeros((0, _MELLUM_T_MAX), dtype=torch.long),
+            "labels": torch.zeros((0, _MELLUM_T_MAX), dtype=torch.long),
+        }
+    return {k: torch.stack([r[k] for r in rows]) for k in rows[0]}
+
+
+def _state_payload(state) -> dict[str, Any]:
+    """Plain ``dict`` of a ``RouterLoadState`` (tensors on CPU) for gathering."""
+    import dataclasses
+
+    out = {}
+    for field in dataclasses.fields(state):
+        value = getattr(state, field.name)
+        out[field.name] = value.detach().cpu() if torch.is_tensor(value) else value
+    return out
+
+
+def _assert_same_payload(a: dict[str, Any], b: dict[str, Any], what: str) -> None:
+    assert a.keys() == b.keys(), (what, sorted(a), sorted(b))
+    for name in a:
+        x, y = a[name], b[name]
+        if torch.is_tensor(x):
+            assert torch.is_tensor(y), (what, name, x, y)
+            assert torch.equal(x, y), (what, name, x, y)
+        else:
+            assert x == y, (what, name, x, y)
+
+
+def scenario_router_load_release(
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
+) -> None:
+    """Verify the router-load release is rank-identical under DDP.
+
+    Both ranks train a tiny Mellum for three steps with
+    ``router_load_release="monitor"``.  The probe leaf is part of the
+    clipped pytree that ``sum_gradients_`` all-reduces and the noise key is
+    shared, so the *noised* probe leaf every rank hands to the release
+    callback must be bit-identical across ranks even though the ranks
+    clip disjoint local batches; consequently the public post-processing
+    state (``RouterLoadState`` / ``f_tilde``) is identical too, and the
+    sidecar rank 0 writes equals the state rank 1 holds.
+    """
+    from transformers.trainer_callback import TrainerCallback
+
+    from opaque.api.transformers.moe_load import PROBE_NAME
+    from opaque.api.transformers.trainer._router_load import (
+        ROUTER_LOAD_STATE_NAME,
+        RouterLoadCallback,
+    )
+    from opaque.serialization import from_state_dict
+
+    steps = 3
+    model = _tiny_mellum()
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=4,
+        max_steps=steps,
+        logging_strategy="steps",
+        logging_steps=1,
+        save_strategy="steps",
+        save_steps=steps,
+        report_to=[],
+        disable_tqdm=True,
+        use_cpu=use_cpu,
+        seed=0,
+        privacy_noise_multiplier=1.0,
+        clipping_norm=1.0,
+        learning_rate=1e-3,
+        optim="adamw",
+        router_load_release="monitor",
+        router_load_max_tokens=_MELLUM_T_MAX,
+    )
+    ds = RaggedDataset()
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=ds, data_collator=_collate_ragged
+    )
+    assert trainer._ddp.world_size == world_size
+
+    probes: list[torch.Tensor] = []
+    states: list[dict[str, Any]] = []
+
+    class _Recorder(TrainerCallback):
+        # Registered before ``train()``: the trainer appends its own
+        # ``RouterLoadCallback`` in ``_setup_training``, so this hook sees the
+        # noised probe leaf *before* the release consumes and zeroes it.
+        def on_pre_optimizer_step(self, args, state, control, grads=None, **kw):
+            probes.append(grads.pytree[PROBE_NAME].detach().cpu().clone())
+            return control
+
+        def on_optimizer_step(self, args, state, control, trainable_params=None, **kw):
+            assert not trainable_params[PROBE_NAME].any(), "probe drifted"
+            states.append(_state_payload(trainer._router_load.state))
+            return control
+
+    trainer.add_callback(_Recorder())
+    trainer.train()
+    assert len(probes) == steps
+    assert len(states) == steps
+    assert all(p.shape == (_MELLUM_NUM_LAYERS, _MELLUM_NUM_EXPERTS) for p in probes)
+    # The hook ordering above held: the release was still in the leaf.
+    assert any(p.any() for p in probes), "probe leaf already zeroed on capture"
+    assert states[-1]["step"] == steps
+    assert states[-1]["num_experts"] == _MELLUM_NUM_EXPERTS
+    f_tilde = states[-1]["f_tilde"]
+    assert f_tilde.min() >= 0
+    assert f_tilde.max() <= 1
+    assert torch.allclose(f_tilde.sum(), torch.tensor(float(_MELLUM_TOP_K)), atol=1e-5)
+
+    gathered: list = [None] * world_size
+    dist.all_gather_object(gathered, {"probes": probes, "states": states})
+    for r in range(1, world_size):
+        for t in range(steps):
+            assert torch.equal(gathered[r]["probes"][t], gathered[0]["probes"][t]), (
+                f"step {t}: noised probe leaf differs between rank 0 and rank {r}"
+            )
+            _assert_same_payload(
+                gathered[r]["states"][t], gathered[0]["states"][t], f"state step {t}"
+            )
+
+    # The sidecar rank 0 wrote at step 3 is the state every rank holds.
+    dist.barrier()
+    sidecar = Path(output_dir) / f"checkpoint-{steps}" / ROUTER_LOAD_STATE_NAME
+    assert sidecar.exists(), sorted(Path(output_dir).iterdir())
+    payload = torch.load(str(sidecar), map_location="cpu", weights_only=False)
+    # ``train()`` clears ``trainer._router_load``; the release callback stays
+    # registered and still holds this rank's final state as the template.
+    release = next(
+        cb
+        for cb in trainer.callback_handler.callbacks
+        if isinstance(cb, RouterLoadCallback)
+    )
+    restored = from_state_dict(release.state, payload["state"])
+    _assert_same_payload(_state_payload(restored), states[-1], "sidecar")
+    _assert_same_payload(_state_payload(release.state), states[-1], "callback")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -496,6 +869,8 @@ SCENARIOS = {
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
+    "resume_ranks": scenario_resume_ranks,
+    "router_load_release": scenario_router_load_release,
 }
 
 

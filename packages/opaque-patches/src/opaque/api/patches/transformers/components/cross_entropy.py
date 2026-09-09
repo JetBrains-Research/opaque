@@ -180,9 +180,22 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
     ``hidden_states @ lm_head.weight.T`` (CCE), unless ``loss_function`` would
     need unsupported options — then defers to the original forward (e.g.
     non-zero ``logits_to_keep``, ``shift_labels``, class ``weight``).
+
+    ``opaque_router_logits=True`` (a named parameter, so callers can detect it
+    with ``inspect.signature``) asks a MoE backbone for its per-layer router
+    logits while keeping this fused / chunked loss path: the backbone runs with
+    ``output_router_logits=True`` and the result is a
+    ``MoeCausalLMOutputWithPast`` whose ``router_logits`` carry one tensor per
+    routed layer, ``logits`` is ``None`` and ``aux_loss`` is ``None``. It implies
+    loss-only evaluation and never adds HF's batch-coupled auxiliary loss to
+    ``loss``; that HF contract is reached with ``output_router_logits=True``
+    instead, which still defers to the original forward. One exception to
+    ``logits=None``: on CUDA with fp32 hidden states the fused kernel is not
+    used, the eager ``lm_head`` branch runs and the full logits are returned
+    (the loss stays per-example and the router logits are still carried).
     """
 
-    def forward(
+    def forward(  # noqa: PLR0913, PLR0917
         self,
         input_ids=None,
         attention_mask=None,
@@ -197,11 +210,16 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
         cache_position=None,
         logits_to_keep: int | torch.Tensor = 0,
         loss_only: bool = False,
+        opaque_router_logits: bool = False,
         **kwargs,
     ):
         # The wrapper is inert unless this call explicitly permits a loss-only
         # result. Inference and logits-consuming labeled calls stay model-native.
-        if labels is None or not loss_only:
+        # ``opaque_router_logits`` is itself a loss-only request (it returns the
+        # router logits in place of the LM-head logits), so it permits the path.
+        if labels is None or not (loss_only or opaque_router_logits):
+            if opaque_router_logits:
+                kwargs.setdefault("output_router_logits", True)
             return original(
                 self,
                 input_ids=input_ids,
@@ -219,9 +237,19 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
                 **kwargs,
             )
 
-        output_router_logits = kwargs.get("output_router_logits")
-        if output_router_logits is None:
-            output_router_logits = getattr(self.config, "output_router_logits", False)
+        backbone_kwargs = kwargs
+        if opaque_router_logits:
+            # Router logits requested for a per-example (DP) objective: keep the
+            # fused / chunked loss path and hand the logits back untouched.
+            output_router_logits = False
+            loss_only = True
+            backbone_kwargs = {**kwargs, "output_router_logits": True}
+        else:
+            output_router_logits = kwargs.get("output_router_logits")
+            if output_router_logits is None:
+                output_router_logits = getattr(
+                    self.config, "output_router_logits", False
+                )
         if output_router_logits:
             # MoE router auxiliary loss is batch-coupled, not a separable
             # per-example objective. Preserve the upstream model's loss/output
@@ -270,7 +298,7 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
-            **kwargs,
+            **backbone_kwargs,
         )
         hidden_states = outputs[0]
 
@@ -372,7 +400,9 @@ def _make_fused_ce_causal_lm_forward(original, *, force_chunked: bool | int = Fa
 
             return MoeCausalLMOutputWithPast(
                 loss=loss,
-                aux_loss=getattr(outputs, "aux_loss", None),
+                aux_loss=(
+                    None if opaque_router_logits else getattr(outputs, "aux_loss", None)
+                ),
                 logits=logits,
                 past_key_values=outputs.past_key_values,
                 hidden_states=outputs.hidden_states,

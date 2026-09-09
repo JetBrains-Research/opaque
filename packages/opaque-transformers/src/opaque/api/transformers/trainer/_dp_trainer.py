@@ -52,6 +52,7 @@ from opaque.api.engine.device import (
     device_capabilities,
     sdpa_autocast_under_vmap_broken,
 )
+from opaque.api.transformers import moe_load as _moe_load
 from opaque.api.transformers._rng import IGNORE_DATA_SKIP_STREAM_FOLD
 from opaque.dpftrl.noise import mf_gaussian_noise
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
@@ -102,6 +103,13 @@ from ._callback import (
 )
 from ._eval import EvalPrediction
 from ._precision import eval_dtype
+from ._router_load import (
+    RouterLoadCallback,
+    RouterLoadRuntime,
+    resolve_moe_geometry,
+    restore_router_load_state,
+    save_router_load_state,
+)
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
 from ._training_arguments import TrainingArguments
@@ -194,6 +202,53 @@ def _resolve_drift_disposition(
     return drift
 
 
+def _rank_local_sampler_state(
+    saved_state: Mapping[str, Any], template_sampler: Any, world_size: int
+) -> Mapping[str, Any]:
+    """Re-key a rank-0 sampler snapshot onto this rank's own sampler stream.
+
+    The sampler snapshot is written once, by world rank 0, and carries rank
+    0's rank-folded stream key (``key_seed`` / ``key_impl``).  Under DDP every
+    rank draws its shard with its own key (``fold_in(sampler_key, rank)`` on
+    fresh construction), so installing the snapshot verbatim would put rank
+    0's coins on every rank: records sharing a local shard index would be
+    co-included for the rest of the run, and the Poisson / b-min-sep
+    amplification the accountant applies (which needs the inclusion coin of
+    the added record independent of every other coin) would no longer hold
+    for the resumed steps.
+
+    This returns the snapshot with the stream key replaced by
+    ``template_sampler``'s own key, so ``from_state_dict`` restores the saved
+    cursor on the rank-local stream and rank ``r`` continues exactly the
+    stream it drew before the checkpoint.  Rank 0's template key equals the
+    saved key by construction, so rank 0 restores bit-identically.  At
+    ``world_size == 1`` the snapshot is returned unchanged, so single-process
+    resume is unaffected.  Snapshots without a stream key (deterministic
+    samplers) are returned unchanged.
+
+    Raises:
+        CheckpointError: If the snapshot carries a stream key but the template
+            sampler has none to substitute; installing the shared key would
+            silently correlate the ranks' coins.
+    """
+    if world_size <= 1 or "key_seed" not in saved_state:
+        return saved_state
+    template_key = getattr(template_sampler, "_stream_key", None)
+    if template_key is None:
+        raise CheckpointError(
+            *(
+                "Sampler snapshot carries a stream key but the template "
+                f"{type(template_sampler).__name__} exposes none; cannot restore "
+                "a rank-local sampling stream under DDP.",
+            )
+        )
+    local_state = dict(saved_state)
+    local_state["key_seed"] = int(template_key.seed)
+    if "key_impl" in local_state:
+        local_state["key_impl"] = str(template_key.impl)
+    return local_state
+
+
 def _compile_strict_chunk(
     fn: Callable, *, backend: str | Callable, mode: str
 ) -> Callable:
@@ -254,6 +309,28 @@ class _TrainingContext:
     # target is unreachable, unset, or the process is whole-horizon.
     # See :func:`predict_stop_step`.
     stop_at_step: int | None = None
+    # Router-load release runtime (``router_load_release != "off"``); the
+    # same object is held on ``DPTrainer._router_load`` for the loss closure.
+    router_load: RouterLoadRuntime | None = None
+
+
+def _has_named_router_logits_parameter(forward: Any) -> bool:
+    """``True`` when ``forward`` declares ``opaque_router_logits`` by name.
+
+    The chunked causal-LM forward installed by ``opaque.patches`` exposes the
+    router-logit request as a named keyword parameter.  A ``**kwargs``
+    catch-all does not count: a stock Hugging Face forward would swallow the
+    keyword silently and return no router logits.
+    """
+    try:
+        parameters = inspect.signature(forward).parameters
+    except (TypeError, ValueError):
+        return False
+    parameter = parameters.get("opaque_router_logits")
+    return parameter is not None and parameter.kind in (
+        inspect.Parameter.KEYWORD_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
 
 
 def _initialize_accounting(
@@ -462,6 +539,9 @@ class DPTrainer:
                     "checkpointing on the model or disable torch compilation.",
                 )
             )
+        # Router-load release runtime; populated by ``_setup_training`` when
+        # ``router_load_release != "off"`` and cleared when ``train()`` returns.
+        self._router_load: RouterLoadRuntime | None = None
         self._processing_class = processing_class
         self._base_callbacks: list[Any] = list(callbacks) if callbacks else []
         self.is_in_train = False
@@ -816,6 +896,10 @@ class DPTrainer:
         custom model. Non-HF ``nn.Module`` models log a warning and remain
         supported.
         """
+        # Masking policy the training runs apply (``None``: leave the
+        # process-level policy alone); resolved here, installed by
+        # ``_train_once`` for the duration of a run and restored afterwards.
+        self._packed_sequences_policy: bool | None = None
         self._fused_forward_uses_marker = False
         try:
             from opaque.patches import apply_model_patches
@@ -823,14 +907,63 @@ class DPTrainer:
             log.debug("opaque.patches unavailable; skipping model patches.")
             return
 
-        kwargs = dict(self.args.performance_kernels_config or {})
+        a = self.args
+        router_load_on = a.router_load_release != "off"
+        kwargs = dict(a.performance_kernels_config or {})
+        if router_load_on:
+            # The release reads the per-layer router logits through the
+            # chunked causal-LM forward's named ``opaque_router_logits``
+            # parameter, which only exists when the fused / chunked loss
+            # forward is installed.
+            if kwargs.get("fused_linear_cross_entropy") is False:
+                raise ConfigurationError(
+                    *(
+                        f"router_load_release={a.router_load_release!r} needs the "
+                        "chunked causal-LM forward, but performance_kernels_config "
+                        "sets fused_linear_cross_entropy=False; drop that key or "
+                        "set router_load_release='off'.",
+                    )
+                )
+            kwargs["fused_linear_cross_entropy"] = True
+        if a.router_fp32:
+            kwargs["router_fp32"] = True
         apply_model_patches(
             self._model,
-            compat=bool(self.args.use_compat_patches),
+            compat=bool(a.use_compat_patches),
             performance=True,
-            kernels=bool(self.args.use_performance_kernels),
+            kernels=bool(a.use_performance_kernels),
             **kwargs,
         )
+        if router_load_on:
+            inspected = self._model
+            if self._is_peft:
+                inspected = (
+                    inspected.get_base_model()
+                    if hasattr(inspected, "get_base_model")
+                    else inspected.base_model.model
+                )
+            if not _has_named_router_logits_parameter(type(inspected).forward):
+                raise ConfigurationError(
+                    *(
+                        f"router_load_release={a.router_load_release!r} requires "
+                        "the chunked causal-LM forward with a named "
+                        "``opaque_router_logits`` parameter, but "
+                        f"{type(inspected).__name__}.forward does not declare one "
+                        "after patching.  The model family must support "
+                        "``fused_linear_cross_entropy`` in opaque.patches (a "
+                        "``**kwargs`` catch-all does not count: it would swallow "
+                        "the request and return no router logits).",
+                    )
+                )
+            # The release needs a mixture-of-experts model: fail at
+            # construction, not inside ``train()``.
+            resolve_moe_geometry(self._model)
+            # Attention-kernel selection under the release is derived from
+            # the public packing statement, never from the batch content: an
+            # unset flag materialises the mask on every microbatch.
+            self._packed_sequences_policy = bool(a.packed_sequences)
+        elif a.packed_sequences is not None:
+            self._packed_sequences_policy = bool(a.packed_sequences)
 
         def accepts_marker(module: Any, *, allow_var_kwargs: bool) -> bool:
             try:
@@ -975,7 +1108,12 @@ class DPTrainer:
           Poisson-amplified Gaussian step and the accountant composes the
           same number of mechanisms — and the resumed subsample sequence
           from iteration N onward matches a continuous run from the same
-          seed.  DP-valid either way.
+          seed.  Under DDP the snapshot (written by rank 0) is re-keyed
+          onto each rank's own rank-folded stream key before the cursor
+          is restored, so every rank continues the stream it drew before
+          the checkpoint and the cross-rank inclusion coins stay
+          independent, which the Poisson / b-min-sep amplification the
+          accountant applies requires.
         - **``ignore_data_skip=True``** skips sampler-state restore.
           Poisson resumes use a distinct stream; participation samplers
           require the saved cursor.
@@ -987,6 +1125,26 @@ class DPTrainer:
           checkpoint and resume warns but is allowed — the accountant
           composes whatever process the user asks for, and the warning
           guards against silent drift.
+        - **Router-load release** (``router_load_release`` other than
+          ``"off"``): each step releases one Gaussian (or matrix) mechanism
+          on the concatenation of the clipped per-example gradients and the
+          per-example token-weighted centred router-load vectors
+          ``lam * (T_x / T_bar) * (h(x) - k/E)``, with per-record bounds
+          ``C_g`` and ``C_h = router_load_ratio * C_g * (1 + guard)``; the
+          two are one mechanism under the per-group noise allocation and
+          the accountant is unchanged, while the gradient noise is inflated
+          by ``sqrt(1 + router_load_ratio)``.  The load estimate the loss
+          consumes and the ``router_load/*`` monitors are post-processing
+          of previous releases.  No other quantity derived from private
+          routing is released: the probe's per-example norms are excluded
+          from telemetry, the logged gradient norms are computed over the
+          non-probe groups and the per-example loss value carries no
+          router-derived term.  Under DDP the release is all-reduced with
+          the gradient and post-processed identically on every rank; on
+          resume the sidecar ``router_load_state.pt`` continues the
+          filter.  Residual non-per-example effects are floating-point only:
+          attention-kernel selection follows the public ``packed_sequences``
+          flag, never the batch content.
         """
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
@@ -1146,6 +1304,45 @@ class DPTrainer:
             resume_from_checkpoint = self.args.resume_from_checkpoint
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
 
+        # The vmap-safe mask builder's packed-sequences policy is a
+        # process-wide setting (not thread-local); install this trainer's
+        # policy for the run and put the previous value back afterwards so
+        # a later trainer or model in the same process is not affected.
+        previous_packed_policy = self._install_packed_sequences_policy()
+        try:
+            return self._train_once_with_policy(
+                resume_path=resume_path,
+                microbatch_size_override=microbatch_size_override,
+                ignore_keys_for_eval=ignore_keys_for_eval,
+            )
+        finally:
+            self._restore_packed_sequences_policy(previous_packed_policy)
+
+    def _install_packed_sequences_policy(self) -> bool | None:
+        """Apply this trainer's packed-sequences policy; return the previous one."""
+        policy = getattr(self, "_packed_sequences_policy", None)
+        if policy is None:
+            return None
+        from opaque.patches import packed_sequences, set_packed_sequences
+
+        previous = packed_sequences()
+        set_packed_sequences(policy)
+        return previous
+
+    def _restore_packed_sequences_policy(self, previous: bool | None) -> None:
+        if getattr(self, "_packed_sequences_policy", None) is None:
+            return
+        from opaque.patches import set_packed_sequences
+
+        set_packed_sequences(previous)
+
+    def _train_once_with_policy(
+        self,
+        *,
+        resume_path: str | None,
+        microbatch_size_override: int | None,
+        ignore_keys_for_eval: list[str] | None,
+    ) -> TrainOutput:
         # Pre-load weights so make_functional starts from the saved values.
         prefix_accountant: Accountant | None = None
         runtime_payload: ckpt.RuntimeCheckpoint | None = None
@@ -1186,6 +1383,8 @@ class DPTrainer:
             self._apply_runtime_state(
                 ctx, runtime_payload, prefix_accountant, resume_path
             )
+            if ctx.router_load is not None and ctx.router_load.callback is not None:
+                restore_router_load_state(resume_path, ctx.router_load.callback)
             self._warn_on_arg_drift(runtime_payload)
             self._load_rng_state(resume_path)
             self._load_callback_states()
@@ -1266,6 +1465,10 @@ class DPTrainer:
             self._ctx = None
             self._train_dataloader = None
             self._eval_dataloader = None
+            # The probe exists only for the release; the model handed back to
+            # the user (and ``save_model``) carries no extra parameter.
+            self._router_load = None
+            self._detach_router_load_probe()
 
     def _is_retryable_oom(self, err: RuntimeError) -> bool:
         """``True`` for an OOM that justifies a microbatch retry.
@@ -1390,6 +1593,18 @@ class DPTrainer:
             offload_ctx = torch.autograd.graph.save_on_cpu(pin_memory=False)
             log.info("CPU offload: enabled")
 
+        # --- Router-load probe (before the functional split) ---
+        # The zero probe parameter must be a trainable leaf so its clipped and
+        # noised gradient rides on the same release as the model gradient.
+        router_load_geometry: tuple[int, int, int, float] | None = None
+        if a.router_load_release != "off":
+            router_load_geometry = resolve_moe_geometry(self._model)
+            _moe_load.attach_probe(
+                self._model,
+                num_layers=router_load_geometry[0],
+                num_experts=router_load_geometry[1],
+            )
+
         # --- Functional conversion ---
         log.info("Converting model to functional form...")
         fmodel, trainable_params, frozen_params = make_functional(
@@ -1492,7 +1707,40 @@ class DPTrainer:
 
         # --- Clipping norm (scalar ``clipping_norm`` or per-group dict) ---
         mgn = a.clipping_norm
-        if isinstance(mgn, dict):
+        router_load_lam: float | None = None
+        router_load_tokens: tuple[float, float, int] | None = None
+        if router_load_geometry is not None:
+            # The probe joins the gradient groups as its own group with a
+            # structural bound ``C_h = ratio * C_g * (1 + guard)`` that never
+            # clips; the gradient groups are compiled exactly as below.
+            num_layers, num_experts, top_k, _ = router_load_geometry
+            router_load_tokens = self._router_load_token_bounds()
+            mean_tokens, max_tokens, _row_max = router_load_tokens
+            clip_norm, router_load_lam = _moe_load.probe_bounds(
+                mgn if isinstance(mgn, dict) else float(mgn),
+                trainable_params,
+                ratio=float(a.router_load_ratio),
+                num_layers=num_layers,
+                num_experts=num_experts,
+                top_k=top_k,
+                mean_tokens=mean_tokens,
+                max_tokens=max_tokens,
+            )
+            log.info(
+                "Router-load release (%s): %d groups, probe bound %.4g "
+                "(ratio %.3g), lam %.4g, L=%d, E=%d, k=%d, T_bar=%g, T_max=%g",
+                a.router_load_release,
+                len(clip_norm.values),
+                clip_norm.values[_moe_load.PROBE_NAME],
+                a.router_load_ratio,
+                router_load_lam,
+                num_layers,
+                num_experts,
+                top_k,
+                mean_tokens,
+                max_tokens,
+            )
+        elif isinstance(mgn, dict):
             from opaque.api.engine.clipping import per_group as per_group_clipper
 
             fb = float(mgn["fallback"])
@@ -1673,6 +1921,23 @@ class DPTrainer:
                 key=key(a.seed),
             )
 
+        # --- Router-load post-processing state + callback ---
+        router_load: RouterLoadRuntime | None = None
+        if router_load_geometry is not None:
+            assert router_load_lam is not None
+            assert router_load_tokens is not None
+            router_load = self._build_router_load_runtime(
+                router_load_geometry,
+                router_load_tokens,
+                lam=router_load_lam,
+                clip_norm=clip_norm,
+                expected_batch_size=expected_batch_size,
+                noise_multiplier=noise_multiplier,
+                total_steps=total_steps,
+                strategy=mf.strategy if mf is not None else None,
+            )
+        self._router_load = router_load
+
         # --- Collate ---
         # Same wrapper used by the eval dataloader so train and eval
         # share key validation + device move (no asymmetric crash modes).
@@ -1718,7 +1983,276 @@ class DPTrainer:
             is_horizon_process=horizon_process is not None,
             horizon_process=horizon_process,
             mf=mf,
+            router_load=router_load,
         )
+
+    # ------------------------------------------------------------------
+    # Router-load release (MoE load balancing under DP)
+    # ------------------------------------------------------------------
+
+    def _router_load_token_bounds(self) -> tuple[float, float, int]:
+        """``(mean_tokens, max_tokens, row_max_tokens)`` of the release.
+
+        ``row_max_tokens`` is the public bound on one collated row:
+        ``router_load_max_tokens`` when set, else the trainer's ``max_length``
+        argument (SFT / DPO configs), else the model's
+        ``max_position_embeddings``.  ``max_tokens`` bounds the valid tokens
+        one protected unit contributes (one row here; a preference pair
+        overrides this) and ``mean_tokens`` is ``router_load_mean_tokens``
+        or ``max_tokens``.
+        """
+        a = self.args
+        row_max = a.router_load_max_tokens
+        if row_max is None:
+            row_max = getattr(a, "max_length", None)
+        if row_max is None:
+            row_max = getattr(
+                getattr(self._model, "config", None), "max_position_embeddings", None
+            )
+            if row_max is not None:
+                log.warning(
+                    "router_load_release: no router_load_max_tokens (or "
+                    "max_length) given; the row bound falls back to the model "
+                    "context length max_position_embeddings=%s.  The bound "
+                    "stays valid, but with rows much shorter than that the "
+                    "token weight T_x / T_bar scales the release and the "
+                    "surrogate down by (T_bar_true / %s)^2; set "
+                    "router_load_max_tokens to the collator's row length (and "
+                    "router_load_mean_tokens to a public mean length).",
+                    row_max,
+                    row_max,
+                )
+        if row_max is None:
+            raise ConfigurationError(
+                *(
+                    "router_load_release needs a public row-length bound: set "
+                    "router_load_max_tokens (the model config exposes no "
+                    "max_position_embeddings).",
+                )
+            )
+        row_max = int(row_max)
+        mean_tokens = (
+            float(a.router_load_mean_tokens)
+            if a.router_load_mean_tokens is not None
+            else float(row_max)
+        )
+        return mean_tokens, float(row_max), row_max
+
+    def _build_router_load_runtime(
+        self,
+        geometry: tuple[int, int, int, float],
+        tokens: tuple[float, float, int],
+        *,
+        lam: float,
+        clip_norm: PerGroup,
+        expected_batch_size: int,
+        noise_multiplier: float,
+        total_steps: int,
+        strategy: Any,
+    ) -> RouterLoadRuntime:
+        """Build the public post-processing state and register the callback."""
+        a = self.args
+        num_layers, num_experts, top_k, config_alpha = geometry
+        mean_tokens, max_tokens, row_max = tokens
+        mode = a.router_load_release
+        if mode == "monitor":
+            alpha = 0.0
+            if a.router_aux_loss_coef:
+                log.info(
+                    "router_load_release='monitor' ignores router_aux_loss_coef=%g "
+                    "(the surrogate is only active in the surrogate modes).",
+                    a.router_aux_loss_coef,
+                )
+        elif a.router_aux_loss_coef is not None:
+            alpha = float(a.router_aux_loss_coef)
+        else:
+            alpha = config_alpha
+        alpha_initial = alpha if mode == "surrogate" else 0.0
+        phi = _moe_load.filter_factors(
+            strategy,
+            n_steps=int(total_steps),
+            kind=a.router_load_filter_kind,
+            beta=float(a.router_load_filter_beta),
+            window=int(a.router_load_filter_window),
+            num_experts=num_experts,
+        )
+        state = _moe_load.initial_state(
+            num_layers=num_layers,
+            num_experts=num_experts,
+            top_k=top_k,
+            ratio=float(a.router_load_ratio),
+            lam=lam,
+            max_norm=clip_norm / float(expected_batch_size),
+            noise_multiplier=float(noise_multiplier),
+            kind=a.router_load_filter_kind,
+            beta=float(a.router_load_filter_beta),
+            window=int(a.router_load_filter_window),
+            dead_zone=float(a.router_load_dead_zone),
+            shrink=bool(a.router_load_shrink),
+            alpha=alpha_initial,
+            mean_tokens=mean_tokens,
+            max_tokens=max_tokens,
+            phi=phi,
+        )
+        callback = RouterLoadCallback(
+            state,
+            mode=mode,
+            trip=float(a.router_load_trip),
+            alpha=alpha,
+        )
+        # One callback per run: a retry (``_train_dispatch``) or a second
+        # ``train()`` rebuilds the state, so drop the previous instance.
+        for existing in list(self._callback_handler.callbacks):
+            if isinstance(existing, RouterLoadCallback):
+                self._callback_handler.remove_callback(existing)
+        self._callback_handler.add_callback(callback)
+        log.info(
+            "Router-load post-processing: filter=%s (beta=%g, window=%d), "
+            "dead_zone=%g, shrink=%s, alpha=%g (active %g), stationary release "
+            "noise std %.3g of k/E per entry",
+            a.router_load_filter_kind,
+            a.router_load_filter_beta,
+            a.router_load_filter_window,
+            a.router_load_dead_zone,
+            a.router_load_shrink,
+            alpha,
+            alpha_initial,
+            state.base_noise_std * float(phi[-1]) / (top_k / num_experts),
+        )
+        return RouterLoadRuntime(
+            mode=mode,
+            alpha=alpha,
+            lam=lam,
+            ratio=float(a.router_load_ratio),
+            num_layers=num_layers,
+            num_experts=num_experts,
+            top_k=top_k,
+            mean_tokens=mean_tokens,
+            max_tokens=max_tokens,
+            row_max_tokens=row_max,
+            trip=float(a.router_load_trip),
+            z_loss_coef=float(a.router_z_loss_coef),
+            aux=a.router_aux,
+            callback=callback,
+            target=state.f_tilde.detach().clone().to(self._device),
+        )
+
+    def _refresh_router_load_target(self, inputs: Mapping[str, Any]) -> None:
+        """Publish ``f_tilde`` to the loss closure and check the probe is zero."""
+        rt = self._router_load
+        ctx = self._ctx
+        if rt is None or ctx is None or rt.target is None:
+            return
+        with torch.no_grad():
+            rt.target.copy_(rt.state.f_tilde.to(rt.target.device))
+        probe = ctx.trainable_params.get(rt.probe_name)
+        if probe is None or bool(probe.detach().count_nonzero()):
+            raise OperationError(
+                *(
+                    f"router-load probe {rt.probe_name!r} drifted from zero; the "
+                    "optimizer must never move it (its noised gradient is zeroed "
+                    "by RouterLoadCallback before every update).",
+                )
+            )
+        for column, value in inputs.items():
+            if (
+                column.endswith("input_ids")
+                and isinstance(value, Tensor)
+                and value.ndim >= 2  # noqa: PLR2004 - (batch, tokens)
+                and value.shape[-1] > rt.row_max_tokens
+            ):
+                raise OperationError(
+                    *(
+                        f"batch column {column!r} has {value.shape[-1]} tokens per "
+                        f"row, "
+                        f"above the public bound router_load_max_tokens="
+                        f"{rt.row_max_tokens}; the load-release sensitivity "
+                        "assumes every row is at most that long.",
+                    )
+                )
+
+    def _router_load_forward_kwargs(
+        self, return_logits: bool = False
+    ) -> dict[str, bool]:
+        """Extra forward kwargs that request router logits for the release."""
+        if self._router_load is None or return_logits:
+            return {}
+        return {"opaque_router_logits": True}
+
+    def _apply_router_load_terms(
+        self,
+        loss: Tensor,
+        router_logits: Any,
+        attention_mask: Tensor | None,
+        params: Mapping[str, Tensor],
+        *,
+        mean_tokens: float | None = None,
+    ) -> Tensor:
+        """Augment one example's loss with the value-neutral release terms."""
+        rt = self._router_load
+        if rt is None:
+            return loss
+        if router_logits is None:
+            raise OperationError(
+                *(
+                    "router_load_release is on but the model forward returned no "
+                    "router_logits; the chunked causal-LM forward must be called "
+                    "with opaque_router_logits=True.",
+                )
+            )
+        f_tilde = rt.target
+        if rt.aux == "per_sequence":
+            from opaque.api.patches.transformers.components.moe_stats import (
+                router_load_and_probs,
+            )
+
+            h_layers, _, _ = router_load_and_probs(
+                router_logits,
+                attention_mask,
+                top_k=rt.top_k,
+                num_layers=rt.num_layers,
+            )
+            f_tilde = h_layers.mean(0).detach()
+        return _moe_load.router_load_terms(
+            loss,
+            router_logits,
+            attention_mask,
+            params,
+            f_tilde=f_tilde,
+            alpha=rt.alpha_active,
+            lam=rt.lam,
+            top_k=rt.top_k,
+            num_layers=rt.num_layers,
+            num_experts=rt.num_experts,
+            mean_tokens=rt.mean_tokens if mean_tokens is None else mean_tokens,
+            probe_name=rt.probe_name,
+            z_loss_coef=rt.z_loss_coef,
+        )
+
+    @contextlib.contextmanager
+    def _without_router_load_probe(self):
+        """Hide the probe parameter from the model while the block runs.
+
+        The probe is a public constant zero that exists only for the release;
+        model artefacts must not carry it (an unexpected key on reload).
+        """
+        name = _moe_load.PROBE_NAME
+        params = getattr(self._model, "_parameters", None)
+        probe = params.get(name) if isinstance(params, dict) else None
+        if probe is None:
+            yield
+            return
+        del params[name]
+        try:
+            yield
+        finally:
+            self._model.register_parameter(name, probe)
+
+    def _detach_router_load_probe(self) -> None:
+        """Remove the probe parameter from the model after a run."""
+        params = getattr(self._model, "_parameters", None)
+        if isinstance(params, dict) and _moe_load.PROBE_NAME in params:
+            del params[_moe_load.PROBE_NAME]
 
     def _inner_training_loop(
         self,
@@ -1830,12 +2364,22 @@ class DPTrainer:
             # saved length so ``from_state_dict`` can validate.  Build
             # one (without caching the loader yet), then replace it
             # with the restored cursor before the actual loader binds.
+            # Under DDP the template also carries this rank's own
+            # rank-folded stream key; the snapshot (written by rank 0)
+            # is re-keyed onto it so each rank resumes *its own*
+            # pre-checkpoint stream rather than rank 0's (see
+            # :func:`_rank_local_sampler_state`).
             if ctx.current_sampler is None:
                 self._train_dataloader = None
                 self.get_train_dataloader()  # populates ctx.current_sampler
                 self._train_dataloader = None  # drop the cached loader
             ctx.current_sampler = from_state_dict(
-                ctx.current_sampler, saved_sampler_state
+                ctx.current_sampler,
+                _rank_local_sampler_state(
+                    saved_sampler_state,
+                    ctx.current_sampler,
+                    self._ddp.world_size,
+                ),
             )
 
         train_loader = self.get_train_dataloader()
@@ -2268,11 +2812,28 @@ class DPTrainer:
         if aux.clipped_grad_norms is not None and aux.clipped_grad_norms.numel() > 0:
             metrics["clipped_grad_norm"] = aux.clipped_grad_norms.mean().item()
 
+        router_load = ctx.router_load
+        if router_load is not None:
+            # The total per-example norms include the probe group, which is a
+            # function of the example's routing; the logged norms are taken
+            # over the gradient groups only.  The probe's own norms are never
+            # logged; the public monitor curves come from the noised release.
+            # ``ctx.clip_norm`` is the un-normalised two-group bound handed
+            # to ``clipped_grad`` (``grads.max_norm`` is the per-step bound).
+            grad_norm, clipped_grad_norm = _moe_load.telemetry_without_probe(
+                aux, ctx.clip_norm, router_load.probe_name
+            )
+            metrics["grad_norm"] = grad_norm.mean().item()
+            metrics["clipped_grad_norm"] = clipped_grad_norm.mean().item()
+            metrics.update(_moe_load.summary(router_load.state))
+
         if aux.group_norms is not None and hasattr(clipping_norm, "values"):
             group_noise_std = noise_std if hasattr(noise_std, "values") else None
             group_metrics: dict[str, dict[str, float]] = {}
             for group_name, group_norms in aux.group_norms.items():
                 if group_norms.numel() == 0:
+                    continue
+                if router_load is not None and group_name == router_load.probe_name:
                     continue
                 group_bound = float(clipping_norm.values[group_name])
                 group_values = {
@@ -2320,7 +2881,12 @@ class DPTrainer:
         recomputed each step from an evolving non-``vmap`` artefact — e.g.
         TR-DPO's reference log-probs from an EMA reference model. Keys it writes
         must already exist in ``ctx.batch_keys`` (seed them at construction).
+
+        With the router-load release on, the base implementation publishes the
+        current public load estimate ``f_tilde`` to the loss closure and checks
+        that the probe parameter is still zero; overrides call ``super()``.
         """
+        self._refresh_router_load_target(inputs)
         return inputs
 
     def compute_per_example_loss(
@@ -2395,7 +2961,9 @@ class DPTrainer:
         ):
             inputs = {**inputs, "loss_only": True}
 
-        output = fmodel(params, **inputs)
+        output = fmodel(
+            params, **inputs, **self._router_load_forward_kwargs(return_logits)
+        )
         # Output is required to be dict-like (``ModelOutput`` /
         # ``Mapping``).  ``prediction_step`` enforces this contract at
         # the eval boundary; the training path lands here through
@@ -2449,6 +3017,13 @@ class DPTrainer:
 
         if return_logits:
             return loss, output_logits
+        if self._router_load is not None:
+            loss = self._apply_router_load_terms(
+                loss,
+                getattr(output, "router_logits", None),
+                inputs.get("attention_mask"),
+                params,
+            )
         return loss
 
     def compute_per_example_loss_and_metrics(
@@ -3766,20 +4341,25 @@ class DPTrainer:
         # mask: with a shared key every rank would select the *same* local
         # offsets, perfectly co-including the records that happen to share a
         # local index across shards — not the i.i.d. global Poisson draw the
-        # design intends (the per-record marginal stays Bernoulli(q) either
-        # way, so the privacy accounting is unaffected; this is a sampling
-        # *diversity* fix).  ``ctx.sample_rate`` was computed in
-        # ``_setup_training`` from the same trimmed denominator we use here
-        # (see :meth:`_effective_train_dataset_size`), so the rate the
-        # sampler is configured with matches the rate the accountant
-        # calibrated against — both bind to the post-trim ``q``.
+        # design intends.  The per-record marginal stays Bernoulli(q) either
+        # way, but the amplification the accountant applies (subsampled
+        # Gaussian PLD for ``poisson``, b-min-sep for ``b_min_sep``) requires
+        # the added record's inclusion coin to be independent of every other
+        # record's coin; a shared key violates that and voids the accounted
+        # epsilon, so independent per-rank keys are a privacy requirement,
+        # not only a sampling-diversity nicety.  ``ctx.sample_rate`` was
+        # computed in ``_setup_training`` from the same trimmed denominator
+        # we use here (see :meth:`_effective_train_dataset_size`), so the
+        # rate the sampler is configured with matches the rate the
+        # accountant calibrated against — both bind to the post-trim ``q``.
         #
-        # Resume caveat (multi-GPU only): the sampler snapshot is
-        # self-contained (carries its own key) and is written once on rank
-        # 0, so resuming a DDP run currently restores rank 0's per-rank key
-        # on every rank, re-introducing the cross-rank correlation after the
-        # resume point.  Fully fixing that needs per-rank sampler snapshots;
-        # tracked for the multi-GPU work and validated there.
+        # Resume (multi-GPU): the sampler snapshot is self-contained (carries
+        # its own key) and is written once on rank 0.  The resume path in
+        # :meth:`train` therefore re-keys the snapshot onto the rank-folded
+        # key of this rank's freshly built template sampler
+        # (:func:`_rank_local_sampler_state`) before ``from_state_dict``, so
+        # only the cursor is taken from the snapshot and every rank resumes
+        # its own pre-checkpoint stream with cross-rank coins independent.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -4169,6 +4749,11 @@ class DPTrainer:
             # Subclass training telemetry (e.g. DPO ``rewards/*``) surfaced by
             # ``training_step`` from the clipped-grad ``loss_aux`` channel.
             logs.update(step_result.get("loss_aux", {}))
+            # Public router-load monitor curves (post-processing of the
+            # noised release; see ``opaque.api.transformers.moe_load.summary``).
+            logs.update(
+                {k: v for k, v in step_result.items() if k.startswith("router_load/")}
+            )
             # Opaque per-step performance metrics (step_time_sec,
             # samples_per_second, memory_*, clip_sec / noise_sec /
             # optimizer_sec from ``sp.mark(...)``).  Bare keys; the
@@ -4755,7 +5340,10 @@ class DPTrainer:
         # dirs ship the full state dict.
         if not mutated:
             strict = not self._is_peft
-            self._model.load_state_dict(new_state, strict=strict)
+            # Checkpoint weights never carry the router-load probe (a public
+            # constant zero that lives only in the functional view).
+            with self._without_router_load_probe():
+                self._model.load_state_dict(new_state, strict=strict)
 
         # Rebuild the functional view from the (now-mutated) module.  Keep
         # ``ctx.trainable_params`` keyed by the same names as before — i.e.
@@ -5023,6 +5611,10 @@ class DPTrainer:
             if not a.save_only_model:
                 self._save_optimizer(staging_dir, ctx)
                 self._save_dp_runtime(staging_dir, ctx)
+                if ctx.router_load is not None and ctx.router_load.callback is not None:
+                    # Public post-processing state of the release; rank-identical
+                    # under DDP (shared noise key), so rank 0's copy is the run's.
+                    save_router_load_state(staging_dir, ctx.router_load.callback)
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
         # staging directory.  Barrier guarantees it exists before non-zero
@@ -5059,6 +5651,10 @@ class DPTrainer:
 
     def _save_model_artifacts(self, output_dir: str) -> None:
         """Save model weights/config plus processing class using HF-compatible names."""
+        with self._without_router_load_probe():
+            self._write_model_artifacts(output_dir)
+
+    def _write_model_artifacts(self, output_dir: str) -> None:
         if hasattr(self._model, "save_pretrained"):
             self._model.save_pretrained(
                 output_dir,

@@ -74,6 +74,10 @@ USAGE:
   # Non-DP baseline (no noise, no privacy accounting, same loop)
   python examples/train_dpftrl.py --preset mellum-kstack --mechanism none
 
+  # Mellum 2 (MoE) with the DP router-load release (preset default: surrogate)
+  python examples/train_dpftrl.py --preset mellum2-kstack
+  python examples/train_dpftrl.py --preset mellum2-kstack --router-load-release monitor
+
     # Adam-family without private second moments (single-stream MF noise)
   python examples/train_dpftrl.py --preset smoke --optimizer adamw
 
@@ -103,9 +107,11 @@ REFERENCES:
 
 import argparse
 import contextlib
+import inspect
 import os
 import sys
 import time
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
@@ -120,7 +126,12 @@ from transformers import (
 )
 
 from opaque.device import sdpa_autocast_under_vmap_broken
-from opaque.patches import apply_model_patches, apply_runtime_patches
+from opaque.patches import (
+    apply_model_patches,
+    apply_runtime_patches,
+    packed_sequences,
+    set_packed_sequences,
+)
 
 apply_runtime_patches()
 
@@ -131,6 +142,8 @@ import opaque.auditing as auditing
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.accounting import Accountant
 from opaque.accounting import calibration as cal
+from opaque.transformers import moe_load
+from opaque.transformers.moe_load import PROBE_NAME, RouterLoadState
 from opaque.distributed import local_shard, sync
 from opaque.distributed.gradients import sum_gradients_
 from opaque.dpftrl.clipping import auto_clipped_grad, clipped_grad, per_group
@@ -149,6 +162,7 @@ from opaque.dpftrl.sampling import (
     CyclicPoissonSampler,
     SequentialBatchSampler,
 )
+from opaque.exceptions import ConfigurationError, OperationError
 from opaque.functional import empty_collate, make_functional
 from opaque.profiling import (
     perf_tracker,
@@ -163,6 +177,7 @@ from opaque.scheduling import (
     with_warmup,
 )
 from opaque.scheduling.types import Schedule
+from opaque.serialization import from_state_dict, state_dict
 from opaque.types import (
     PerGroup,
     SecondMomentClippingOutput,
@@ -304,6 +319,251 @@ def _load_streaming_subset(
             f"Stream ended after {len(rows)} examples, need {total_needed}."
         )
     return Dataset.from_list(rows)
+
+
+# ---------------------------------------------------------------------------
+# Router-load release (MoE load balancing under DP)
+# ---------------------------------------------------------------------------
+#
+# A Switch-style load-balancing loss needs the batch load vector, which is
+# not per-example separable.  ``opaque.transformers.moe_load`` replaces
+# it by a public estimate ``f_tilde`` released through a zero probe parameter
+# that rides on the same clipped pytree as the gradient: the probe forms its
+# own ``PerGroup`` group with a structural (never active) bound, so the joint
+# release is one matrix mechanism, the accountant below is unchanged and the
+# only price is a ``sqrt(1 + ratio)`` inflation of the gradient noise.  This
+# loop calls the helper at four seams: ``attach_probe`` before
+# ``make_functional``, ``probe_bounds`` where the clipping bound is built,
+# the post-processing between ``noise_fn`` and the optimizer update, and a
+# sidecar checkpoint of the post-processing state.  With
+# ``--router-load-release off`` none of this code runs.
+
+_ROUTER_LOAD_MODES = ("off", "monitor", "surrogate", "monitor_then_surrogate")
+_ROUTER_LOAD_FILTER = {"kind": "ema", "beta": 0.99, "window": 256}
+_ROUTER_LOAD_DEAD_ZONE = 2.0
+
+
+def _validate_router_load_args(args) -> None:
+    """Reject configurations the router-load release does not cover."""
+    if args.router_load_release == "off":
+        return
+    if args.clipping_mode != "fixed":
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs --clipping-mode fixed: the probe "
+                "group is a constant structural bound and AUTO-S rescales every "
+                f"group (got --clipping-mode {args.clipping_mode!r}).",
+            )
+        )
+    if args.second_moment:
+        raise ConfigurationError(
+            *(
+                "--router-load-release is incompatible with --second-moment: the "
+                "squared stream of the probe would consume budget.",
+            )
+        )
+    if args.router_load_ratio <= 0:
+        raise ConfigurationError(
+            *(f"--router-load-ratio must be positive, got {args.router_load_ratio}.",)
+        )
+
+
+def _moe_geometry(model) -> tuple[int, int, int]:
+    """``(num_layers, num_experts, top_k)`` of the routed MoE layers of ``model``.
+
+    ``moe_load.resolve_moe_geometry`` counts the top-k router modules (the
+    number of router-logit tensors the backbone records per example) and
+    reads ``E`` / ``k`` off the config or the routers.
+    """
+    num_layers, num_experts, top_k, _config_alpha = moe_load.resolve_moe_geometry(model)
+    return num_layers, num_experts, top_k
+
+
+def _require_router_logits_forward(model) -> None:
+    """The chunked causal-LM forward must carry ``opaque_router_logits``.
+
+    The kwarg is detected as a named parameter only: HF forwards accept
+    ``**kwargs`` and would swallow the flag silently.
+    """
+    inner = model.base_model.model if hasattr(model, "peft_config") else model
+    params = inspect.signature(inner.forward).parameters
+    param = params.get("opaque_router_logits")
+    if param is None or param.kind is inspect.Parameter.VAR_KEYWORD:
+        raise ConfigurationError(
+            *(
+                "--router-load-release needs the chunked causal-LM forward with "
+                "the named ``opaque_router_logits`` parameter; apply_model_patches "
+                "did not install it for this family (it requires "
+                "fused_linear_cross_entropy=True on a supported MoE family).",
+            )
+        )
+
+
+def _resolve_router_aux_coef(args, config) -> float:
+    """Surrogate coefficient ``alpha``: ``0`` in monitor, else the CLI or config value."""
+    if args.router_load_release == "monitor":
+        return 0.0
+    if args.router_aux_loss_coef is not None:
+        return float(args.router_aux_loss_coef)
+    coef = getattr(config, "router_aux_loss_coef", None)
+    if coef is None:
+        raise ConfigurationError(
+            *(
+                "--router-aux-loss-coef is required: the model config carries no "
+                "router_aux_loss_coef.",
+            )
+        )
+    return float(coef)
+
+
+def _mean_tokens_of(dataset, fallback: float) -> float:
+    """Mean token count of a tokenized split (``fallback`` when empty)."""
+    lengths = [len(ids) for ids in dataset["input_ids"]] if len(dataset) else []
+    if not lengths:
+        return float(fallback)
+    return float(sum(lengths)) / float(len(lengths))
+
+
+def _load_router_load_state(path: str, template: RouterLoadState) -> RouterLoadState:
+    """Restore a sidecar and check it describes the same release as ``template``."""
+    loaded = from_state_dict(
+        template, torch.load(path, map_location="cpu", weights_only=True)
+    )
+    # Same rule as the trainer: the public constants and the filter factors
+    # must describe the release configured now (CheckpointError otherwise).
+    moe_load.check_resume_compatible(loaded, template)
+    return loaded
+
+
+def _probe_free_clip_rate(aux, clip_norm: PerGroup, batch_size: int) -> float:
+    """Mean per-group clip rate over the gradient groups (probe excluded)."""
+    rates = [
+        float((aux.group_norms[g] > clip_norm.values[g]).sum().item())
+        / max(1.0, float(batch_size))
+        for g in clip_norm.values
+        if g != PROBE_NAME
+    ]
+    return sum(rates) / len(rates) if rates else 0.0
+
+
+class _RouterLoadRun:
+    """Loop-side driver of the router-load release (seams 2 to 4).
+
+    Holds the public post-processing state, the closure tensor ``f_tilde``
+    that the per-example loss reads, the surrogate coefficient in force and
+    the sidecar path.  Every method is public post-processing of the noised
+    probe leaf; nothing here touches per-example data.
+    """
+
+    def __init__(
+        self,
+        *,
+        mode: str,
+        alpha: float,
+        trip: float,
+        lam: float,
+        state: RouterLoadState,
+        geometry: tuple[int, int, int],
+        mean_tokens: float,
+        device: torch.device,
+        state_path: str | None,
+        is_main_process: bool,
+    ) -> None:
+        self.mode = mode
+        self.alpha = float(alpha)
+        self.trip = float(trip)
+        self.lam = float(lam)
+        self.num_layers, self.num_experts, self.top_k = geometry
+        self.mean_tokens = float(mean_tokens)
+        self.state_path = state_path
+        self.is_main_process = is_main_process
+        self._template = state
+        self.state = state
+        self.target = state.f_tilde.to(device)
+        self._trip_streak = 0
+
+    @property
+    def alpha_active(self) -> float:
+        return self.state.alpha_active
+
+    def terms(self, loss, router_logits, attention_mask, params):
+        """Value-neutral per-example augmentation (runs inside the grad transform)."""
+        return moe_load.router_load_terms(
+            loss,
+            router_logits,
+            attention_mask,
+            params,
+            f_tilde=self.target,
+            alpha=self.state.alpha_active,
+            lam=self.lam,
+            top_k=self.top_k,
+            num_layers=self.num_layers,
+            num_experts=self.num_experts,
+            mean_tokens=self.mean_tokens,
+        )
+
+    def check_probe_zero(self, trainable) -> None:
+        """The probe is a public constant zero; any drift is a hard error."""
+        if int(torch.count_nonzero(trainable[PROBE_NAME])) != 0:
+            raise OperationError(
+                *(
+                    "router-load probe parameter drifted from zero: the optimizer "
+                    "update of the probe must be exactly zero.",
+                )
+            )
+
+    def consume(self, noisy_grads) -> None:
+        """Seam 3: read the noised probe leaf, post-process, zero the leaf."""
+        # The release rejects ``--second-moment`` (see
+        # ``_validate_router_load_args``), so the noise output is a plain
+        # ``NoisedPytree``.
+        leaf = noisy_grads.pytree[PROBE_NAME]
+        self.state = moe_load.update(self.state, leaf)
+        leaf.zero_()
+        self.target.copy_(self.state.f_tilde.to(self.target))
+
+    def metrics(self) -> dict[str, float]:
+        return moe_load.summary(self.state)
+
+    def on_eval(self) -> dict[str, float]:
+        """Trip rule at a logged evaluation, then the sidecar save.
+
+        ``moe_load.decide_trip`` (the rule the trainer applies): the monitor
+        of the shrunk estimate above ``trip`` on two consecutive evaluations
+        sets ``tripped``; in ``monitor_then_surrogate`` it also switches the
+        surrogate on.
+        """
+        was_tripped = self.state.tripped
+        self.state, self._trip_streak = moe_load.decide_trip(
+            self.state,
+            self._trip_streak,
+            trip=self.trip,
+            mode=self.mode,
+            alpha=self.alpha,
+        )
+        if self.state.tripped and not was_tripped and self.is_main_process:
+            print(
+                "  Router-load monitor tripped "
+                f"(D={moe_load.monitor_value(self.state):.3f} > {self.trip} twice); "
+                f"surrogate coefficient now {self.state.alpha_active:g}"
+            )
+        self.save()
+        return self.metrics()
+
+    def save(self) -> None:
+        if self.state_path and self.is_main_process:
+            torch.save(state_dict(self.state), self.state_path)
+
+    def restore(self) -> None:
+        """Seam 4: resume the post-processing state from the sidecar if present."""
+        if self.state_path and Path(self.state_path).exists():
+            self.state = _load_router_load_state(self.state_path, self._template)
+            self.target.copy_(self.state.f_tilde.to(self.target))
+            if self.is_main_process:
+                print(
+                    f"  Restored router-load state from {self.state_path} "
+                    f"(step {self.state.step}, tripped={self.state.tripped})"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -744,6 +1004,89 @@ def parse_args():
         "--momentum (SGD) or --beta1 (Adam). Ignored unless --mechanism bsr.",
     )
 
+    # MoE router-load release
+    moe_g = parser.add_argument_group(
+        "moe", "DP router-load release for mixture-of-experts models"
+    )
+    moe_g.add_argument(
+        "--router-load-release",
+        type=str,
+        choices=list(_ROUTER_LOAD_MODES),
+        default="off",
+        help="Release the per-expert router load through a zero probe parameter "
+        "clipped and noised jointly with the gradient (accounting unchanged; "
+        "gradient noise inflated by sqrt(1 + ratio)). 'monitor' only tracks the "
+        "public imbalance D; 'surrogate' also trains the load-balancing "
+        "surrogate at the released load; 'monitor_then_surrogate' switches the "
+        "surrogate on once D exceeds --router-load-trip on two consecutive "
+        "evaluations. Requires --clipping-mode fixed and no --second-moment; "
+        "the mechanism's noise operator must be the Toeplitz inverse of its "
+        "coefficients (band_mf, blt, bsr, identity, none; not lambda_cgd or bisr).",
+    )
+    moe_g.add_argument(
+        "--router-aux-loss-coef",
+        type=float,
+        default=None,
+        help="Surrogate coefficient alpha (default: the model config's "
+        "router_aux_loss_coef in the surrogate modes; 0 in monitor).",
+    )
+    moe_g.add_argument(
+        "--router-load-ratio",
+        type=float,
+        default=0.02,
+        help="Budget share rho = C_h / C_g of the probe group (default 0.02).",
+    )
+    moe_g.add_argument(
+        "--router-load-mean-tokens",
+        type=float,
+        default=None,
+        help="Public token-count constant T_bar of the per-example weight "
+        "w_x = T_x / T_bar (default: the mean tokenized length of the held-out "
+        "eval split, which the loop never trains on; the row length "
+        "--max-seq-len when that split is empty).",
+    )
+    moe_g.add_argument(
+        "--router-load-trip",
+        type=float,
+        default=0.5,
+        help="Imbalance threshold on D = max_e |d_e| / (k/E) of the estimate in "
+        "force; exceeded on two consecutive evaluations it sets the tripped "
+        "flag (default 0.5).",
+    )
+    moe_g.add_argument(
+        "--router-load-shrink",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply the dead zone and the James-Stein shrinkage before the "
+        "estimate enters the surrogate and the trip rule (default on; "
+        "--no-router-load-shrink evaluates the raw bias-corrected estimate).",
+    )
+    moe_g.add_argument(
+        "--router-load-state-path",
+        type=str,
+        default=None,
+        help="Sidecar file for the public post-processing state (RouterLoadState). "
+        "Written after every evaluation and at the end; restored at start when "
+        "the file exists and describes the same release configuration.",
+    )
+    moe_g.add_argument(
+        "--router-fp32",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Compute the router logits in fp32 (the precision Mellum 2 was "
+        "pretrained with; removes bf16 routing ties). Off by default.",
+    )
+    moe_g.add_argument(
+        "--packed-sequences",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Public packing flag for the attention mask policy: "
+        "--packed-sequences declares every row all-valid (fast attention path "
+        "without probing the batch); --no-packed-sequences always materialises "
+        "the mask so the kernel choice never depends on the batch content "
+        "(recommended for ragged data under DP). Default: probe the batch.",
+    )
+
     # Privacy
     priv_g = parser.add_argument_group("privacy")
     priv_g.add_argument("--target-epsilon", type=float, default=3.0)
@@ -894,8 +1237,15 @@ def parse_args():
         _set("mechanism", "band_mf")
         _set("band_mf_sampling", "b_min_sep")
         _set("lr_warmup_steps", 0)
+        # DP router-load release: train the load-balancing surrogate at the
+        # released load (alpha = 1e-4, rho = 0.02).  T_bar is measured on the
+        # held-out eval split (``--router-load-mean-tokens`` overrides).
+        _set("router_load_release", "surrogate")
+        _set("router_aux_loss_coef", 1e-4)
+        _set("router_load_ratio", 0.02)
 
     _require_configured(parser, args)
+    _validate_router_load_args(args)
 
     if args.microbatch_size == 0:
         args.microbatch_size = None
@@ -1064,11 +1414,39 @@ def main():
     # disables only the Triton speed kernels and fused linear-CE, while the
     # ``compat`` vmap-safety wrappers (the load-bearing MoE experts patch,
     # kv_cache, PEFT kernels) stay on.
-    if args.kernel_patches:
-        apply_model_patches(model, kernels=True, fused_linear_cross_entropy=True)
+    use_router_load = args.router_load_release != "off"
+    patch_kwargs = {"router_fp32": True} if args.router_fp32 else {}
+    if use_router_load:
+        # The release reads the router logits through the chunked causal-LM
+        # forward's ``opaque_router_logits`` parameter, which only exists with
+        # ``fused_linear_cross_entropy=True`` (also under --no-kernel-patches).
+        if not args.kernel_patches:
+            print(
+                "Kernel patches: DISABLED (chunked CE kept for the router-load release)"
+            )
+        apply_model_patches(
+            model,
+            kernels=args.kernel_patches,
+            fused_linear_cross_entropy=True,
+            **patch_kwargs,
+        )
+        _require_router_logits_forward(model)
+    elif args.kernel_patches:
+        apply_model_patches(
+            model, kernels=True, fused_linear_cross_entropy=True, **patch_kwargs
+        )
     else:
         print("Kernel patches: DISABLED (eager baseline; compat/MoE/PEFT stay on)")
-        apply_model_patches(model, kernels=False, fused_linear_cross_entropy=False)
+        apply_model_patches(
+            model, kernels=False, fused_linear_cross_entropy=False, **patch_kwargs
+        )
+    if args.packed_sequences is not None:
+        set_packed_sequences(args.packed_sequences)
+    elif use_router_load:
+        # Under the release the attention-kernel choice is derived from the
+        # public packing statement, never from the microbatch content: with
+        # no statement the mask is materialised on every microbatch.
+        set_packed_sequences(False)
     model.print_trainable_parameters()
     print_memory(device, "After LoRA")
 
@@ -1132,7 +1510,7 @@ def main():
     @empty_collate
     def collate(examples):
         batch = data_collator(examples)
-        return (batch["input_ids"].to(device),)
+        return (batch["input_ids"].to(device), batch["attention_mask"].to(device))
 
     global_train_size = len(train_dataset)
 
@@ -1349,6 +1727,13 @@ def main():
     # --- Functional conversion ---
     print("\nConverting to functional form...")
     t0 = time.time()
+    if use_router_load:
+        # Seam 1: the zero probe parameter must be in the trainable pytree, so
+        # it is registered before ``make_functional`` partitions the model.
+        moe_geometry = _moe_geometry(model)
+        moe_load.attach_probe(
+            model, num_layers=moe_geometry[0], num_experts=moe_geometry[1]
+        )
     fmodel, trainable_params, frozen_params = make_functional(
         model,
         disable_autograd_tracking=True,
@@ -1366,7 +1751,11 @@ def main():
     # every call, which Dynamo can't trace (torch.compile graph-breaks there).
     pad_token_id = tokenizer.pad_token_id
 
-    def per_example_loss_fn(trainable, input_ids):
+    # Filled in below (after the clipping bound is known) when the router-load
+    # release is on; the loss closure reads it at call time.
+    router_load: _RouterLoadRun | None = None
+
+    def per_example_loss_fn(trainable, input_ids, attention_mask):
         # Mask pad positions to ``-100`` so training CE scores only real
         # tokens — same masking contract the eval path uses and the same
         # convention DPTrainer's ``DataCollatorForLanguageModeling`` applies.
@@ -1374,8 +1763,22 @@ def main():
         # while DPTrainer trains on masked labels, producing systematically
         # different ``train/loss`` curves under identical DP math. ``vmap``-safe.
         labels = torch.where(input_ids == pad_token_id, -100, input_ids)
-        output = fmodel(merged_params(trainable), input_ids, labels=labels)
-        return output.loss
+        if router_load is None:
+            output = fmodel(merged_params(trainable), input_ids, labels=labels)
+            return output.loss
+        # Router-load release: the chunked forward hands back the per-layer
+        # router logits; the attention mask binarises the valid tokens.  The
+        # augmentation is value-neutral, so ``aux.loss_values`` stays the CE.
+        output = fmodel(
+            merged_params(trainable),
+            input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+            opaque_router_logits=True,
+        )
+        return router_load.terms(
+            output.loss, output.router_logits, attention_mask, trainable
+        )
 
     # Verified canary scoring: loss_scores builds the canary loader
     # internally and binds each score to its canary identifier.
@@ -1383,7 +1786,7 @@ def main():
         return auditing.loss_scores(
             per_example_loss_fn,
             params,
-            batch_argnums=(1,),
+            batch_argnums=(1, 2),
             coin_flip=audit_cf,
             dataset=audit_dataset,
             batch_size=args.audit_batch_size,
@@ -1411,7 +1814,7 @@ def main():
         """
         with torch.no_grad():
             total_loss, total_tokens = 0.0, 0
-            for (input_ids,) in eval_loader:
+            for input_ids, _attention_mask in eval_loader:
                 labels = input_ids.clone()
                 labels[labels == pad_token_id] = -100
                 output = fmodel(merged_params(trainable), input_ids, labels=labels)
@@ -1438,11 +1841,43 @@ def main():
     else:
         clip_norm = args.clipping_norm
 
+    router_load_lam = None
+    router_load_mean_tokens = None
+    if use_router_load:
+        # Seam 2: the probe becomes its own group of the clipping bound with
+        # the structural bound C_h = ratio * C_g * (1 + guard); the user's
+        # groups are compiled over the gradient leaves only.
+        router_load_mean_tokens = (
+            float(args.router_load_mean_tokens)
+            if args.router_load_mean_tokens is not None
+            else _mean_tokens_of(eval_dataset, fallback=args.max_seq_len)
+        )
+        user_clip = (
+            {**args.per_group_clipping, "fallback": args.per_group_clipping_fallback}
+            if args.per_group_clipping and args.per_group_clipping_fallback is not None
+            else (args.per_group_clipping or float(args.clipping_norm))
+        )
+        clip_norm, router_load_lam = moe_load.probe_bounds(
+            user_clip,
+            trainable_params,
+            ratio=args.router_load_ratio,
+            num_layers=moe_geometry[0],
+            num_experts=moe_geometry[1],
+            top_k=moe_geometry[2],
+            mean_tokens=router_load_mean_tokens,
+            max_tokens=float(args.max_seq_len),
+        )
+        print("\nClipping norms with the router-load probe group:")
+        for gname, val in clip_norm.values.items():
+            count = sum(1 for g in clip_norm.groups.values() if g == gname)
+            print(f"  {gname}: {val:.4f} ({count} params)")
+        print(f"  Effective (L2 of group bounds): {clip_norm.effective:.4f}")
+
     if args.clipping_mode == "auto":
         grad_fn, clip_state = auto_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=(1, 2),
             R=clip_norm,
             gamma=args.auto_gamma,
             normalize_by=args.batch_size,
@@ -1454,7 +1889,7 @@ def main():
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=(1, 2),
             clipping_norm=clip_norm,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
@@ -1762,6 +2197,60 @@ def main():
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
+    if use_router_load:
+        # Post-processing state: the filter factors follow the same noise
+        # operator ``C^{-1}`` the gradient sees (closed form for i.i.d. noise),
+        # and the per-step bound is the clipping bound over the expected batch.
+        router_load_alpha = _resolve_router_aux_coef(args, config)
+        filter_strategy = None if args.mechanism in ("identity", "none") else strategy
+        router_load_phi = moe_load.filter_factors(
+            filter_strategy,
+            n_steps=noise_n_steps,
+            kind=_ROUTER_LOAD_FILTER["kind"],
+            beta=_ROUTER_LOAD_FILTER["beta"],
+            window=_ROUTER_LOAD_FILTER["window"],
+            num_experts=moe_geometry[1],
+        )
+        per_step_bound = PerGroup(
+            clip_norm.groups,
+            {g: v / args.batch_size for g, v in clip_norm.values.items()},
+        )
+        router_load_state = moe_load.initial_state(
+            num_layers=moe_geometry[0],
+            num_experts=moe_geometry[1],
+            top_k=moe_geometry[2],
+            ratio=args.router_load_ratio,
+            lam=router_load_lam,
+            max_norm=per_step_bound,
+            noise_multiplier=noise_multiplier,
+            kind=_ROUTER_LOAD_FILTER["kind"],
+            beta=_ROUTER_LOAD_FILTER["beta"],
+            window=_ROUTER_LOAD_FILTER["window"],
+            dead_zone=_ROUTER_LOAD_DEAD_ZONE,
+            shrink=bool(args.router_load_shrink),
+            alpha=(
+                0.0
+                if args.router_load_release == "monitor_then_surrogate"
+                else router_load_alpha
+            ),
+            mean_tokens=router_load_mean_tokens,
+            max_tokens=float(args.max_seq_len),
+            phi=router_load_phi,
+        )
+        router_load = _RouterLoadRun(
+            mode=args.router_load_release,
+            alpha=router_load_alpha,
+            trip=args.router_load_trip,
+            lam=router_load_lam,
+            state=router_load_state,
+            geometry=moe_geometry,
+            mean_tokens=router_load_mean_tokens,
+            device=device,
+            state_path=args.router_load_state_path,
+            is_main_process=is_main_process,
+        )
+        router_load.restore()
+
     lr_callable = lr_schedule
 
     # ``noise_bias_correction`` is unsound under correlated MF noise: the
@@ -1938,6 +2427,41 @@ def main():
             f"correlated structure must compensate"
         )
     print(f"  Microbatch size: {args.microbatch_size}")
+    if router_load is not None:
+        num_layers, num_experts, top_k = moe_geometry
+        share = top_k / num_experts
+        s_inf = router_load.state.base_noise_std * float(router_load.state.phi[-1])
+        print("\nRouter-load release:")
+        print(
+            f"  Mode: {router_load.mode} (E={num_experts}, k={top_k}, L={num_layers})"
+        )
+        print(
+            f"  Surrogate coefficient: {router_load.alpha:g} "
+            f"(active now: {router_load.alpha_active:g}); trip D > {router_load.trip}"
+        )
+        print(
+            f"  Probe: rho={args.router_load_ratio}, lam={router_load.lam:.6g}, "
+            f"C_h={clip_norm.values[PROBE_NAME]:.6g}, "
+            f"T_bar={router_load.mean_tokens:.1f}, T_max={args.max_seq_len}"
+        )
+        print(
+            f"  Filter: {_ROUTER_LOAD_FILTER['kind']} "
+            f"(beta={_ROUTER_LOAD_FILTER['beta']}); dead zone c={_ROUTER_LOAD_DEAD_ZONE}; "
+            f"shrink={'on' if args.router_load_shrink else 'off'}"
+        )
+        print(
+            f"  Smoothed load noise s_inf={s_inf:.3e} ({s_inf / share:.3f} of k/E); "
+            f"dead-zone radius {(_ROUTER_LOAD_DEAD_ZONE * num_experts) ** 0.5 * s_inf:.3e}"
+        )
+        print(
+            "  Attention-mask policy: "
+            + (
+                "packed rows declared (SDPA fast path allowed)"
+                if packed_sequences()
+                else "mask materialised on every microbatch (kernel choice "
+                "derived from the public packing statement, not the batch)"
+            )
+        )
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
     elif args.mechanism == "blt":
@@ -2032,16 +2556,19 @@ def main():
             )
             print("-" * 80)
 
-        (input_ids,) = batch
+        input_ids, attention_mask = batch
         batch_size = len(input_ids)
 
         lr_t = float(lr_schedule(global_step))
 
         with tracker.train(batch_size=batch_size) as sp:
+            if router_load is not None:
+                router_load.check_probe_zero(trainable_params)
             with offload_ctx:
                 (grads, aux), clip_state = grad_fn(
                     trainable_params,
                     input_ids,
+                    attention_mask,
                     state=clip_state,
                 )
 
@@ -2059,6 +2586,13 @@ def main():
             sp.mark("clip")
 
             noisy_grads, noise_state = noise_fn(grads, noise_state)
+            if router_load is not None:
+                # Seam 3: the noised probe leaf is the only released quantity;
+                # its post-processing yields the next public f_tilde, and the
+                # leaf is zeroed so the optimizer update of the probe is zero.
+                # Rank-identical under DDP: the leaf was all-reduced with the
+                # gradient and the noise key is shared across ranks.
+                router_load.consume(noisy_grads)
             # All ranks generate identical noise from the same seed
             # (no rank-fold in the noise key) so the per-rank
             # ``noisy_grads`` already agree.  ``sync(noise_state)``
@@ -2088,7 +2622,25 @@ def main():
         # --- Step metrics ---
         avg_loss = aux.loss_values.mean().item()
         clip_rate = aux.clipping_rate
-        mean_grad_norm = aux.grad_norms.mean().item()
+        if router_load is not None:
+            # Per-group clipping reports no scalar rate; average the
+            # gradient groups' rates (the probe group never clips and is
+            # excluded).  Gradient norms over the gradient groups only: the
+            # probe's norm is a function of the example's routing and is
+            # never logged.
+            clip_rate = _probe_free_clip_rate(aux, clip_norm, batch_size)
+            probe_free_norms, probe_free_clipped = moe_load.telemetry_without_probe(
+                aux, clip_norm
+            )
+            mean_grad_norm = probe_free_norms.mean().item()
+            mean_clipped_grad_norm = probe_free_clipped.mean().item()
+        else:
+            mean_grad_norm = aux.grad_norms.mean().item()
+            mean_clipped_grad_norm = (
+                aux.clipped_grad_norms.mean().item()
+                if getattr(aux, "clipped_grad_norms", None) is not None
+                else 0.0
+            )
         losses.append(avg_loss)
         clip_rates.append(clip_rate)
         global_step += 1
@@ -2106,11 +2658,7 @@ def main():
                     ),
                     "train/clip_rate": clip_rate,
                     "train/grad_norm_mean": mean_grad_norm,
-                    "train/clipped_grad_norm_mean": (
-                        aux.clipped_grad_norms.mean().item()
-                        if getattr(aux, "clipped_grad_norms", None) is not None
-                        else 0.0
-                    ),
+                    "train/clipped_grad_norm_mean": mean_clipped_grad_norm,
                     "train/noise_std": (
                         step_noise_stddev.effective
                         if isinstance(step_noise_stddev, PerGroup)
@@ -2124,6 +2672,8 @@ def main():
                     and getattr(aux, "group_norms", None) is not None
                 ):
                     for gname in clip_norm.values:
+                        if router_load is not None and gname == PROBE_NAME:
+                            continue  # never log the probe's per-example norms
                         gn_bound = clip_norm.values[gname]
                         wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                         gnorms = aux.group_norms[gname]
@@ -2136,6 +2686,8 @@ def main():
                             wb_metrics[f"group/noise_std/{gname}"] = (
                                 step_noise_stddev.values[gname]
                             )
+                if router_load is not None:
+                    wb_metrics.update(router_load.metrics())
                 wandb.log(wb_metrics, step=global_step)
 
             last = tracker.train.last
@@ -2147,6 +2699,15 @@ def main():
                 f"LR: {lr_t:.2e} | "
                 f"Time: {last.step_time_sec:.2f}s | Mem: {last.memory_peak_gb:.1f}GB"
             )
+            if router_load is not None:
+                rl = router_load.metrics()
+                print(
+                    f"           router load: D={rl['router_load/D']:.3f} "
+                    f"D_layer_max={rl['router_load/D_layer_max']:.3f} "
+                    f"f=[{rl['router_load/f_min']:.4f}, {rl['router_load/f_max']:.4f}] "
+                    f"s_t={rl['router_load/noise_std']:.2e} "
+                    f"shrink={rl['router_load/shrink']:.2f}"
+                )
 
         # --- Eval ---
         if global_step % args.eval_steps == 0:
@@ -2157,6 +2718,10 @@ def main():
                 "eval/loss": current_eval_loss,
                 "privacy/epsilon": epsilon,
             }
+            if router_load is not None:
+                # Trip rule on the public monitor, then the sidecar save.
+                metrics.update(router_load.on_eval())
+                eval_msg += f", D={metrics['router_load/D']:.3f}"
             if args.audit and audit_cf is not None:
                 audit_estimate = run_audit(trainable_params)
                 if audit_estimate is not None:
@@ -2202,6 +2767,21 @@ def main():
         else:
             print(f"  Fixed norm: {clip_norm}")
         print(f"  Average clip rate: {sum(clip_rates) / len(clip_rates):.2%}")
+
+    if router_load is not None:
+        router_load.save()
+        rl = router_load.metrics()
+        print("\nRouter-load release:")
+        print(f"  Releases consumed: {router_load.state.step}")
+        print(
+            f"  Final D: {rl['router_load/D']:.3f} (layer max "
+            f"{rl['router_load/D_layer_max']:.3f}), tripped={router_load.state.tripped}"
+        )
+        print(
+            f"  f_tilde range: [{rl['router_load/f_min']:.4f}, "
+            f"{rl['router_load/f_max']:.4f}], entropy {rl['router_load/entropy']:.4f}"
+        )
+        print(f"  Surrogate coefficient in force: {router_load.alpha_active:g}")
 
     # Single-shot accounting
     if args.mechanism == "none":

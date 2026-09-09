@@ -123,6 +123,16 @@ $\sigma_i \propto \sqrt{C_i}$.  `gaussian_noise` applies the optimal
 allocation automatically when `grads.max_norm` is a `PerGroup`.  Privacy
 accounting is identical under either allocation — just `gaussian(nm)`.
 
+The allocation satisfies $\sum_i C_i^2 / \sigma_i^2 = 1 / \mathrm{nm}^2$
+with equality, which is what makes a joint release of the gradient and
+another clipped statistic one sensitivity-one Gaussian at multiplier
+$\mathrm{nm}$. The
+[MoE router-load release](../mechanisms/dp-sgd/moe-load-balancing.md) uses
+exactly this: a probe group with bound $C_h = \rho\, C_g$ receives
+$\sigma_h = \mathrm{nm}\, C_h \sqrt{1 + 1/\rho}$ while every gradient leaf
+receives $\sigma_g = \mathrm{nm}\, C_g \sqrt{1 + \rho}$, and the accountant
+stays `gaussian(nm)`.
+
 The [training script](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_dpsgd.py) uses this by default
 when per-group clipping is active.
 

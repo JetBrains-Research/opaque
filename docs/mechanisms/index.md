@@ -25,6 +25,11 @@ For bounded noise support, pass `bound=B` (or `bound=(low, high)`) to
 `gaussian_noise()` while accounting with `opaque.dpsgd.accounting.gaussian()`.
 See [Gaussian — Bounded noise variant](dp-sgd/gaussian.md#bounded-noise-variant).
 
+For mixture-of-experts models, [MoE load balancing](dp-sgd/moe-load-balancing.md)
+describes the DP release of the batch router load that rides on the
+gradient's per-group Gaussian or matrix mechanism at no change to the
+accountant.
+
 ## Correlated noise (DP-FTRL)
 
 Instead of independent noise at each step, matrix-factorization (MF)
