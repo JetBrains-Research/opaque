@@ -21,14 +21,16 @@ from typing import Any
 import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
+from opaque.distributed.collectives import all_reduce_ as _opaque_all_reduce_
 from opaque.distributed.collectives import barrier as _opaque_barrier
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, OperationError
 from transformers.utils import logging as _hf_logging
 
 __all__ = [
     "DDPState",
     "apply_logging",
     "barrier",
+    "checkpoint_barrier",
     "resolve_ddp_state",
     "should_log",
     "should_save",
@@ -227,3 +229,32 @@ def barrier(ddp: DDPState) -> None:
     """
     if ddp.is_distributed:
         _opaque_barrier()
+
+
+def checkpoint_barrier(ddp: DDPState, local_error: Exception | None) -> None:
+    """Synchronise one checkpoint-save stage, propagating failure to all ranks.
+
+    Every rank calls this once per stage, passing the exception it caught in
+    that stage (or ``None`` on success). If any rank failed, every rank
+    raises: the rank whose own segment failed re-raises ``local_error``,
+    every other rank raises :class:`OperationError`. Replaces plain
+    ``barrier()`` calls that let a saving-rank failure leave peers blocked
+    forever.
+    """
+    if not ddp.is_distributed:
+        if local_error is not None:
+            raise local_error
+        return
+    failed = torch.tensor(
+        [1 if local_error is not None else 0], dtype=torch.int64, device=ddp.device
+    )
+    _opaque_all_reduce_(failed, op="max")
+    if local_error is not None:
+        raise local_error
+    if int(failed.item()) > 0:
+        raise OperationError(
+            *(
+                "Checkpoint save failed on another rank; aborting on rank "
+                f"{ddp.rank} instead of waiting at the checkpoint barrier.",
+            )
+        )

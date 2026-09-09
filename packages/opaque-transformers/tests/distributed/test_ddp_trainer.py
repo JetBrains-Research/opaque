@@ -205,6 +205,23 @@ def test_vendor_backend_fails_fast_without_runtime(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_checkpoint_save_failure_propagates_to_all_ranks(tmp_path) -> None:
+    """Regression for issue #1002: a saving-rank ``on_save`` failure must not
+    leave the non-saving rank hanging at the checkpoint barrier. On the old
+    code, rank 1 hangs there and this times out; the scenario itself asserts
+    each rank sees the expected error and exits 0 once fixed.
+    """
+    _run_ddp(
+        "checkpoint_save_failure",
+        world_size=2,
+        output_dir=str(tmp_path),
+        backend="gloo",
+        timeout=60,
+    )
+
+
+@pytest.mark.slow
 def test_mpi_launcher_smoke_when_available() -> None:
     if not torch.distributed.is_mpi_available():
         pytest.skip("PyTorch was built without MPI backend support")

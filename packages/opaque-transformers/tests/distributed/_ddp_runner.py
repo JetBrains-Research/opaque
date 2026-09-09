@@ -30,6 +30,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
+from transformers.trainer_callback import TrainerCallback
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
@@ -482,6 +483,62 @@ def scenario_env_backend_diagnostic(
     raise AssertionError("Expected DPTrainer to fail fast for unavailable xccl runtime")
 
 
+def scenario_checkpoint_save_failure(
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
+) -> None:
+    """Regression for issue #1002: saving-rank failure must not hang peers.
+
+    An ``on_save`` callback raises only on the saving rank (rank 0). Each
+    rank asserts it saw the expected error and returns normally: the saving
+    rank sees its own error, every peer sees the propagated
+    ``OperationError`` instead of hanging at the checkpoint barrier.
+    """
+
+    class _RaiseOnSave(TrainerCallback):
+        def on_save(self, args, state, control, **kwargs):
+            raise RuntimeError("injected on_save failure (saving rank)")
+
+    cfg = TinyConfig()
+    model = TinyForCausalLM(cfg)
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        logging_steps=1,
+        save_steps=1,
+        save_strategy="steps",
+        report_to=[],
+        seed=7,
+        privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    ds = TinyDataset(n=8, seq_len=4, vocab=cfg.vocab_size)
+    trainer = DPTrainer(
+        model=model,
+        args=args,
+        train_dataset=ds,
+        data_collator=_collate,
+        callbacks=[_RaiseOnSave()],
+    )
+
+    try:
+        trainer.train()
+    except Exception as exc:
+        message = str(exc)
+    else:
+        raise AssertionError(
+            f"rank {rank}: expected the injected checkpoint-save failure to "
+            "propagate, but train() completed successfully"
+        )
+    expected = (
+        "injected on_save failure"
+        if rank == 0
+        else "Checkpoint save failed on another rank"
+    )
+    assert expected in message, message
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -496,6 +553,7 @@ SCENARIOS = {
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
+    "checkpoint_save_failure": scenario_checkpoint_save_failure,
 }
 
 
