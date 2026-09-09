@@ -59,11 +59,33 @@ class _EmptyCollator(Generic[T]):
     def __init__(self, collate_fn: Callable[..., T]) -> None:
         self._collate_fn = collate_fn
         self._template: T | None = None
-        # updated=() skips the default `__dict__` copy: without it,
-        # update_wrapper would merge collate_fn's (typically empty) instance
-        # dict into ours, risking non-pickleable attributes leaking onto the
-        # wrapper even when collate_fn itself pickles fine.
-        functools.update_wrapper(self, collate_fn, updated=())
+        self._update_wrapper_metadata()
+
+    def _update_wrapper_metadata(self) -> None:
+        # updated=() skips the default `__dict__` merge, and restricting
+        # assigned to plain string metadata skips `__annotations__` /
+        # `__type_params__`: both default `update_wrapper` behaviors would
+        # otherwise copy arbitrary (possibly non-pickleable) objects from
+        # collate_fn onto this instance's __dict__, and __getstate__ below
+        # only protects the two attributes it explicitly names.
+        functools.update_wrapper(
+            self,
+            self._collate_fn,
+            assigned=("__module__", "__name__", "__qualname__", "__doc__"),
+            updated=(),
+        )
+
+    def __getstate__(self) -> dict[str, object]:
+        # Pickle only the state needed to reconstruct behavior. This avoids
+        # ever depending on what update_wrapper happens to have copied onto
+        # the instance, so a collate_fn with a non-pickleable annotation or
+        # type parameter still leaves the wrapper itself pickleable.
+        return {"_collate_fn": self._collate_fn, "_template": self._template}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self._collate_fn = state["_collate_fn"]
+        self._template = state["_template"]
+        self._update_wrapper_metadata()
 
     def __call__(self, examples):
         if not examples:

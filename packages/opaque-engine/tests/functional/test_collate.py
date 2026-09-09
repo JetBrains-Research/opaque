@@ -15,6 +15,16 @@ def _stack_collate(examples):
     return torch.stack(examples)
 
 
+def _stack_collate_with_bad_annotation(examples: (lambda: None)):
+    """Module-level collator whose annotation value cannot itself be pickled.
+
+    ``functools.update_wrapper`` copies ``__annotations__`` by default, so a
+    collate function that is otherwise pickleable-by-reference can still
+    carry a non-pickleable object as an annotation value.
+    """
+    return torch.stack(examples)
+
+
 class TestEmptyLike:
     """Tests for the _empty_like helper."""
 
@@ -125,6 +135,22 @@ class TestPoissonCollate:
         restored = pickle.loads(pickle.dumps(wrapped))
 
         assert restored.__name__ == "_stack_collate"
+        assert restored([]).shape == (0, 2)
+
+    def test_pickles_with_non_pickleable_annotation(self):
+        """A collate_fn's non-pickleable annotation must not leak onto the wrapper.
+
+        ``functools.update_wrapper``'s default ``assigned``/``updated``
+        behavior would otherwise copy ``__annotations__`` (and merge
+        ``__dict__``) onto the wrapper instance, reintroducing the exact
+        pickling failure this wrapper exists to avoid.
+        """
+        wrapped = empty_collate(_stack_collate_with_bad_annotation)
+        wrapped([torch.tensor([1, 2]), torch.tensor([3, 4])])
+
+        restored = pickle.loads(pickle.dumps(wrapped))
+
+        assert restored.__name__ == "_stack_collate_with_bad_annotation"
         assert restored([]).shape == (0, 2)
 
     def test_template_captured_once(self):
