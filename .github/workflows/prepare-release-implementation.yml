@@ -270,8 +270,20 @@ jobs:
 
             if [[ "$status" == "completed" ]]; then
               if [[ "$conclusion" == "success" ]]; then
-                echo "CI (main) run $run_id succeeded for $TARGET_SHA; reusing its test coverage."
-                echo "test-validation=reused" >> "$GITHUB_OUTPUT"
+                mc_conclusion="$(
+                  gh api --paginate \
+                    "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
+                    --jq '.jobs[] | select(.name == "MC privacy regression / Monte Carlo privacy regression") | .conclusion' \
+                  | tail -n 1
+                )"
+                if [[ "$mc_conclusion" == "success" ]]; then
+                  echo "CI (main) run $run_id succeeded for $TARGET_SHA with MC coverage."
+                  echo "test-validation=reused" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+
+                echo "::notice::CI (main) run $run_id has no successful MC privacy regression; release tests will run."
+                echo "test-validation=run" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
 
@@ -288,6 +300,16 @@ jobs:
             sleep 30
           done
 
+  mc-privacy-regression:
+    name: Release MC privacy regression
+    needs: [plan, main-ci-status]
+    if: needs.main-ci-status.outputs.test-validation == 'run'
+    permissions:
+      contents: read
+    uses: JetBrains-Research/opaque/.github/workflows/mc-privacy-regression.yml@main
+    with:
+      checkout-ref: ${{ needs.plan.outputs.target_sha }}
+
   python-tests-linux-amd64:
     name: Release Linux amd64
     needs: [plan, main-ci-status]
@@ -298,7 +320,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-amd64
-      pytest-marker: not cuda and not mps and not distributed
+      pytest-marker: not cuda and not mps and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
@@ -365,7 +387,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: mps
-      pytest-marker: not cuda and not distributed
+      pytest-marker: not cuda and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
@@ -381,7 +403,7 @@ jobs:
     with:
       checkout-ref: ${{ needs.plan.outputs.target_sha }}
       environment-name: linux-aarch64
-      pytest-marker: not cuda and not mps and not distributed
+      pytest-marker: not cuda and not mps and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
@@ -489,6 +511,7 @@ jobs:
       - python-tests-cuda
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
+      - mc-privacy-regression
       - release-rust-tests
     runs-on: ubuntu-latest
     steps:

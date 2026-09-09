@@ -20,15 +20,20 @@ jobs:
   # ---------------------------------------------------------------------------
   # Python tests
   #
-  # Main repeats every PR environment and includes slow tests in platform lanes.
-  # Every environment gates distribution publishing.
+  # Main repeats every PR environment and includes general slow tests in platform
+  # lanes. Monte Carlo vectors have one canonical lane. Every environment gates
+  # distribution publishing.
   # ---------------------------------------------------------------------------
+  mc-privacy-regression:
+    name: MC privacy regression
+    uses: ./.github/workflows/mc-privacy-regression.yml
+
   python-tests-linux-amd64:
     name: Linux amd64 (locked)
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-amd64
-      pytest-marker: not cuda and not mps and not distributed
+      pytest-marker: not cuda and not mps and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-latest
@@ -76,7 +81,7 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: mps
-      pytest-marker: not cuda and not distributed
+      pytest-marker: not cuda and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: macos-latest
@@ -87,7 +92,7 @@ jobs:
     uses: ./.github/workflows/python-tests.yml
     with:
       environment-name: linux-aarch64
-      pytest-marker: not cuda and not mps and not distributed
+      pytest-marker: not cuda and not mps and not distributed and not mc_regression
       pytest-xdist: -n auto --dist loadscope
       report-durations: true
       runner: ubuntu-24.04-arm
@@ -211,6 +216,7 @@ jobs:
       - python-tests-cuda
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
+      - mc-privacy-regression
       - rust-tests
     runs-on: ubuntu-latest
     environment: release

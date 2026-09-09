@@ -140,3 +140,21 @@ def test_large_derived_mc_work_emits_advisory_warning(monkeypatch):
 
     with pytest.warns(RuntimeWarning, match="1,236 samples"):
         config.warn_if_large_mc()
+
+
+def test_epsilon_at_tightens_mc_resolution_to_half_delta(monkeypatch):
+    import opaque.accounting as acc
+
+    process = acc.eps_delta(1.0)
+    original_pld = type(process).pld
+    observed_resolutions = []
+
+    def recording_pld(self, **kwargs):
+        observed_resolutions.append(kwargs["mc_resolution"])
+        return original_pld(self, **kwargs)
+
+    monkeypatch.setattr(type(process), "pld", recording_pld)
+
+    process.epsilon_at(2e-4, mc_resolution=1e-2)
+
+    assert observed_resolutions == [1e-4]

@@ -100,7 +100,8 @@ downloadable workflow artifacts on the run page (14-day retention).
 uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
 uv sync --group examples --all-packages --extra all  # examples and all package extras
 uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
-uv run pytest -m "slow"                           # slow tests (run on push to main)
+uv run pytest -m "slow and not mc_regression"     # general slow tests
+uv run pytest -m "mc_regression" packages/opaque-dpftrl/tests/accounting/test_mc_privacy_regression.py
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
@@ -225,15 +226,16 @@ no dedicated regression test when neither is available.
 
 ### Test markers
 
-Four orthogonal markers, declared in the root `pyproject.toml`:
+Five markers are declared in the root `pyproject.toml`:
 
 - `cuda` — test needs CUDA; auto-skipped on non-CUDA hosts.
 - `mps` — test needs Apple Metal; auto-skipped on non-MPS hosts.
-- `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
-  and run on pushes to `main` (the CI job strips the `and not slow`
-  clause conditionally).
+- `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`) and
+  selected by the general locked lanes on `main` and during release validation.
 - `distributed` — test launches multiple CPU/Gloo ranks; selected by the
   dedicated Linux distributed lane rather than general platform lanes.
+- `mc_regression` — fixed-seed Monte Carlo privacy vectors; selected by a
+  dedicated serial Linux lane and excluded from the general platform matrix.
 
 Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
 unit/doc-test set; main and release additionally run the ignored library tests.
@@ -254,12 +256,15 @@ CI lane marker expressions:
 - PR CUDA locked (self-hosted): `-m "cuda and not slow"`.
 - PR CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
   `-m "cuda and not slow"`.
-- Main Linux amd64 (locked): `-m "not cuda and not mps and not distributed"`.
+- Main Linux amd64 (locked):
+  `-m "not cuda and not mps and not distributed and not mc_regression"`.
 - Main Linux amd64 (distributed): `-m "distributed and not cuda"`.
 - Main Linux amd64 dependency boundaries (Python 3.11/3.13):
   `-m "not cuda and not mps and not slow and not distributed"`.
-- Main macOS arm64: `-m "not cuda and not distributed"`.
-- Main Linux arm64: `-m "not cuda and not mps and not distributed"`.
+- Main macOS arm64:
+  `-m "not cuda and not distributed and not mc_regression"`.
+- Main Linux arm64:
+  `-m "not cuda and not mps and not distributed and not mc_regression"`.
 - Main CUDA locked (self-hosted): `-m "cuda"`.
 - Main CUDA dependency boundaries (self-hosted, Python 3.11/3.13):
   `-m "cuda and not slow"`.
@@ -267,6 +272,8 @@ CI lane marker expressions:
   `highest` strategies. Main platform lanes retain slow-test coverage.
   Failures in the Minimum dependencies lane are currently advisory, while
   setup and resolution failures remain blocking.
+- PR, main, and release validation also invoke the dedicated
+  `mc_regression` workflow on locked Linux amd64.
 
 ### Supported HF model families
 

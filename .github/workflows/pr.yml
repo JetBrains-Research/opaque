@@ -63,6 +63,10 @@ jobs:
   # tests stay on main except for the reviewed CPU/Gloo distributed selection;
   # supported dependency and platform boundaries remain pre-merge.
   # ---------------------------------------------------------------------------
+  mc-privacy-regression:
+    name: MC privacy regression
+    uses: ./.github/workflows/mc-privacy-regression.yml
+
   python-tests-linux-amd64:
     name: Linux amd64 (locked)
     uses: ./.github/workflows/python-tests.yml
@@ -200,6 +204,7 @@ jobs:
       - python-tests-cuda
       - python-tests-cuda-minimum
       - python-tests-cuda-latest
+      - mc-privacy-regression
     runs-on: ubuntu-latest
     steps:
       - name: Verify test results
