@@ -5099,6 +5099,25 @@ class DPTrainer:
             if ctx.current_sampler is not None
             else None
         )
+        # ``dataloader_num_workers > 0`` makes ``_MultiProcessingDataLoaderIter``
+        # eagerly draw up to ``prefetch_factor * num_workers`` indices from the
+        # sampler (in the main process, to fill its prefetch queue) before the
+        # training loop's ``next(train_loader_iter)`` returns a batch to it —
+        # every registered sampler bumps its ``consumed`` cursor the instant its
+        # iterator yields, so the live cursor races ahead of the batches the
+        # trainer has actually consumed.  ``global_step`` increments exactly
+        # once per batch the training loop pulls (see
+        # ``_inner_training_loop``), so it is that count.  Clamp the
+        # checkpointed cursor to it — never persisting more than the trainer
+        # itself has consumed — so restore always replays the same allocation
+        # the accountant charged for, independent of prefetch depth.
+        if sampler_state is not None and "consumed" in sampler_state:
+            sampler_state = {
+                **sampler_state,
+                "consumed": min(
+                    int(sampler_state["consumed"]), int(self.state.global_step)
+                ),
+            }
 
         if ctx.mf is not None:
             _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)

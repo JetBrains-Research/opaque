@@ -1651,6 +1651,83 @@ class TestDPTrainerCheckpointing:
                 f"LR mismatch at global_step={step}: chained={got}, continuous={exp}"
             )
 
+    def test_dataloader_prefetch_checkpoints_trainer_consumed_not_sampler_cursor(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """#791: ``dataloader_num_workers>0`` prefetch must not leak into the
+        checkpointed sampler cursor.
+
+        ``_MultiProcessingDataLoaderIter`` eagerly draws
+        ``prefetch_factor * num_workers`` indices from the ``batch_sampler``
+        (in the main process) to fill its queue before the training loop
+        ever calls ``next(train_loader_iter)``, and every registered sampler
+        bumps its ``consumed`` cursor the instant its iterator yields — so
+        the live sampler races ahead of ``global_step``.  With
+        ``max_steps=6`` and a lead of ``prefetch_factor * num_workers=4``,
+        the sampler is already exhausted (``consumed=6``) by the first save
+        at ``global_step=2``, well before the trainer has actually consumed
+        6 batches.  The checkpointed cursor must equal what the trainer
+        consumed (``global_step``), not the prefetch-inflated live value.
+        """
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        model, tokenizer = gpt2_with_lora
+        live_consumed_at_save: list[int] = []
+
+        class _CaptureLiveSamplerCursor(_HFTrainerCallback):
+            def on_save(self, args, state, control, **kwargs):
+                live_consumed_at_save.append(trainer._ctx.current_sampler.consumed)
+
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                # "fork" avoids macOS's "spawn" default failing to pickle
+                # the trainer's collate-fn closure across the process
+                # boundary; irrelevant to the cursor bug under test.
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[_CaptureLiveSamplerCursor()],
+        )
+        trainer.train()
+
+        # Sanity: prefetch actually raced ahead of global_step=2 at the
+        # first save — otherwise this test would not exercise the bug.
+        assert live_consumed_at_save[0] > 2
+
+        payload = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-2" / ckpt.DP_STATE_NAME)
+        )
+        assert payload.sampler_state["consumed"] == 2
+
+        # End-to-end: resuming from checkpoint-2 restores the sampler at
+        # exactly global_step=2 (not the prefetch-advanced cursor) and
+        # training continues to completion in lockstep with the accountant.
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+        assert out2.global_step == 6
+
     def test_resume_continues_global_step(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
