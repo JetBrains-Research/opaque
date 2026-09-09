@@ -196,14 +196,7 @@ def test_gloo_gather_fastpath_and_fallback() -> None:
 @pytest.mark.slow
 @pytest.mark.distributed
 def test_gloo_push_to_hub_does_not_deadlock(tmp_path) -> None:
-    """Regression for #1004: rank zero must not hang in save_model's barrier.
-
-    Bounded to 60s (well under the suite's 240s default): on the pre-fix
-    code rank zero hangs forever in the collective barrier while rank one
-    has already returned from the rank-gated `push_to_hub`, so this test
-    reliably times out on the old deadlock and completes quickly once
-    `save_model`'s internal-call path skips the barrier.
-    """
+    """Regression for #1004: rank zero must not hang in save_model's barrier."""
     _run_ddp(
         "push_to_hub_no_deadlock",
         world_size=2,

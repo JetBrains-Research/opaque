@@ -454,19 +454,7 @@ def scenario_gather_paths(rank: int, world_size: int, **_) -> None:
 def scenario_push_to_hub_no_deadlock(
     rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
 ) -> None:
-    """Regression for issue #1004: ``push_to_hub`` must not deadlock DDP.
-
-    ``push_to_hub`` is rank-gated (non-zero ranks return immediately), while
-    ``save_model``'s collective barrier used to run unconditionally — so
-    rank zero blocked in that barrier waiting for peers that had already
-    returned. This scenario never calls a synchronizing collective after
-    ``train()`` returns: on the pre-fix code, rank zero hangs inside
-    ``save_model``'s barrier while rank one exits immediately, and the test
-    harness's bounded subprocess timeout turns that hang into a test
-    failure. On the fix, rank zero's internal ``save_model`` call skips the
-    barrier (it is already the sole, rank-gated caller), so both ranks
-    return promptly and only rank zero publishes.
-    """
+    """Regression for #1004: rank-gated ``push_to_hub`` must not deadlock DDP."""
     from unittest.mock import MagicMock
     from unittest.mock import patch as mock_patch
 
@@ -503,11 +491,6 @@ def scenario_push_to_hub_no_deadlock(
         trainer = DPTrainer(
             model=model, args=args, train_dataset=ds, data_collator=_collate
         )
-        # No barrier before or after `train()`: the point of this scenario
-        # is that the *old* deadlock (rank zero stuck in `save_model`'s
-        # barrier while rank one already returned from `push_to_hub`) is
-        # caught by the harness's per-rank subprocess timeout, not masked
-        # by an incidental collective both ranks happen to reach.
         trainer.train()
 
     if rank == 0:
