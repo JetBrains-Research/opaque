@@ -35,9 +35,9 @@ The accounting API is split into three namespaces:
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
 | `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t` | `from opaque.dpsgd import accounting as dpsgd_acc` |
-| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanism: `mf_gaussian`; whole-horizon amplification: `poisson`, `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
-The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
+The mechanism factories (`gaussian`, `mf_gaussian`, `poisson`, …) live **only** on
 the algorithm-scoped namespaces — use the namespace that matches your training
 run. Cross-cutting primitives (`Accountant`, `calibrate`, `epsilon_budget`,
 composition operators) live on `opaque.accounting`.
@@ -52,7 +52,7 @@ from opaque.dpftrl import accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -345,7 +345,7 @@ training = step * num_steps
 
 # DP-FTRL with BandMF: same chain as first-moment-only
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=batch_size / dataset_size,
     n_steps=num_steps,
 )
@@ -353,7 +353,7 @@ proc = dpftrl_acc.poisson(
 
 There is no separate `second_moment` transformation to wrap and no `ρ` knob:
 the runtime σ on each stream already absorbs the joint cost. Use the
-underlying mechanism factories (`dpsgd_acc.gaussian`, `dpftrl_acc.band_mf`,
+underlying mechanism factories (`dpsgd_acc.gaussian`, `dpftrl_acc.mf_gaussian`,
 …) directly.
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
@@ -390,62 +390,72 @@ training = step * 1000
 
 ## Matrix factorization mechanisms
 
-MF mechanisms take pre-computed `sensitivity` and `gram_matrix` values from the
-corresponding noise **strategy** (e.g. `band_mf_strategy()`, `blt_strategy()`).
-The strategy is the single source of truth for these quantities — never hardcode
-them. This keeps noise generation and accounting in sync.
+MF accounting uses the same strategy recipe as runtime noise (for example,
+`band_mf_strategy()` or `blt_strategy()`). A bare process must also declare its
+complete participation context. An amplification wrapper derives that context
+from its own parameters, so pass `n_steps=1` to its inner mechanism.
 
-All MF constructors return a `DpProcess` that composes with standard operators.
+### `mf_gaussian(noise_multiplier, strategy, *, n_steps, min_sep=1, max_participations=None) -> DpProcess`
 
-### `band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess`
-
-BandMF mechanism for Poisson and b-min-sep amplification. Takes
-`sensitivity` and `coefficients` from a `band_mf_strategy()`. The
-band-width is `len(coefficients)`; `coefficients` must be non-empty.
+Builds a matrix-factorization Gaussian process. For bare accounting, one
+Gaussian PLD represents the complete declared horizon.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
-- `coefficients` (tuple of float values): From `strategy.coefficients`.
+- `strategy`: A strategy recipe from `opaque.dpftrl.noise`.
+- `n_steps` (int): Number of steps in the bare horizon.
+- `min_sep` (int): Minimum separation between participations.
+- `max_participations` (int or `None`): Participation upper bound; `None`
+  means `n_steps`.
+
+Use bare BandMF only when each protected unit participates at most once. Use an
+amplification wrapper for repeated sampling.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+proc = dpftrl_acc.mf_gaussian(
+    1.0,
+    strategy,
+    n_steps=1000,
+    min_sep=1,
+    max_participations=1,
+)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `blt(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
-
-BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
-`gram_matrix` from a `blt_strategy()`.
-
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Build via `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)` — the strategy owns
-sensitivity, Gram matrix, coefficients, min_sep, and max_participations:
+The strategy owns the matrix recipe; the bare `mf_gaussian` call supplies the
+participation context used to resolve it:
 
 ```python
 from opaque.dpftrl.noise import blt_strategy
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified — single-Gaussian PLD
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified — one PLD for the complete five-participation horizon
+proc = dpftrl_acc.mf_gaussian(
+    1.0,
+    strategy,
+    n_steps=5000,
+    min_sep=1000,
+    max_participations=5,
+)
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=1000, n_steps=5000,
 )
 ```
 
-The same `as_mechanism` API works for `lambda_cgd_strategy`,
+The same `mf_gaussian` factory works for `lambda_cgd_strategy`,
 `bisr_strategy`, and `bsr_strategy`:
 
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 ```
@@ -454,18 +464,18 @@ proc = dpftrl_acc.balls_in_bins(
 
 Poisson amplification for DP-FTRL. Whole-process accountant covering all
 `n_steps` training rounds (do **not** compose with `* num_steps`
-externally). Cyclic when the inner is `BandMf` with `bands > 1` (decomposes
+externally). Cyclic when the inner uses BandMF with `bands > 1` (decomposes
 into `ceil(n_steps / bands)` independent groups); plain Poisson per round
-when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
+for the identity strategy or BandMF with `bands == 1`.
 
-- `inner` (BandMf | IdentityMf): MF mechanism.
+- `inner` (MfGaussian): MF mechanism using a BandMF or identity strategy.
 - `sample_rate` (float): Poisson sampling probability per round.
 - `n_steps` (int, keyword-only): Total number of training rounds.
 
 ```python
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -475,8 +485,8 @@ proc = dpftrl_acc.poisson(
 
 Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
 Uses Monte Carlo PLD accounting. `inner` must be
-`mf_gaussian(nm, BandMfStrategy(...))` — strategy coefficients and band width
-are read from `inner.strategy`. `p0` is the per-example participation rate per
+`mf_gaussian(nm, BandMfStrategy(...), n_steps=1)` — strategy coefficients and
+band width are read from `inner.strategy`. `p0` is the per-example participation rate per
 iteration `E[|B|]/|D|` (match the training sampler’s target batch size).
 Control the confidence construction per query with `mc_resolution`,
 `mc_failure_probability`, and `seed`, or module-wide via `set_discretization`.
@@ -502,7 +512,7 @@ random allocation at `σ / √num_epochs` and the PLD is computed by the exact
 transform — deterministic, no sampling. For correlated-noise strategies
 (DP-λCGD, BISR, BSR, BLT) it uses Monte Carlo sampling of the dominating pair.
 
-- `inner` (MfGaussian): `dpftrl_acc.mf_gaussian(nm, strategy)`.
+- `inner` (MfGaussian): `dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1)`.
 - `num_bins` (int): Number of bins per epoch (typically `dataset_size / batch_size`).
 - `n_steps` (int): Total training rounds; must be a multiple of `num_bins`.
 
@@ -510,13 +520,13 @@ transform — deterministic, no sampling. For correlated-noise strategies
 # With DP-λCGD
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 
 # With uncorrelated MF noise (analytic identity-strategy path)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.1, identity_strategy()),
+    dpftrl_acc.mf_gaussian(1.1, identity_strategy(), n_steps=1),
     num_bins=100,
     n_steps=1000,
 )

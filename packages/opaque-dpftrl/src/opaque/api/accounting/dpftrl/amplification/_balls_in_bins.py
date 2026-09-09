@@ -93,7 +93,7 @@ class BallsInBins(DpHorizonProcess):
     Example (DP-λCGD)::
 
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(nm, strategy),
+            ftrl_acc.mf_gaussian(nm, strategy, n_steps=1),
             num_bins=steps_per_epoch,
             n_steps=steps_per_epoch * num_epochs,
         )
@@ -248,8 +248,8 @@ def balls_in_bins(
     must divide evenly.
 
     Args:
-        inner: ``mf_gaussian(nm, strategy)`` where ``strategy`` is one of
-            ``BltStrategy``, ``BsrStrategy``, ``BisrStrategy``,
+        inner: ``mf_gaussian(nm, strategy, n_steps=1)`` where ``strategy`` is
+            one of ``BltStrategy``, ``BsrStrategy``, ``BisrStrategy``,
             ``LambdaCgdStrategy`` (correlated MF) or ``IdentityStrategy``
             (uncorrelated baseline).
         num_bins: Bins per epoch (k ≥ 2).
@@ -264,15 +264,15 @@ def balls_in_bins(
         from opaque.dpftrl.noise import blt_strategy, identity_strategy
 
         # Correlated MF
-        s = blt_strategy(n_steps=1000, min_sep=100, max_participations=10)
+        s = blt_strategy()
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=100, n_steps=1000,
         )
 
         # Identity baseline
         training = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
             num_bins=100, n_steps=1000,
         )
         eps = training.epsilon_at(1e-5)

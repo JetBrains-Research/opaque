@@ -15,20 +15,16 @@ Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS 
 
 ```python
 from opaque.dpftrl.noise import bsr_strategy
-import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 strategy = bsr_strategy(
     bandwidth=8,
-    n_steps=total_steps,
-    min_sep=steps_per_epoch,
-    max_participations=num_epochs,
     alpha=1.0,
     beta=0.95,
 )
 
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy, n_steps=1),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -40,9 +36,6 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `bandwidth` | Bandwidth \(p\) (≥ 1). Coefficients \(c_j\) for \(j \ge p\) are zero. |
-| `n_steps` | Total training steps |
-| `min_sep` | Minimum separation between participations (typically steps per epoch) |
-| `max_participations` | Maximum number of participations per user (epochs) |
 | `alpha` | Paper \(\alpha \in (0, 1]\) |
 | `beta` | Paper \(\beta \in [0, 1)\); must satisfy \(\alpha > \beta\) |
 
@@ -51,8 +44,8 @@ eps = training.epsilon_at(1e-5)
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise \(\sigma\) |
-| `sensitivity` | From `strategy.sensitivity(n_steps=...)` |
-| `gram_matrix` | From `strategy.gram_matrix` for BnB Monte Carlo |
+| `num_bins` | Steps per epoch; determines the participation separation |
+| `n_steps` | Total training steps; determines the participation count |
 
 ## Noise generation
 

@@ -57,7 +57,7 @@ class TestBsrPld:
 
     def test_bsr_bnb(self):
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, _bsr()),
+            ftrl_acc.mf_gaussian(1.0, _bsr(), n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(

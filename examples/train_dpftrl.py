@@ -1613,7 +1613,7 @@ def main():
     if args.mechanism == "band_mf" and strategy is not None:
 
         def acct_mechanism(nm):
-            mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
+            mechanism = dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1)
             if args.band_mf_sampling == "poisson":
                 return dpftrl_acc.poisson(
                     mechanism,
@@ -1640,7 +1640,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.balls_in_bins(
-                dpftrl_acc.mf_gaussian(nm, strategy),
+                dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1),
                 num_bins=expected_steps_per_epoch,
                 n_steps=total_steps,
             )
@@ -1648,7 +1648,7 @@ def main():
 
         def acct_mechanism(nm):
             return dpftrl_acc.poisson(
-                dpftrl_acc.mf_gaussian(nm, identity_strategy()),
+                dpftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
                 sample_rate=sample_rate,
                 n_steps=total_steps,
                 truncated_batch_size=args.truncated_batch_size,
@@ -1856,7 +1856,7 @@ def main():
 
             def identity_acct(nm):
                 return dpftrl_acc.poisson(
-                    dpftrl_acc.mf_gaussian(nm, identity_strategy()),
+                    dpftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
                     sample_rate=sample_rate,
                     n_steps=total_steps,
                 )

@@ -70,7 +70,7 @@ jobs:
 
           dpsgd_process = dpsgd.gaussian(1.0)
           dpftrl_process = dpftrl.poisson(
-              dpftrl.mf_gaussian(1.0, identity_strategy()),
+              dpftrl.mf_gaussian(1.0, identity_strategy(), n_steps=1),
               sample_rate=0.01,
               n_steps=4,
           )

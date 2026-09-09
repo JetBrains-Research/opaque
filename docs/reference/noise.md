@@ -90,8 +90,8 @@ So the paired release has **the same PLD as a single sensitivity-1
 Gaussian release at the joint effective multiplier** passed to
 `paired_noise_stddevs` (see its docstring: no-op for DP-SGD; divide by
 `‖C₁‖` for DP-FTRL). Accounting is plain `gaussian(nm)` for DP-SGD and the
-underlying `mf_gaussian(nm, …)` for DP-FTRL; there is no separate
-transformation wrapper and no `ρ` knob.
+underlying `mf_gaussian(nm, strategy, n_steps=...)` for DP-FTRL; there is no
+separate transformation wrapper and no `ρ` knob.
 
 `mf_gaussian_noise` accepts scalar or `PerGroup` `max_norm` on `ClippedPytree`
 inputs. Single-stream IID stddevs for `PerGroup` bounds match the

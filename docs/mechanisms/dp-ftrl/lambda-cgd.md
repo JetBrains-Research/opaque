@@ -23,7 +23,6 @@ mechanism parameters in two places.
 
 ```python
 from opaque.dpftrl.noise import lambda_cgd_strategy
-import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 
 # 1. Create a strategy recipe
@@ -31,7 +30,7 @@ strategy = lambda_cgd_strategy(lambda_=0.9)
 
 # 2. The amplifier supplies n_steps and the participation geometry
 training = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy, n_steps=1),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )

@@ -140,7 +140,7 @@ def build_amplifier_factory(
             _ds: int = dataset_size,
         ) -> Any:
             return _ftrl_poisson(
-                mf_gaussian(nm, _s),
+                mf_gaussian(nm, _s, n_steps=1),
                 sample_rate=_sr,
                 n_steps=_ns,
                 truncated_batch_size=_tb,
@@ -155,7 +155,7 @@ def build_amplifier_factory(
             _ns: int = n_steps,
             _p0: float = sample_rate,
         ) -> Any:
-            return _ftrl_b_min_sep(mf_gaussian(nm, _s), n_steps=_ns, p0=_p0)
+            return _ftrl_b_min_sep(mf_gaussian(nm, _s, n_steps=1), n_steps=_ns, p0=_p0)
 
     elif sampling_mode == "balls_in_bins":
 
@@ -165,7 +165,9 @@ def build_amplifier_factory(
             _nb: int = num_bins,
             _ns: int = n_steps,
         ) -> Any:
-            return _ftrl_balls_in_bins(mf_gaussian(nm, _s), num_bins=_nb, n_steps=_ns)
+            return _ftrl_balls_in_bins(
+                mf_gaussian(nm, _s, n_steps=1), num_bins=_nb, n_steps=_ns
+            )
 
     else:
         raise ConfigurationError(

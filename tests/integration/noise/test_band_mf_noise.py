@@ -66,7 +66,7 @@ class TestBandMfPld:
         sample_rate = 0.05
 
         eps_new = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             sample_rate=sample_rate,
             n_steps=_N_STEPS,
         ).epsilon_at(self.delta)

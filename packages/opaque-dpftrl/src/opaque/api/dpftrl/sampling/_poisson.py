@@ -8,9 +8,9 @@ correlated MF noise (e.g. BandMF).
 
 If ``bands == 1`` there is a single group covering the whole dataset, so every
 step is ordinary Poisson subsampling — use this with ``identity_strategy()``
-inside ``ftrl_acc.mf_gaussian(nm, identity_strategy())`` and
+inside ``ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1)`` and
 ``ftrl_acc.poisson(...)``.  If ``bands > 1``, set ``bands`` to match the
-strategy you wrap in ``ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=...))``.
+strategy wrapped by ``ftrl_acc.mf_gaussian(..., n_steps=1)``.
 
 Optional ``truncated_batch_size`` caps the realised per-step batch.  Pair with
 ``ftrl_acc.poisson(..., truncated_batch_size=, dataset_size=)`` so the

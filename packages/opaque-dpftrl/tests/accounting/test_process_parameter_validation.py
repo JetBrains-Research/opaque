@@ -15,16 +15,16 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
 )
 from opaque.dpftrl.noise.types import BandMfStrategy, BltStrategy, BsrStrategy
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError, InputTypeError
 from opaque.serialization import from_state_dict, state_dict
 
 
 def _band_mf(nm: float = 1.0) -> MfGaussian:
-    return ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=2))
+    return ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=2), n_steps=1)
 
 
 def _identity_mf(nm: float = 1.0) -> MfGaussian:
-    return ftrl_acc.mf_gaussian(nm, identity_strategy())
+    return ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1)
 
 
 class TestStrategyRecipeValidation:
@@ -65,7 +65,7 @@ class TestStrategyRecipeValidation:
             lambda_cgd_strategy(lambda_=1.0)
 
     def test_tampered_strategy_state_fails_on_load(self):
-        proc = ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2))
+        proc = ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2), n_steps=1)
         state = state_dict(proc)
         state["strategy"]["bands"] = 0
         with pytest.raises(ValueError, match="bands must be >= 1"):
@@ -73,29 +73,76 @@ class TestStrategyRecipeValidation:
 
 
 class TestMfGaussian:
+    def test_requires_horizon(self):
+        strategy = identity_strategy()
+        with pytest.raises(TypeError, match="n_steps"):
+            ftrl_acc.mf_gaussian(1.0, strategy)
+        with pytest.raises(TypeError, match="n_steps"):
+            MfGaussian(noise_multiplier=1.0, strategy=strategy)
+
     def test_rejects_negative_noise_multiplier(self):
         with pytest.raises(
             ConfigurationError, match="noise_multiplier must be non-negative"
         ):
-            MfGaussian(-1.0, band_mf_strategy(bands=2))
+            MfGaussian(-1.0, band_mf_strategy(bands=2), n_steps=1)
 
     def test_factory_rejects_negative_noise_multiplier(self):
         with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
-            ftrl_acc.mf_gaussian(-1.0, band_mf_strategy(bands=2))
+            ftrl_acc.mf_gaussian(-1.0, band_mf_strategy(bands=2), n_steps=1)
 
     def test_rejects_invalid_horizon_params(self):
         s = band_mf_strategy(bands=2)
         with pytest.raises(ConfigurationError, match="n_steps must be >= 1"):
             ftrl_acc.mf_gaussian(1.0, s, n_steps=0)
         with pytest.raises(ConfigurationError, match="min_sep must be >= 1"):
-            ftrl_acc.mf_gaussian(1.0, s, min_sep=0)
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=2, min_sep=0)
         with pytest.raises(ConfigurationError, match="max_participations must be"):
-            ftrl_acc.mf_gaussian(1.0, s, max_participations=0)
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=2, max_participations=0)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "field"),
+        [
+            ({"n_steps": True}, "n_steps"),
+            ({"n_steps": 1.5}, "n_steps"),
+            ({"min_sep": True}, "min_sep"),
+            ({"min_sep": 1.5}, "min_sep"),
+            ({"max_participations": True}, "max_participations"),
+            ({"max_participations": 1.5}, "max_participations"),
+        ],
+    )
+    def test_rejects_non_integer_participation_context(self, kwargs, field):
+        params = {"n_steps": 2, **kwargs}
+        with pytest.raises(InputTypeError, match=rf"{field} must be an int"):
+            ftrl_acc.mf_gaussian(1.0, identity_strategy(), **params)
 
     def test_negative_sigma_state_dict_fails_on_load(self):
         state = state_dict(_band_mf())
         state["noise_multiplier"] = -1.0
         with pytest.raises(ValueError, match="noise_multiplier must be non-negative"):
+            from_state_dict(acc.identity(), state)
+
+    def test_missing_horizon_state_fails_on_load(self):
+        state = state_dict(_identity_mf())
+        del state["n_steps"]
+        with pytest.raises(
+            CheckpointError, match="missing required field 'n_steps' for MfGaussian"
+        ):
+            from_state_dict(acc.identity(), state)
+
+    def test_missing_nested_horizon_state_fails_on_load(self):
+        state = state_dict(
+            ftrl_acc.poisson(_identity_mf(), sample_rate=0.1, n_steps=10)
+        )
+        del state["inner"]["n_steps"]
+        with pytest.raises(
+            CheckpointError, match="missing required field 'n_steps' for MfGaussian"
+        ):
+            from_state_dict(acc.identity(), state)
+
+    def test_unknown_state_field_fails_on_load(self):
+        state = state_dict(_identity_mf())
+        state["unknown"] = None
+        with pytest.raises(CheckpointError, match="unexpected keys for MfGaussian"):
             from_state_dict(acc.identity(), state)
 
 

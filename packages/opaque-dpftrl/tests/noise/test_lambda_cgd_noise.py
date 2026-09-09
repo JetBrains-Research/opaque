@@ -276,7 +276,7 @@ class TestLambdaCgdPld:
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(lambda_=0.9)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(

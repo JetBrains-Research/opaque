@@ -17,7 +17,7 @@ factories live next to its runtime:
 |--------|----------|------------|
 | `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t`. | `opaque-dpsgd` |
-| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanism `mf_gaussian` and whole-horizon amplifiers `poisson`, `b_min_sep`, and `balls_in_bins`. | `opaque-dpftrl` |
 
 Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
 
@@ -236,7 +236,7 @@ The workflow is:
 1. Create a **noise strategy** (for example, `band_mf_strategy()` or
    `lambda_cgd_strategy()`) with its structural knobs: bands, correlation,
    momentum, and any supported workload schedule.
-2. Wrap it with `mf_gaussian(noise_multiplier, strategy)`.
+2. Wrap it with `mf_gaussian(noise_multiplier, strategy, n_steps=1)`.
 3. Wrap that mechanism in the sampler-matching amplifier, which supplies
    `n_steps` and the participation pattern and derives the strategy's privacy
    quantities internally.
@@ -253,47 +253,60 @@ import opaque.dpftrl.accounting as dpftrl_acc
 strategy = band_mf_strategy(bands=10, momentum=0.95)
 
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)`
+### `dpftrl_acc.mf_gaussian(noise_multiplier, strategy, *, n_steps, ...)`
 
-Single MF Gaussian mechanism wrapping a strategy recipe.  The strategy
-carries only static workload knobs (e.g. `bands`, `momentum`); horizon
-(`n_steps`, `min_sep`, `max_participations`) is supplied by the
-surrounding amplification factory at PLD time.
+Single MF Gaussian mechanism wrapping a strategy recipe. For bare accounting,
+its horizon and participation bounds define the sensitivity context. An
+amplifier uses its own context; pass `n_steps=1` to its inner mechanism.
 
 ```python
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1000)  # bare use
+proc = dpftrl_acc.mf_gaussian(
+    1.0,
+    strategy,
+    n_steps=1000,
+    min_sep=1,
+    max_participations=1,
+)
 eps = proc.epsilon_at(delta=1e-5)
 ```
+
+This bare BandMF example assumes each protected unit participates at most once.
 
 For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
 (see below).
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Correlated MF mechanisms use the same `dpftrl_acc.mf_gaussian(noise_multiplier,
-strategy)` factory — the strategy carries the static workload knobs and
-the amplifier supplies the participation context.  Wrap in
+Correlated MF mechanisms use the same `dpftrl_acc.mf_gaussian` factory. Bare
+processes require their full participation context; amplification wrappers use
+their own context. Pass `n_steps=1` to the inner mechanism, then wrap it in
 `dpftrl_acc.balls_in_bins(...)` (BnB) for the full PLD:
 
 ```python
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified — single-Gaussian PLD
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified — one PLD for the declared horizon
+proc = dpftrl_acc.mf_gaussian(
+    1.0,
+    strategy,
+    n_steps=5000,
+    min_sep=1000,
+    max_participations=5,
+)
 eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 # With Balls-in-Bins amplification
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=1000, n_steps=5000,
 )
 ```
@@ -304,7 +317,7 @@ The same pattern works for `lambda_cgd_strategy`, `bisr_strategy`, and
 ```python
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch, n_steps=steps_per_epoch * num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -322,7 +335,7 @@ when the inner is `IdentityMf` or `BandMf` with `bands == 1`.
 ```python
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -350,7 +363,7 @@ fixed-assignment sampler `opaque.dpftrl.sampling.BallsInBinsSampler`.
 ```python
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -370,7 +383,7 @@ strategy = band_mf_strategy(bands=10)
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.mf_gaussian(nm, strategy),
+        dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1),
         sample_rate=0.01,
         n_steps=1000,
     ),
@@ -496,7 +509,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(bands=64)
 process = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=15_624,
 )

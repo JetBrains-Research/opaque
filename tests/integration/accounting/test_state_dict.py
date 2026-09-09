@@ -138,7 +138,7 @@ def test_cached_state_dict_structure():
 def test_ftrl_poisson_state_dict_structure():
     strategy = band_mf_strategy(bands=2)
     proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, strategy),
+        ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
         sample_rate=0.01,
         n_steps=200,
     )
@@ -148,6 +148,9 @@ def test_ftrl_poisson_state_dict_structure():
     assert state["n_steps"] == 200
     assert state["inner"]["type"] == "MfGaussian"
     assert state["inner"]["noise_multiplier"] == 1.0
+    assert state["inner"]["n_steps"] == 1
+    assert state["inner"]["min_sep"] == 1
+    assert state["inner"]["max_participations"] is None
     assert state["inner"]["strategy"]["type"] == "BandMfStrategy"
     assert state["inner"]["strategy"]["bands"] == 2
     # Strategy is a pure recipe — derived data (coefficients, gram,
@@ -158,7 +161,7 @@ def test_ftrl_poisson_state_dict_structure():
 
 def test_b_min_sep_round_trip():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2), n_steps=1),
         n_steps=100,
         p0=0.02,
     )
@@ -170,7 +173,7 @@ def test_b_min_sep_round_trip():
 
 def test_ftrl_poisson_round_trip():
     proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2), n_steps=1),
         sample_rate=0.01,
         n_steps=200,
     )

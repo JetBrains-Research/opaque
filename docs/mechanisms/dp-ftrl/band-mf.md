@@ -68,8 +68,9 @@ effective noise multiplier:
 
 $$\sigma_{\text{eff}} = \frac{\sigma}{S} = \sigma$$
 
-The PLD is computed once for this effective Gaussian (not per-step),
-then optionally composed with subsampling amplification.
+Bare accounting computes one PLD for this effective Gaussian. Amplified
+accounting applies the matching sampling theorem to the strategy over the
+wrapper's horizon.
 
 ## Supported amplifications
 
@@ -101,7 +102,7 @@ from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -127,7 +128,7 @@ is $p = p_0 / (1 - p_0(b-1))$ when $b>1$.
 
 Opaque pairs this with **Monte Carlo PLD** accounting (same family as BnB MC
 for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
-`n_steps`, and `p0` to `opaque.accounting.b_min_sep(...)`.
+`n_steps`, and `p0` to `opaque.dpftrl.accounting.b_min_sep(...)`.
 Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 `examples/train_dpftrl.py`).
 
@@ -147,15 +148,9 @@ Optional cap: set `OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES` (default ~4 Gi
 use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` call.
 
 !!! note "Without amplification"
-    You can also use BandMF without subsampling by omitting the
-    `opaque.dpftrl.accounting.poisson` wrapper (compose the Gaussian
-    mechanism directly if your accounting path supports it). Useful for
-    comparison when subsampling is not applicable.
-
-!!! note
-    The `dpftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
-    from the noise strategy. For end-to-end usage, `mf_gaussian_noise()` +
-    `band_mf_strategy()` computes these automatically.
+    Bare BandMF accounting is valid only when each protected unit participates
+    at most once. Supply the complete horizon and `max_participations=1`; use a
+    matching amplifier for repeated sampling.
 
 ## Assumptions and limitations
 
@@ -188,9 +183,8 @@ for step in range(1000):
 
 ### Privacy accounting
 
-The accounting constructor receives `sensitivity` and `num_groups` from
-the same `band_mf_strategy` used for noise generation. This keeps both
-components in sync:
+Accounting consumes the same `band_mf_strategy` recipe as noise generation.
+The outer Poisson process supplies the run horizon and sampling context:
 
 ```python
 import opaque.dpftrl.accounting as dpftrl_acc
@@ -200,7 +194,7 @@ strategy = band_mf_strategy(bands=10)
 
 # BandMF with Poisson amplification (recommended)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
@@ -208,17 +202,12 @@ eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
-!!! note
-    Always use `strategy.sensitivity(n_steps=...)` and `strategy.num_groups` rather than
-    hardcoded values. The strategy computes these from the optimized Toeplitz
-    coefficients.
-
 ### End-to-end BandMF example
 
 BandMF uses `opaque.dpftrl.sampling.CyclicPoissonSampler` with `bands` matching the
 strategy so participation lines up with the noise. The same class with
-`bands=1` gives plain Poisson on the full dataset each step for an identity MF
-baseline (`identity_mf` / `identity_strategy`):
+`bands=1` gives plain Poisson on the full dataset each step for an identity
+strategy baseline:
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler

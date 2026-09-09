@@ -23,7 +23,7 @@ def _identity_bnb_epsilon(
     noise_multiplier: float, num_bins: int, num_epochs: int
 ) -> float:
     return ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(noise_multiplier, identity_strategy()),
+        ftrl_acc.mf_gaussian(noise_multiplier, identity_strategy(), n_steps=1),
         num_bins=num_bins,
         n_steps=num_bins * num_epochs,
     ).epsilon_at(_DELTA)
@@ -36,14 +36,14 @@ def _identity_bnb_epsilon(
 
 class TestIdentityMfMechanism:
     def test_factory_returns_mf_gaussian_with_identity_strategy(self):
-        proc = ftrl_acc.mf_gaussian(1.0, identity_strategy())
+        proc = ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1)
         assert isinstance(proc, MfGaussian)
         assert isinstance(proc.strategy, IdentityStrategy)
         assert proc.noise_multiplier == 1.0
 
     def test_pld_matches_unsubsampled_gaussian(self):
         nm = 1.5
-        proc = ftrl_acc.mf_gaussian(nm, identity_strategy())
+        proc = ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1)
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native())
@@ -53,17 +53,17 @@ class TestIdentityMfMechanism:
 
     def test_zero_noise_is_non_private(self):
         assert math.isinf(
-            ftrl_acc.mf_gaussian(0.0, identity_strategy()).epsilon_at(_DELTA)
+            ftrl_acc.mf_gaussian(0.0, identity_strategy(), n_steps=1).epsilon_at(_DELTA)
         )
 
     def test_negative_noise_multiplier_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
-            ftrl_acc.mf_gaussian(-0.1, identity_strategy())
+            ftrl_acc.mf_gaussian(-0.1, identity_strategy(), n_steps=1)
 
     def test_self_compose_matches_repeated_gaussian(self):
         nm = 2.0
         T = 50
-        proc = ftrl_acc.mf_gaussian(nm, identity_strategy()) * T
+        proc = ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1) * T
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native()).self_compose(T)
@@ -82,7 +82,9 @@ class TestPoissonIdentity:
     def test_pld_matches_self_composed_generic_poisson(self):
         nm, p, T = 1.1, 0.01, 500
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=p, n_steps=T
+            ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
+            sample_rate=p,
+            n_steps=T,
         )
         cfg = get_discretization()
         ref = _native.poisson_pld(
@@ -96,13 +98,14 @@ class TestPoissonIdentity:
     def test_requires_n_steps(self):
         with pytest.raises(TypeError):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()), sample_rate=0.1
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+                sample_rate=0.1,
             )
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=0.1,
                 n_steps=0,
             )
@@ -110,7 +113,7 @@ class TestPoissonIdentity:
     def test_rejects_invalid_sample_rate(self):
         with pytest.raises(ValueError, match="sample_rate"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=1.5,
                 n_steps=10,
             )
@@ -118,7 +121,9 @@ class TestPoissonIdentity:
     def test_accepts_full_participation_rate(self):
         nm, T = 1.1, 50
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()), sample_rate=1.0, n_steps=T
+            ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
+            sample_rate=1.0,
+            n_steps=T,
         )
         assert proc.sample_rate == pytest.approx(1.0)
         # q=1 ⇒ no amplification: Gaussian self-composed T times.
@@ -131,7 +136,7 @@ class TestPoissonIdentity:
         nm = 1.1
         with pytest.raises(ConfigurationError, match=r"sample_rate=1\.0"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(nm, identity_strategy()),
+                ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
                 sample_rate=1.0,
                 n_steps=10,
                 truncated_batch_size=64,
@@ -145,7 +150,9 @@ class TestPoissonIdentity:
             ConfigurationError, match=r"sample_rate must be in \(0, 1\]"
         ):
             CyclicPoisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()), 0.0, n_steps=10
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+                0.0,
+                n_steps=10,
             )
 
 
@@ -169,7 +176,7 @@ class TestPoissonBandMf:
 
         monkeypatch.setattr(BandMfStrategy, "sensitivity", sensitivity)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(0.0, band_mf_strategy(bands=2)),
+            ftrl_acc.mf_gaussian(0.0, band_mf_strategy(bands=2), n_steps=1),
             sample_rate=0.01,
             n_steps=6,
         )
@@ -190,7 +197,7 @@ class TestPoissonBandMf:
         strategy = band_mf_strategy(bands=bands)
         sens = strategy.sensitivity(n_steps=n_steps)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm / sens, strategy),
+            ftrl_acc.mf_gaussian(nm / sens, strategy, n_steps=1),
             sample_rate=p,
             n_steps=n_steps,
         )
@@ -239,7 +246,7 @@ class TestBallsInBinsIdentity:
         ).epsilon_at(mc_delta)
 
         det_eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()),
+            ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
             num_bins=k,
             n_steps=k * E,
         ).epsilon_at(mc_delta)
@@ -269,26 +276,34 @@ class TestBallsInBinsIdentity:
 
     def test_zero_noise_non_private(self):
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(0.0, identity_strategy()), num_bins=10, n_steps=20
+            ftrl_acc.mf_gaussian(0.0, identity_strategy(), n_steps=1),
+            num_bins=10,
+            n_steps=20,
         )
         assert math.isinf(proc.epsilon_at(_DELTA))
 
     def test_rejects_invalid_num_bins(self):
         with pytest.raises(ValueError, match="num_bins"):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=1, n_steps=20
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+                num_bins=1,
+                n_steps=20,
             )
 
     def test_rejects_invalid_n_steps(self):
         with pytest.raises(ValueError, match="n_steps"):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=0
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+                num_bins=10,
+                n_steps=0,
             )
 
     def test_rejects_n_steps_not_multiple_of_num_bins(self):
         with pytest.raises(ValueError, match="multiple of"):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()), num_bins=10, n_steps=15
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+                num_bins=10,
+                n_steps=15,
             )
 
 
@@ -305,7 +320,7 @@ class TestTruncatedPoissonIdentity:
             ConfigurationError, match="truncated_batch_size and dataset_size"
         ):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,
@@ -316,7 +331,7 @@ class TestTruncatedPoissonIdentity:
             ConfigurationError, match="truncated_batch_size and dataset_size"
         ):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=0.01,
                 n_steps=10,
                 dataset_size=10_000,
@@ -327,7 +342,7 @@ class TestTruncatedPoissonIdentity:
             ConfigurationError, match="truncated_batch_size must be >= 1"
         ):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=0,
@@ -337,7 +352,7 @@ class TestTruncatedPoissonIdentity:
     def test_rejects_dataset_size_below_one(self):
         with pytest.raises(ValueError, match="dataset_size must be >= 1"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+                ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,
@@ -347,7 +362,7 @@ class TestTruncatedPoissonIdentity:
     def test_rejects_band_mf_with_truncation(self):
         with pytest.raises(ValueError, match="IdentityStrategy"):
             ftrl_acc.poisson(
-                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2), n_steps=1),
                 sample_rate=0.01,
                 n_steps=10,
                 truncated_batch_size=64,
@@ -359,7 +374,7 @@ class TestTruncatedPoissonIdentity:
         nm, p, T = 1.1, 0.01, 200
         cap, n = 64, 50_000
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()),
+            ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
             sample_rate=p,
             n_steps=T,
             truncated_batch_size=cap,
@@ -375,7 +390,7 @@ class TestTruncatedPoissonIdentity:
 
     def test_truncated_finite_and_positive(self):
         eps = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.1, identity_strategy()),
+            ftrl_acc.mf_gaussian(1.1, identity_strategy(), n_steps=1),
             sample_rate=0.01,
             n_steps=200,
             truncated_batch_size=64,
@@ -391,7 +406,7 @@ def test_identity_mf_calibrates_through_poisson():
     cal = acc.calibrate(
         acc.epsilon_budget(3.0, delta=_DELTA),
         lambda nm: ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, identity_strategy()),
+            ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
             sample_rate=0.01,
             n_steps=n_steps,
         ),

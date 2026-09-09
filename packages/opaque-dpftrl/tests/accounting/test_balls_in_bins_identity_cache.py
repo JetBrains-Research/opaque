@@ -27,7 +27,7 @@ def _reset_caches():
 
 def test_equivalent_horizons_share_one_epoch_transform():
     process = ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         num_bins=10,
         n_steps=100,
     )
@@ -35,7 +35,7 @@ def test_equivalent_horizons_share_one_epoch_transform():
     first = process.pld(**_CFG).epsilon_at(_DELTA)
     assert epoch_pld.cache_info().misses == 1
     equivalent = ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         num_bins=10,
         n_steps=100,
     )

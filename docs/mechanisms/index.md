@@ -120,15 +120,15 @@ gauss = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.0), sample_rate=0.01) * 1000
 # BandMF: strategy computes sensitivity and coefficients
 band_s = band_mf_strategy(bands=10)
 band = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, band_s),
+    dpftrl_acc.mf_gaussian(1.0, band_s, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
 
-# DP-λCGD: strategy.as_mechanism populates the accounting
+# DP-λCGD: the same strategy recipe drives noise and accounting
 lcgd_s = lambda_cgd_strategy(lambda_=0.9)
 lcgd = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, lcgd_s),
+    dpftrl_acc.mf_gaussian(1.0, lcgd_s, n_steps=1),
     num_bins=100, n_steps=500,
 )
 

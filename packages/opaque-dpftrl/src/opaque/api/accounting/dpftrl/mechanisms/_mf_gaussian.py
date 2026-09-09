@@ -1,25 +1,4 @@
-"""MF Gaussian mechanism — one mechanism class for every MF strategy.
-
-The privacy of a matrix-factorization Gaussian release reduces to a
-single Gaussian mechanism with effective noise multiplier
-``noise_multiplier / strategy.sensitivity(n_steps, min_sep,
-max_participations)``, regardless of which encoder ``C`` the training
-side used.
-
-The accounting amplifications (Poisson, BMinSep, BallsInBins) read
-``inner.noise_multiplier`` and ``inner.strategy`` from the wrapped
-:class:`MfGaussian` and supply their *own*
-``(n_steps, min_sep, max_participations)`` at PLD time — they do not
-read the fields stored on :class:`MfGaussian` itself.  Those fields are
-only consulted when :meth:`MfGaussian.pld` is called bare
-(unamplified), where they describe the single-Gaussian PLD horizon.
-
-Serialization: a custom serializer pair is registered here that emits
-``{"type": "MfGaussian", "noise_multiplier": ..., "strategy":
-{"type": "<StrategyName>", ...}, "n_steps": ..., "min_sep": ...,
-"max_participations": ...}``.  The strategy sub-dict is produced and
-consumed by :mod:`opaque.api.dpftrl.noise._strategy_codec`.
-"""
+"""Gaussian accounting for matrix-factorization strategies."""
 
 from __future__ import annotations
 
@@ -31,7 +10,7 @@ from opaque.api.accounting.core._base import DpProcess, Pld
 from opaque.api.accounting.core._pld_cache import pld_cache
 from opaque.api.accounting.core.discretization import get_discretization
 from opaque.api.dpftrl.noise._schedule_fingerprint import strategy_cache_key
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError, InputTypeError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -39,19 +18,24 @@ if TYPE_CHECKING:
     from opaque.api.dpftrl.noise.types import MfStrategy
 
 
+def _validate_positive_int(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InputTypeError(*(f"{name} must be an int, got {type(value).__name__}",))
+    if value < 1:
+        raise ConfigurationError(*(f"{name} must be >= 1, got {value}",))
+
+
 @dataclass(frozen=True, slots=True)
 class MfGaussian(DpProcess):
-    """MF Gaussian mechanism — ``noise_multiplier`` + recipe ``strategy``.
+    """A matrix-factorization Gaussian process.
 
-    Bare-use (no amplification) requires ``n_steps`` (and optionally
-    ``min_sep`` and ``max_participations``) so the strategy can resolve
-    its sensitivity.  Wrapped in an amplifier these fields are ignored;
-    the amplifier supplies its own participation context at PLD time.
+    The stored participation context defines bare accounting. Amplifiers
+    derive their context from the outer process.
     """
 
     noise_multiplier: float
     strategy: MfStrategy
-    n_steps: int = 1
+    n_steps: int
     min_sep: int = 1
     max_participations: int | None = None
 
@@ -62,16 +46,10 @@ class MfGaussian(DpProcess):
                     f"noise_multiplier must be non-negative, got {self.noise_multiplier}",
                 )
             )
-        if self.n_steps < 1:
-            raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
-        if self.min_sep < 1:
-            raise ConfigurationError(*(f"min_sep must be >= 1, got {self.min_sep}",))
-        if self.max_participations is not None and self.max_participations < 1:
-            raise ConfigurationError(
-                *(
-                    f"max_participations must be >= 1 or None, got {self.max_participations}",
-                )
-            )
+        _validate_positive_int("n_steps", self.n_steps)
+        _validate_positive_int("min_sep", self.min_sep)
+        if self.max_participations is not None:
+            _validate_positive_int("max_participations", self.max_participations)
 
     @property
     def _effective_max_participations(self) -> int:
@@ -130,35 +108,25 @@ def mf_gaussian(
     noise_multiplier: float,
     strategy: MfStrategy,
     *,
-    n_steps: int = 1,
+    n_steps: int,
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> MfGaussian:
-    """MF Gaussian mechanism — noise multiplier + strategy recipe.
-
-    Standalone, models a single Gaussian release with effective noise
-    multiplier ``noise_multiplier / strategy.sensitivity(n_steps, ...)``.
-    Wrap in an amplification factory (``poisson``, ``b_min_sep``,
-    ``balls_in_bins``) for the per-amplification PLD — those amplifiers
-    supply their own ``n_steps``/``min_sep``/``max_participations`` and
-    ignore the values passed here.
+    """Build a matrix-factorization Gaussian process.
 
     Args:
         noise_multiplier: Raw noise standard deviation σ (>= 0).
-        strategy: One of the strategy dataclasses from
-            :mod:`opaque.dpftrl.noise`.
-        n_steps: Horizon for bare-use sensitivity evaluation (default 1).
-        min_sep: Bare-use min separation between participations (default 1).
-        max_participations: Bare-use max participations per example
-            (``None`` ⇒ ``n_steps``).
+        strategy: Matrix-factorization strategy recipe.
+        n_steps: Bare accounting horizon. Amplifiers use their outer horizon.
+        min_sep: Minimum separation between participations.
+        max_participations: Maximum participations (``None`` means
+            ``n_steps``).
 
     Returns:
         An :class:`MfGaussian` process.
     """
-    nm = float(noise_multiplier)
-    # sigma >= 0 is validated in ``MfGaussian.__post_init__``.
     return MfGaussian(
-        noise_multiplier=nm,
+        noise_multiplier=float(noise_multiplier),
         strategy=strategy,
         n_steps=n_steps,
         min_sep=min_sep,
@@ -166,14 +134,7 @@ def mf_gaussian(
     )
 
 
-# --- Custom serialization ---------------------------------------------------
-#
-# MfGaussian holds a ``strategy`` field whose value is one of the strategy
-# dataclasses from opaque.dpftrl.noise.  The generic DpProcess codec only
-# knows how to emit primitives, containers, and nested DpProcess values;
-# it would silently drop the strategy.  Register a custom serializer pair
-# that delegates strategy (de)serialization to the strategy codec, which
-# owns the strategy class name registry.
+# The strategy codec owns the polymorphic strategy payload.
 
 
 def _serialize_mf_gaussian(p: MfGaussian) -> dict[str, Any]:
@@ -192,14 +153,28 @@ def _serialize_mf_gaussian(p: MfGaussian) -> dict[str, Any]:
 def _load_mf_gaussian(_template: Any, sd: Mapping[str, Any]) -> MfGaussian:
     from opaque.api.dpftrl.noise._strategy_codec import deserialize_strategy
 
-    sd = dict(sd)
-    sd.pop("type", None)
+    state = dict(sd)
+    state.pop("type", None)
+    try:
+        noise_multiplier = state.pop("noise_multiplier")
+        strategy_value = state.pop("strategy")
+        n_steps = state.pop("n_steps")
+    except KeyError as error:
+        raise CheckpointError(
+            *(f"missing required field {error.args[0]!r} for MfGaussian",)
+        ) from None
+
+    min_sep = state.pop("min_sep", 1)
+    max_participations = state.pop("max_participations", None)
+    if state:
+        raise CheckpointError(*(f"unexpected keys for MfGaussian: {sorted(state)!r}",))
+
     return MfGaussian(
-        noise_multiplier=sd["noise_multiplier"],
-        strategy=deserialize_strategy(dict(sd["strategy"])),
-        n_steps=sd.get("n_steps", 1),
-        min_sep=sd.get("min_sep", 1),
-        max_participations=sd.get("max_participations"),
+        noise_multiplier=noise_multiplier,
+        strategy=deserialize_strategy(dict(strategy_value)),
+        n_steps=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
     )
 
 

@@ -30,7 +30,7 @@ _DELTAS = (1e-5, 1e-8)
 def _bnb(sigma: float, b: int, epochs: int):
     """Fixed-assignment balls-in-bins over the whole run (scheme A)."""
     return ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(sigma, identity_strategy()),
+        ftrl_acc.mf_gaussian(sigma, identity_strategy(), n_steps=1),
         num_bins=b,
         n_steps=b * epochs,
     )

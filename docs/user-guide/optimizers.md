@@ -280,7 +280,7 @@ a single sensitivity-1 Gaussian release at the same noise multiplier.
 
 ```python
 strategy = band_mf_strategy(bands=bands)
-mechanism = dpftrl_acc.mf_gaussian(nm, strategy)
+mechanism = dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1)
 process = dpftrl_acc.poisson(mechanism, sample_rate=q, n_steps=n)
 ```
 

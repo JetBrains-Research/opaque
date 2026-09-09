@@ -19,9 +19,9 @@ from opaque.api.dpftrl.noise._streaming_matrix import StreamingMatrix, identity
 class IdentityStrategy:
     """Identity (uncorrelated) MF strategy — independent noise per step.
 
-    Encoder ``C = I``: sensitivity ≡ 1 for any horizon; streaming matrix
-    is the identity; gram matrix isn't read (the BnB Identity path uses
-    a dedicated native primitive that exploits ``G = num_epochs · I_b``).
+    Encoder ``C = I`` has single-participation sensitivity one. Amplifiers or
+    explicit composition account for repeated releases. The BnB path uses a
+    dedicated primitive for ``G = num_epochs · I_b``.
     """
 
     def coefficients(self, *, n_steps: int, **_) -> torch.Tensor:

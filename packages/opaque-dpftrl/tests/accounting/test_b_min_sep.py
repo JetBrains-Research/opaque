@@ -30,7 +30,7 @@ def test_p_conversion_rejects_infeasible_p0():
 
 def test_sampling_prob_property_matches_helper():
     strategy = band_mf_strategy(bands=4)
-    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1)
     p0 = 0.02
     proc = ftrl_acc.b_min_sep(inner, n_steps=40, p0=p0)
     assert proc.sampling_prob == participation_p_from_per_example_rate(p0, 4)
@@ -38,14 +38,14 @@ def test_sampling_prob_property_matches_helper():
 
 def test_sampling_prob_degenerates_to_p0_for_bands_one():
     strategy = band_mf_strategy(bands=1)
-    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1)
     proc = ftrl_acc.b_min_sep(inner, n_steps=40, p0=0.05)
     assert proc.sampling_prob == 0.05
 
 
 def test_b_min_sep_smoke_pld():
     strategy = band_mf_strategy(bands=4)
-    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1)
     proc = ftrl_acc.b_min_sep(
         inner,
         n_steps=40,
@@ -205,7 +205,7 @@ def test_b_min_sep_stricter_than_mf_only():
     strategy = band_mf_strategy(bands=5)
     # Use a low-noise / low-sample-rate regime where b-min-sep amplification
     # strictly beats unamplified composition.
-    inner = ftrl_acc.mf_gaussian(1.0, strategy)
+    inner = ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1)
     bms = ftrl_acc.b_min_sep(
         inner,
         n_steps=50,
@@ -239,7 +239,7 @@ def test_calibration_reports_one_overall_mc_confidence_budget():
 
         def process(nm):
             return ftrl_acc.b_min_sep(
-                ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=2)),
+                ftrl_acc.mf_gaussian(nm, band_mf_strategy(bands=2), n_steps=1),
                 n_steps=8,
                 p0=0.02,
             )
@@ -261,12 +261,12 @@ def test_calibration_reports_one_overall_mc_confidence_budget():
 
 def test_composed_mc_pld_uses_one_overall_confidence_and_resolution_budget():
     left = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(0.8, band_mf_strategy(bands=2)),
+        ftrl_acc.mf_gaussian(0.8, band_mf_strategy(bands=2), n_steps=1),
         n_steps=8,
         p0=0.02,
     )
     right = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.2, band_mf_strategy(bands=2)),
+        ftrl_acc.mf_gaussian(1.2, band_mf_strategy(bands=2), n_steps=1),
         n_steps=8,
         p0=0.02,
     )
@@ -283,7 +283,7 @@ def test_composed_mc_pld_uses_one_overall_confidence_and_resolution_budget():
 
 def test_repeated_mc_process_preserves_overall_resolution():
     step = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=2), n_steps=1),
         n_steps=8,
         p0=0.02,
     )

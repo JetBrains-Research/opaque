@@ -825,7 +825,7 @@ class TestBisrPld:
 
     def test_bisr_bnb(self):
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, bisr_strategy(bandwidth=4)),
+            ftrl_acc.mf_gaussian(1.0, bisr_strategy(bandwidth=4), n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(
@@ -843,7 +843,7 @@ class TestBisrPld:
             inv_coefficients=(1.0, 1.0),
         )
         process = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, strategy),
+            ftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
             num_bins=num_bins,
             n_steps=n_steps,
         )

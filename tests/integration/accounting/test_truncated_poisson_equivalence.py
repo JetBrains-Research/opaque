@@ -41,7 +41,7 @@ def test_ftrl_identity_truncated_matches_dpsgd_truncated_composed(
     dataset_size: int,
 ):
     ftrl_proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(nm, identity_strategy()),
+        ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1),
         sample_rate=sample_rate,
         n_steps=n_steps,
         truncated_batch_size=truncated_batch_size,

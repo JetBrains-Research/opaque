@@ -151,33 +151,37 @@ noise_fn, noise_state = mf_gaussian_noise(
 
 ### Privacy accounting
 
-The accounting constructor receives `sensitivity` and `gram_matrix` from the
-same `blt_strategy` used for noise generation:
+Bare accounting consumes the same `blt_strategy` and participation context as
+noise generation. Amplified accounting takes its context from the wrapper:
 
 ```python
-import opaque.accounting as acc           # cross-cutting balls_in_bins
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import blt_strategy
 
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified BLT
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified BLT for the multi-epoch context above
+proc = dpftrl_acc.mf_gaussian(
+    1.0,
+    strategy,
+    n_steps=5000,
+    min_sep=100,
+    max_participations=5,
+)
 eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
 # With Balls-in-Bins amplification (recommended)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=100, n_steps=500,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    `dpftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
-    (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
-    from the optimized BLT parameters and the participation pattern.
+    Bare accounting must use the same horizon and participation bounds as
+    noise generation. An amplifier supplies its own context.
 
 ## Parameter guide
 
@@ -186,7 +190,7 @@ eps = proc.epsilon_at(delta=1e-5)
 | `noise_multiplier` | 0.1 – 10.0 (calibrate) | Higher = more private. Use `acc.calibrate()`. |
 | `n_steps` | Must be known in advance | Total training iterations. |
 | `min_sep` | 1 – `n_steps` (default 1) | Minimum steps between participations. Higher = lower sensitivity. |
-| `max_participations` | 1 – $\lceil n / \text{min\_sep} \rceil$ (default 1) | Number of times each user's data is used. |
+| `max_participations` | Positive integer (default `n_steps`) | Upper bound on uses per user, clamped to the feasible count. |
 | `error` | `"max"` or `"mean"` | Error metric to optimize. `"max"` is conservative. |
 | `max_buffers` | 1 – 20 (default 10) | Number of exponential decay buffers. More = better noise reduction. |
 

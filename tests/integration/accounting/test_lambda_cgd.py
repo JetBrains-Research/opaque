@@ -131,7 +131,7 @@ class TestBnbAmplification:
 
         with pytest.raises(TypeError):
             ftrl_acc.balls_in_bins(
-                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=1)),
+                ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=1), n_steps=1),
                 num_bins=50,
                 n_steps=150,
             )

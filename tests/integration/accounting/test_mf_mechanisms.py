@@ -1,4 +1,4 @@
-"""Tests for MF accounting — single ``MfGaussian(nm, strategy)`` mechanism.
+"""Tests for the strategy-driven ``MfGaussian`` mechanism.
 
 The MF accounting layer collapses to one DpProcess class, ``MfGaussian``,
 parameterised by ``noise_multiplier`` and a strategy from
@@ -96,7 +96,7 @@ class TestFtrlPoissonDataclass:
         strategy = band_mf_strategy(bands=1)
         nm = 1.0
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(nm, strategy),
+            ftrl_acc.mf_gaussian(nm, strategy, n_steps=1),
             sample_rate=rate,
             n_steps=n_steps,
         )
@@ -194,7 +194,9 @@ class TestMfComposition:
         assert eps > 0
 
     def test_identity_strategy_composes_with_gaussian(self):
-        proc = ftrl_acc.mf_gaussian(1.0, identity_strategy()) | dpsgd_acc.gaussian(1.0)
+        proc = ftrl_acc.mf_gaussian(
+            1.0, identity_strategy(), n_steps=1
+        ) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps)
         assert eps > 0

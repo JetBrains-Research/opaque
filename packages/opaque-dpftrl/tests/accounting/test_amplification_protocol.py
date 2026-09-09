@@ -13,7 +13,7 @@ from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 
 def _bnb():
     return ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         num_bins=10,
         n_steps=100,
     )
@@ -21,7 +21,7 @@ def _bnb():
 
 def _bms():
     return ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8), n_steps=1),
         n_steps=80,
         p0=0.05,
     )
@@ -29,7 +29,7 @@ def _bms():
 
 def _poisson():
     return ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         sample_rate=0.01,
         n_steps=200,
     )
@@ -49,7 +49,7 @@ def test_protocol_conformance(make):
 
 def test_balls_in_bins_formulas():
     proc = ftrl_acc.balls_in_bins(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         num_bins=10,
         n_steps=100,
     )
@@ -60,7 +60,7 @@ def test_balls_in_bins_formulas():
 
 def test_b_min_sep_formulas():
     proc = ftrl_acc.b_min_sep(
-        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8)),
+        ftrl_acc.mf_gaussian(1.0, band_mf_strategy(bands=8), n_steps=1),
         n_steps=80,
         p0=0.05,
     )
@@ -71,7 +71,7 @@ def test_b_min_sep_formulas():
 
 def test_cyclic_poisson_degenerate_limits():
     proc = ftrl_acc.poisson(
-        ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+        ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
         sample_rate=0.01,
         n_steps=200,
     )

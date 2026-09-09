@@ -106,7 +106,7 @@ class TestBltPld:
     def test_blt_bnb(self):
         s = blt_strategy(momentum=0.95)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(
@@ -119,7 +119,7 @@ class TestBltPld:
     def test_blt_bnb_prefix_charges_full_deployed_encoder(self, monkeypatch):
         s = blt_strategy(max_buffers=2, momentum=0.913)
         proc = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=5,
             n_steps=20,
         )

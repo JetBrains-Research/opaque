@@ -193,7 +193,7 @@ class TestPldEquivalence:
         sample_rate = 0.05
 
         eps_new = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             sample_rate=sample_rate,
             n_steps=n_steps,
         ).epsilon_at(self.delta)
@@ -231,7 +231,7 @@ class TestBnbEquivalence:
     def test_lambda_cgd_bnb(self):
         s = lambda_cgd_strategy(lambda_=0.9)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)
@@ -240,7 +240,7 @@ class TestBnbEquivalence:
     def test_blt_bnb(self):
         s = blt_strategy(momentum=0.95)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)
@@ -249,7 +249,7 @@ class TestBnbEquivalence:
     def test_bisr_bnb(self):
         s = bisr_strategy(bandwidth=4)
         eps = ftrl_acc.balls_in_bins(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             num_bins=25,
             n_steps=100,
         ).epsilon_at(self.delta)

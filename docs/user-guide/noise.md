@@ -459,31 +459,28 @@ noise_fn, noise_state = mf_gaussian_noise(
 
 ### Privacy accounting for MF noise
 
-MF noise has different sensitivity than standard Gaussian noise because
-the correlated strategy matrix amplifies or attenuates individual
-contributions. The noise **strategy** computes `sensitivity` and
-`gram_matrix` from the mechanism parameters; the accounting constructor
-receives these values rather than recomputing them. This ensures that
-noise generation and privacy accounting always agree on the mechanism.
+MF noise has different sensitivity than standard Gaussian noise because the
+correlated strategy matrix amplifies or attenuates individual contributions.
+Noise generation and accounting consume the same strategy recipe and
+participation context so they resolve the same mechanism.
 
 ```python
-import opaque.accounting as acc  # cross-cutting calibration / composition
 import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
 from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and coefficients
 strategy = band_mf_strategy(bands=10)
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )
 eps = proc.epsilon_at(1e-5)
 
-# DP-λCGD / BISR / BLT — strategy.as_mechanism populates the accounting
+# DP-λCGD / BISR / BLT — share the strategy between noise and accounting
 strategy = lambda_cgd_strategy(lambda_=0.9)
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -493,7 +490,7 @@ proc = dpftrl_acc.balls_in_bins(
 # sensitivity-proportional Mahalanobis budget; calibrate against the same
 # MF mechanism PLD used for the first-moment-only release.
 proc = dpftrl_acc.balls_in_bins(
-    dpftrl_acc.mf_gaussian(1.0, strategy),
+    dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1),
     num_bins=steps_per_epoch,
     n_steps=steps_per_epoch * num_epochs,
 )
@@ -555,7 +552,7 @@ Values are illustrative; actual results depend on problem specifics.
 
 `CyclicPoissonSampler` splits the data into `bands` groups and, at step
 `i`, samples only group `i % bands` with per-example probability
-`sample_rate`. Use `bands=1` with `identity_strategy` / `identity_mf`
+`sample_rate`. Use `bands=1` with `identity_strategy`
 so each step is plain Poisson on the full dataset; for BandMF, match `bands`
 to `band_mf_strategy`. That keeps the data schedule aligned with
 `mf_gaussian_noise` and `dpftrl_acc.poisson`:

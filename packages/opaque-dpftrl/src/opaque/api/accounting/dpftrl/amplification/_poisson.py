@@ -246,8 +246,8 @@ def poisson(
     examples.
 
     Args:
-        inner: ``mf_gaussian(nm, BandMfStrategy(...))`` or
-            ``mf_gaussian(nm, identity_strategy())``.
+        inner: ``mf_gaussian(nm, strategy, n_steps=1)`` using a BandMF or
+            identity strategy. The outer process supplies the horizon.
         sample_rate: Per-step Poisson sampling probability ``∈ (0, 1]``.
             At ``1.0`` every example participates — no amplification; each
             step is accounted as the plain Gaussian.
@@ -268,15 +268,15 @@ def poisson(
         from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 
         # BandMF
-        s = band_mf_strategy(n_steps=1000, bands=10)
+        s = band_mf_strategy(bands=10)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, s),
+            ftrl_acc.mf_gaussian(1.0, s, n_steps=1),
             sample_rate=0.01, n_steps=1000,
         )
 
         # MF identity (DP-SGD-style baseline through the FTRL API)
         proc = ftrl_acc.poisson(
-            ftrl_acc.mf_gaussian(1.0, identity_strategy()),
+            ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
             sample_rate=0.01, n_steps=1000,
         )
         eps = proc.epsilon_at(1e-5)

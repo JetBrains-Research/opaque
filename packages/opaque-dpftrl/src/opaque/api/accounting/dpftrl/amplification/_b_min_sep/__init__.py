@@ -205,7 +205,7 @@ def b_min_sep(
     """BandMF privacy accounting under warm-start b-min-sep subsampling.
 
     Args:
-        inner: ``mf_gaussian(nm, BandMfStrategy(...))`` — strategy
+        inner: ``mf_gaussian(nm, BandMfStrategy(...), n_steps=1)`` — strategy
             coefficients (and band width) are read from
             ``inner.strategy.coefficients``.
         n_steps: Total number of training iterations ``n``.

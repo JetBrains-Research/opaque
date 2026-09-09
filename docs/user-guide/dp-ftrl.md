@@ -20,10 +20,10 @@ privacy guarantee.
 
 The trade-off: DP-FTRL accountants describe **whole training runs**.
 The amplification factory takes `n_steps` at calibration time, the
-strategy commits to a sensitivity / Gram matrix at construction time,
-and the noise mechanism latches the per-step contribution bound on
-the first call. Changing the training length, the per-step bound, or
-the strategy mid-run breaks the privacy claim.
+strategy is resolved against that horizon and participation context, and the
+noise mechanism latches the per-step contribution bound on the first call.
+Changing the training length, the per-step bound, or the strategy mid-run
+breaks the privacy claim.
 
 ## Privacy and workload assumptions
 
@@ -35,10 +35,9 @@ does not itself extend the documented privacy analysis.
 ## 1. Strategy choice
 
 Pick a matrix-factorization strategy by mechanism. The strategy
-object holds: coefficients defining the lower-triangular linear map
-used for noise, the sensitivity (and sometimes a Gram matrix) used by
-the accountant, and a streaming representation for efficient noise
-generation.
+object is a recipe for the lower-triangular linear map used by noise and
+accounting. It resolves coefficients and privacy quantities for the supplied
+participation context and provides an efficient streaming representation.
 
 ```python
 from opaque.dpftrl.noise import (
@@ -59,8 +58,8 @@ choice criteria.
 ## 2. Calibration
 
 DP-FTRL accountants describe a whole training run. Build the strategy
-first, then build the matching accounting mechanism using its
-sensitivity / Gram matrix:
+first, then pass the same recipe to the matching accounting mechanism. The
+amplifier supplies the run's participation context:
 
 ```python
 import opaque.accounting as acc                  # cross-cutting
@@ -72,7 +71,7 @@ strategy = band_mf_strategy(bands=10)
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: dpftrl_acc.poisson(
-        dpftrl_acc.mf_gaussian(nm, strategy),
+        dpftrl_acc.mf_gaussian(nm, strategy, n_steps=1),
         sample_rate=0.01,
         n_steps=1000,
     ),
@@ -102,7 +101,7 @@ its declared `n_steps`; composing it once per optimizer step would over-count:
 
 ```python
 proc = dpftrl_acc.poisson(
-    dpftrl_acc.mf_gaussian(noise_multiplier, strategy),
+    dpftrl_acc.mf_gaussian(noise_multiplier, strategy, n_steps=1),
     sample_rate=0.01,
     n_steps=1000,
 )

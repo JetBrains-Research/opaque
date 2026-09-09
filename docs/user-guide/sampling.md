@@ -140,7 +140,7 @@ group stays Poisson-style.
 For an identity MF baseline (`identity_strategy()`), use `bands=1` so the
 lone group is the full dataset and every step is plain Poisson on all
 examples, matching whole-process `dpftrl_acc.poisson` over
-`dpftrl_acc.mf_gaussian(nm, identity_strategy())`. For BandMF, set
+`dpftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1)`. For BandMF, set
 `bands` to the same count as in `band_mf_strategy(bands=...)` so
 participation matches correlated ``mf_gaussian_noise``.
 
@@ -191,7 +191,7 @@ stationary distribution so expected batch size is roughly stable from step 0.
 
 Use `p = p_0 / (1 - p_0 * (bands - 1))` when matching a target per-example rate
 `p_0 = expected_batch_size / dataset_size` (for `bands == 1`, `p = p_0`).
-Pair with `opaque.accounting.b_min_sep` for privacy accounting.
+Pair with `opaque.dpftrl.accounting.b_min_sep` for privacy accounting.
 
 ```python
 from opaque.dpftrl.sampling import BMinSepSampler
