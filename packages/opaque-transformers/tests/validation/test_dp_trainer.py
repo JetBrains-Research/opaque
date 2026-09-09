@@ -554,6 +554,50 @@ class TestDPTrainerCallbacks:
         assert "on_train_end" in fired
         assert "on_evaluate" in fired
 
+    def test_on_train_begin_cannot_change_privacy_config(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+
+        class MutatingCallback(_HFTrainerCallback):
+            def on_train_begin(self, args, state, control, **kwargs):
+                args.sampling_kwargs["truncated_batch_size"] = 4
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(max_steps=1),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            callbacks=[MutatingCallback()],
+        )
+
+        with pytest.raises(ConfigurationError, match="must remain unchanged for a run"):
+            trainer.train()
+
+    def test_checkpoint_rejects_late_privacy_change(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        model, tokenizer = gpt2_with_lora
+
+        class MutatingCallback(_HFTrainerCallback):
+            def on_step_end(self, args, state, control, **kwargs):
+                args.sampling_kwargs["truncated_batch_size"] = 4
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                output_dir=str(tmp_path),
+                max_steps=1,
+                save_steps=1,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            callbacks=[MutatingCallback()],
+        )
+
+        with pytest.raises(ConfigurationError, match="must remain unchanged for a run"):
+            trainer.train()
+
 
 class TestDPTrainerTrainerContractFlags:
     """Focused tests for trainer-contract flags."""
@@ -828,6 +872,29 @@ class TestDPTrainerAdaptiveClipping:
         ctx = trainer._setup_training()
 
         assert ctx.clip_state._target_quantile == pytest.approx(target_clipping_rate)
+
+    def test_canonical_adaptive_kwargs_reach_clipper(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                clipping_mode="adaptive",
+                max_steps=1,
+                clipping_kwargs={
+                    "target_quantile": 0.8,
+                    "clipping_norm_max": 25.0,
+                },
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        ctx = trainer._setup_training()
+
+        assert ctx.clip_state._target_quantile == pytest.approx(0.8)
+        assert ctx.clip_state._clipping_norm_max == pytest.approx(25.0)
 
     def test_adaptive_clipping_runs(self, gpt2_with_lora, tiny_lm_dataset):
         model, tokenizer = gpt2_with_lora

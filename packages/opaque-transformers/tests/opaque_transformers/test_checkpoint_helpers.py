@@ -13,6 +13,7 @@ import torch
 
 import opaque.api.transformers.trainer._checkpoint as ckpt
 from opaque.api.engine.clipping.types import FixedClipState
+from opaque.api.transformers.trainer._privacy_config import resolve_privacy_config
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -27,6 +28,7 @@ from opaque.exceptions import CheckpointError
 from opaque.random import key
 from opaque.random.types import RngKey
 from opaque.serialization import from_state_dict as opaque_from_state_dict
+from opaque.transformers.trainer import TrainingArguments
 from opaque.types import (
     PerGroup,
     SecondMomentClippingOutput,
@@ -162,6 +164,9 @@ class TestDpRuntimeBundle:
     def test_roundtrip(self, tmp_path):
         clip = FixedClipState()
         _, noise = gaussian_noise(noise_multiplier=1.0, key=key(11))
+        privacy = resolve_privacy_config(
+            TrainingArguments(privacy_noise_multiplier=1.1)
+        )
 
         path = str(tmp_path / "dp_runtime.pt")
         ckpt.save_dp_runtime_state(
@@ -187,6 +192,8 @@ class TestDpRuntimeBundle:
             calibration_source="calibrated",
             target_epsilon=5.0,
             horizon_process_state={"type": "ExampleHorizon", "n_steps": 30},
+            sampling_mode="poisson",
+            privacy_config=privacy,
         )
         loaded = ckpt.load_dp_runtime_state(path)
 
@@ -207,6 +214,8 @@ class TestDpRuntimeBundle:
             "type": "ExampleHorizon",
             "n_steps": 30,
         }
+        assert loaded.sampling_mode == "poisson"
+        assert loaded.privacy_config == privacy
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
         path = str(tmp_path / "dp.pt")
@@ -622,6 +631,8 @@ class TestRuntimeCheckpointDriftMetadata:
             ("mechanism_kind", "dp_relevant"),
             ("is_horizon_process", "dp_relevant"),
             ("horizon_process_state", "dp_relevant"),
+            ("sampling_mode", "dp_relevant"),
+            ("privacy_config", "dp_relevant"),
             ("mf_n_steps", "dp_relevant"),
             ("mf_min_sep", "dp_relevant"),
             ("mf_max_participations", "dp_relevant"),

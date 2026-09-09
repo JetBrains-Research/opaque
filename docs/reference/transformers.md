@@ -188,13 +188,45 @@ Dataclass surface.  Every field listed here exists on
 | `privacy_target_delta` | `float \| None` | `None` | Computed as `1 / dataset_size**1.1` when unset. |
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
-| `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Adaptive / auto kwargs (`target_clipping_rate`, `norm_max`, `gamma`).  Also accepts JSON string or HF-style comma-separated string. |
-| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"cyclic_poisson"`, `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
-| `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
+| `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Mode-specific clipping parameters; see the schema below. |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit modes: `"poisson"`, `"k_out_of_t"` (gaussian); `"poisson"`, `"balls_in_bins"` (mf_identity); `"cyclic_poisson"`, `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
+| `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Mode-specific sampler parameters; see the schema below. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
-| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ. When unset (and `privacy_target_epsilon` is set), calibration searches. Horizon mechanisms report the conservative declared full-horizon ε throughout training. |
-| `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
-| `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.11, "max": 10.0, "tolerance": 1e-3}`. |
+| `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ.  When unset (and `privacy_target_epsilon` is set), calibration searches. |
+| `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Mechanism-specific parameters; see the schema below. |
+| `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search parameters. Explicit values are valid only when `privacy_noise_multiplier=None`. |
+
+Privacy dictionaries are validated after automatic sampler and clipping-mode
+resolution. Unknown and mode-inactive keys raise `ConfigurationError`.
+Established aliases remain accepted, but conflicting alias values do not.
+
+| Field / selector | Accepted keys |
+|---|---|
+| `clipping_kwargs`, `fixed` | none |
+| `clipping_kwargs`, `adaptive` | `target_quantile` (`target_clipping_rate` alias), `clipping_norm_max` (`norm_max` alias) |
+| `clipping_kwargs`, `auto` | `gamma` |
+| `sampling_kwargs`, `poisson` | `truncated_batch_size` (`max_batch_size` alias) |
+| `sampling_kwargs`, `k_out_of_t` | required `k`, required `allocation` (`"block"` or `"total"`) |
+| `sampling_kwargs`, other modes | none |
+| `noise_calibration_kwargs`, calibrated noise | `param_min` (`min` alias), `param_max` (`max` alias), `tolerance`; defaults are `0.11`, `10.0`, and `1e-3` |
+| `privacy_noise_mechanism_kwargs`, `gaussian` | `compute_dtype` (`float32` or `float64`) |
+| `privacy_noise_mechanism_kwargs`, `mf_band` | `bands`, `momentum`, `lr_schedule` |
+| `privacy_noise_mechanism_kwargs`, `mf_blt` | `max_buffers`, `momentum`, `lr_schedule` |
+| `privacy_noise_mechanism_kwargs`, `mf_bisr` | `bandwidth`, `normalized`, `momentum`, `inv_coefficients` |
+| `privacy_noise_mechanism_kwargs`, `mf_bsr` | `bandwidth`, `alpha`, `beta` |
+| `privacy_noise_mechanism_kwargs`, `mf_lambda_cgd` | `lambda_`, `normalized` |
+| `privacy_noise_mechanism_kwargs`, `mf_identity` | none |
+
+`DPTrainer` does not expose bounded Gaussian noise: its standard Gaussian
+accountant does not model that mechanism.
+
+Supported values are validated as well as names: probabilities and calibration
+bounds must be finite and in range, sampler and MF counts must be exact positive
+integers, and BLT permits at most 15 buffers. At run setup the trainer resolves
+these inputs into one run-scoped snapshot used by clipping, sampling,
+accounting, noise construction, reporting, and checkpoint provenance. Callable
+`lr_schedule` values are retained by reference, so this is not a deep-freeze of
+callable internals.
 
 ### Patches and kernels
 
@@ -370,6 +402,8 @@ accept any of:
 - `None`
 
 Normalized to `dict[str, Any] | None` at construction.
+Duplicate JSON members and comma-form keys are rejected for the four privacy
+dictionaries before normalization can discard either value.
 
 ## `EvaluationResult`
 

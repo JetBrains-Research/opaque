@@ -18,7 +18,7 @@ USAGE:
 
   # DP-FTRL with BLT (balls-in-bins sampling)
   python examples/train_dpsgd_trainer.py --preset smoke \
-      --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=16
+      --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=10
 
   # Save DPTrainer checkpoints every eval interval
   python examples/train_dpsgd_trainer.py --preset smoke --save-steps 10
@@ -845,11 +845,32 @@ def _validate_sampler_cli(
 def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
     sk: dict[str, Any] = {}
     if args.max_batch_size is not None:
-        sk["max_batch_size"] = args.max_batch_size
+        sk["truncated_batch_size"] = args.max_batch_size
     if args.sampler == "k_out_of_t":
         sk["k"] = int(args.k)
         sk["allocation"] = args.allocation
     return sk
+
+
+def _clipping_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
+    if args.clipping_mode == "adaptive" and not args.noise_mechanism.startswith("mf_"):
+        return {
+            "target_quantile": args.target_clipping_rate,
+            "clipping_norm_max": args.clipping_norm_max,
+        }
+    if args.clipping_mode == "auto":
+        return {"gamma": args.auto_clipping_gamma}
+    return {}
+
+
+def _calibration_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
+    if args.noise_multiplier is not None:
+        return {}
+    return {
+        "param_min": args.calibration_min,
+        "param_max": args.calibration_max,
+        "tolerance": args.calibration_tolerance,
+    }
 
 
 def _resolve_trainer_batching(args: argparse.Namespace) -> int:
@@ -1092,22 +1113,14 @@ def main() -> int:
         privacy_target_epsilon=args.target_epsilon,
         privacy_target_delta=args.target_delta,
         privacy_noise_multiplier=args.noise_multiplier,
-        noise_calibration_kwargs={
-            "min": args.calibration_min,
-            "max": args.calibration_max,
-            "tolerance": args.calibration_tolerance,
-        },
+        noise_calibration_kwargs=_calibration_kwargs_for_trainer(args),
         clipping_mode=args.clipping_mode,
         clipping_norm=(
             {"fallback": float(args.clipping_norm), **dict(args.per_group_clipping)}
             if args.per_group_clipping
             else args.clipping_norm
         ),
-        clipping_kwargs={
-            "target_clipping_rate": args.target_clipping_rate,
-            "norm_max": args.clipping_norm_max,
-            "gamma": args.auto_clipping_gamma,
-        },
+        clipping_kwargs=_clipping_kwargs_for_trainer(args),
         sampling_mode=args.sampler,
         sampling_kwargs=_sampling_kwargs_for_trainer(args),
         privacy_noise_mechanism=args.noise_mechanism,

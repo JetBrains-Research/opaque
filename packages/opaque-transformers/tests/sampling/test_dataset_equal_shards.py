@@ -20,6 +20,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.api.transformers.trainer._privacy_config import resolve_privacy_config
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 pytest.importorskip("transformers")
@@ -83,6 +84,8 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
         sampler_restart_step=None,
         mf=None,
         noise_multiplier=None,
+        privacy_config=resolve_privacy_config(args),
+        expected_batch_size=args.train_batch_size,
     )
     trainer._train_dataloader = None
     loader = trainer.get_train_dataloader()

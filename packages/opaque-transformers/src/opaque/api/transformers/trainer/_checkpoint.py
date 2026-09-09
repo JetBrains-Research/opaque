@@ -16,7 +16,7 @@ import re
 import shutil
 from dataclasses import field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -28,6 +28,9 @@ from transformers.trainer import TRAINER_STATE_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 
+if TYPE_CHECKING:
+    from ._privacy_config import ResolvedPrivacyConfig
+
 log = logging.getLogger(__name__)
 
 # Filename layout: ``training_args.bin`` matches HF's ``TRAINING_ARGS_NAME``.
@@ -37,9 +40,9 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-# Version 7 records calibration provenance plus versioned MF runtime state,
-# including bounded BISR history and sensitivity latches.
-DP_STATE_BUNDLE_VERSION = 7
+# Version 8 adds the run-scoped resolved privacy configuration to the version 7
+# calibration provenance and versioned MF runtime state.
+DP_STATE_BUNDLE_VERSION = 8
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -276,6 +279,14 @@ class RuntimeCheckpoint:
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
     )
+    sampling_mode: str | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    privacy_config: ResolvedPrivacyConfig | None = field(
+        default=None,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
     mf_n_steps: int | None = field(
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
@@ -325,6 +336,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
     calibration_source: str = "fixed",
     target_epsilon: float | None = None,
     horizon_process_state: dict[str, Any] | None = None,
+    sampling_mode: str | None = None,
+    privacy_config: ResolvedPrivacyConfig | None = None,
     mf_n_steps: int | None = None,
     mf_min_sep: int | None = None,
     mf_max_participations: int | None = None,
@@ -362,6 +375,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
         calibration_source=str(calibration_source),
         target_epsilon=(float(target_epsilon) if target_epsilon is not None else None),
         horizon_process_state=horizon_process_state,
+        sampling_mode=str(sampling_mode) if sampling_mode is not None else None,
+        privacy_config=privacy_config,
         mf_n_steps=int(mf_n_steps) if mf_n_steps is not None else None,
         mf_min_sep=int(mf_min_sep) if mf_min_sep is not None else None,
         mf_max_participations=(

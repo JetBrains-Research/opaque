@@ -37,6 +37,8 @@ from typing import TYPE_CHECKING, Any
 
 from transformers.modelcard import TrainingSummary
 
+from ._privacy_config import resolve_privacy_config
+
 if TYPE_CHECKING:
     from ._dp_trainer import DPTrainer  # pragma: no cover
 
@@ -338,6 +340,12 @@ def create_model_card(
 def _build_privacy_summary(trainer: DPTrainer) -> dict[str, float | str]:
     """Extract structured privacy values for model-card rendering."""
     a = trainer.args
+    if trainer._ctx is not None:
+        privacy_config = trainer._ctx.privacy_config
+    elif trainer._privacy_config is not None:
+        privacy_config = trainer._privacy_config
+    else:
+        privacy_config = resolve_privacy_config(a)
 
     # Prefer values from the training summary metrics (populated at the end
     # of _inner_training_loop) because they reflect the *actual* epsilon
@@ -372,15 +380,19 @@ def _build_privacy_summary(trainer: DPTrainer) -> dict[str, float | str]:
         and getattr(st, "privacy_resolved_noise_multiplier", None) is not None
     ):
         noise_multiplier = round(st.privacy_resolved_noise_multiplier, 6)
-    elif noise_multiplier == "unknown" and a.privacy_noise_multiplier is not None:
-        noise_multiplier = a.privacy_noise_multiplier
+    elif noise_multiplier == "unknown" and privacy_config.noise_multiplier is not None:
+        noise_multiplier = privacy_config.noise_multiplier
     if delta == "unknown" and getattr(st, "privacy_resolved_delta", None) is not None:
         delta = st.privacy_resolved_delta
-    elif delta == "unknown" and a.privacy_target_delta is not None:
-        delta = a.privacy_target_delta
+    elif delta == "unknown" and privacy_config.target_delta is not None:
+        delta = privacy_config.target_delta
 
     clipping_norm: float | str
-    cn = trainer._ctx.clip_norm if trainer._ctx is not None else a.clipping_norm
+    cn = (
+        trainer._ctx.clip_norm
+        if trainer._ctx is not None
+        else privacy_config.clipping.norm_value()
+    )
     if cn is None:
         clipping_norm = "unknown"
     elif hasattr(cn, "effective"):

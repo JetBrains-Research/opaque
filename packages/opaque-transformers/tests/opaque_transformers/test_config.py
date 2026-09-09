@@ -15,14 +15,26 @@ Covers:
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import math
 import multiprocessing
+import pickle
 
 import pytest
+import torch
 from transformers.debug_utils import DebugOption
 
+from opaque.api.transformers.trainer._privacy_config import (
+    CLIPPING_SCHEMAS,
+    MECHANISM_SCHEMAS,
+    MECHANISMS,
+    SAMPLING_MODES,
+    SAMPLING_SCHEMAS,
+    resolve_privacy_config,
+)
 from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.transformers.trainer import TrainingArguments
 
 
@@ -551,7 +563,9 @@ class TestClippingAndSamplingSurfaces:
 
     def test_clipping_kwargs_json_string_parsed(self):
         args = TrainingArguments(
-            privacy_noise_multiplier=1.0, clipping_kwargs='{"norm_max": 9.0}'
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs='{"norm_max": 9.0}',
         )
         assert args.clipping_kwargs == {"norm_max": 9.0}
 
@@ -563,7 +577,7 @@ class TestClippingAndSamplingSurfaces:
 
     def test_sampling_kwargs_rejects_bands(self):
         """``bands`` is owned by the strategy, not the sampler kwargs."""
-        with pytest.raises(ValueError, match="privacy-derived keys"):
+        with pytest.raises(ValueError, match="Unsupported sampling_kwargs"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 privacy_noise_mechanism="mf_band",
@@ -572,7 +586,7 @@ class TestClippingAndSamplingSurfaces:
 
     def test_sampling_kwargs_rejects_sampling_prob(self):
         """``sampling_prob`` is derived by the amplifier, not user input."""
-        with pytest.raises(ValueError, match="privacy-derived keys"):
+        with pytest.raises(ValueError, match="Unsupported sampling_kwargs"):
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 privacy_noise_mechanism="mf_band",
@@ -706,12 +720,379 @@ class TestNoiseCalibrationKwargs:
         assert base.noise_calibration_kwargs["max"] == 10.0
         assert base.noise_calibration_kwargs["tolerance"] == 1e-3
         tuned = TrainingArguments(
-            privacy_noise_multiplier=1.0,
+            privacy_target_epsilon=8.0,
             noise_calibration_kwargs={"min": 0.05, "tolerance": 1e-2},
         )
         assert tuned.noise_calibration_kwargs["min"] == 0.05
         assert tuned.noise_calibration_kwargs["max"] == 10.0
         assert tuned.noise_calibration_kwargs["tolerance"] == 1e-2
+
+    def test_explicit_kwargs_rejected_with_fixed_noise(self):
+        with pytest.raises(ConfigurationError, match="inactive"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                noise_calibration_kwargs={"min": 0.11},
+            )
+
+    def test_dataclass_replace_preserves_implicit_defaults(self):
+        args = TrainingArguments(privacy_noise_multiplier=1.0)
+
+        replaced = dataclasses.replace(args)
+
+        assert resolve_privacy_config(replaced).calibration is None
+        with pytest.raises(ConfigurationError, match="inactive"):
+            dataclasses.replace(args, noise_calibration_kwargs={"min": 0.11})
+
+    @pytest.mark.parametrize("method", ["deepcopy", "pickle"])
+    def test_copy_round_trip_preserves_explicit_keys(self, method):
+        args = TrainingArguments(
+            privacy_target_epsilon=8.0,
+            noise_calibration_kwargs={"min": 0.11},
+        )
+        copied = (
+            copy.deepcopy(args)
+            if method == "deepcopy"
+            else pickle.loads(pickle.dumps(args))
+        )
+        copied.privacy_target_epsilon = None
+        copied.privacy_noise_multiplier = 1.0
+
+        with pytest.raises(ConfigurationError, match="inactive"):
+            resolve_privacy_config(copied)
+
+
+class TestPrivacyKwargSchemas:
+    @pytest.mark.parametrize(
+        ("field_name", "base"),
+        [
+            ("clipping_kwargs", {"clipping_mode": "adaptive"}),
+            ("sampling_kwargs", {}),
+            ("noise_calibration_kwargs", {"privacy_target_epsilon": 8.0}),
+            ("privacy_noise_mechanism_kwargs", {}),
+        ],
+    )
+    def test_unknown_key_rejected(self, field_name, base):
+        kwargs = {"privacy_noise_multiplier": 1.0, **base}
+        if field_name == "noise_calibration_kwargs":
+            kwargs.pop("privacy_noise_multiplier")
+        with pytest.raises(ConfigurationError, match=field_name):
+            TrainingArguments(**kwargs, **{field_name: {"__unexpected__": 1}})
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"clipping_kwargs": {"gamma": 0.1}},
+            {
+                "clipping_mode": "auto",
+                "clipping_kwargs": {"target_quantile": 0.5},
+            },
+            {"sampling_kwargs": {"k": 1}},
+            {
+                "privacy_noise_mechanism": "mf_identity",
+                "privacy_noise_mechanism_kwargs": {"bands": 1},
+            },
+        ],
+    )
+    def test_mode_inactive_key_rejected(self, kwargs):
+        with pytest.raises(ConfigurationError, match="Unsupported"):
+            TrainingArguments(privacy_noise_multiplier=1.0, **kwargs)
+
+    def test_empty_schema_error_names_no_accepted_keys(self):
+        with pytest.raises(ConfigurationError, match="Accepted keys: <none>"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                clipping_kwargs={"gamma": 0.1},
+            )
+
+    def test_mf_clipping_kwargs_validate_after_adaptive_resolution(self):
+        with pytest.raises(ConfigurationError, match="clipping_mode='fixed'"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_band",
+                clipping_mode="adaptive",
+                clipping_kwargs={"target_quantile": 0.8},
+            )
+
+    def test_canonical_and_legacy_clipping_names_resolve_equally(self):
+        canonical = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs={
+                "target_quantile": 0.8,
+                "clipping_norm_max": 20.0,
+            },
+        )
+        legacy = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs={
+                "target_clipping_rate": 0.8,
+                "norm_max": 20.0,
+            },
+        )
+
+        assert canonical.clipping_kwargs != legacy.clipping_kwargs
+        assert (
+            resolve_privacy_config(canonical).clipping
+            == resolve_privacy_config(legacy).clipping
+        )
+
+    def test_equal_aliases_coalesce_after_conversion(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs={
+                "target_quantile": "0.8",
+                "target_clipping_rate": 0.8,
+            },
+        )
+        assert resolve_privacy_config(args).clipping.target_quantile == 0.8
+
+    def test_conflicting_aliases_rejected(self):
+        with pytest.raises(ConfigurationError, match="Conflicting aliases"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                clipping_mode="adaptive",
+                clipping_kwargs={
+                    "target_quantile": 0.8,
+                    "target_clipping_rate": 0.2,
+                },
+            )
+
+    def test_sampling_aliases_resolve_equally(self):
+        canonical = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_kwargs={"truncated_batch_size": 8},
+        )
+        legacy = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            sampling_kwargs={"max_batch_size": 8},
+        )
+        assert (
+            resolve_privacy_config(canonical).sampling
+            == resolve_privacy_config(legacy).sampling
+        )
+
+    def test_calibration_aliases_resolve_equally(self):
+        canonical = TrainingArguments(
+            privacy_target_epsilon=8.0,
+            noise_calibration_kwargs={"param_min": 0.2, "param_max": 8.0},
+        )
+        legacy = TrainingArguments(
+            privacy_target_epsilon=8.0,
+            noise_calibration_kwargs={"min": 0.2, "max": 8.0},
+        )
+        assert (
+            resolve_privacy_config(canonical).calibration
+            == resolve_privacy_config(legacy).calibration
+        )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            (
+                {
+                    "clipping_mode": "adaptive",
+                    "clipping_kwargs": {"target_quantile": 1.0},
+                },
+                "target_quantile",
+            ),
+            ({"sampling_kwargs": {"truncated_batch_size": 1.5}}, "integer"),
+            (
+                {
+                    "sampling_mode": "k_out_of_t",
+                    "sampling_kwargs": {"k": True, "allocation": "block"},
+                },
+                "not bool",
+            ),
+        ],
+    )
+    def test_supported_keys_still_validate_values(self, kwargs, message):
+        with pytest.raises((ConfigurationError, InputTypeError), match=message):
+            TrainingArguments(privacy_noise_multiplier=1.0, **kwargs)
+
+    def test_calibration_minimum_must_be_positive(self):
+        with pytest.raises(ConfigurationError, match="param_min must be > 0"):
+            TrainingArguments(
+                privacy_target_epsilon=8.0,
+                noise_calibration_kwargs={"param_min": 0.0},
+            )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            '{"gamma": 0.1, "gamma": 0.2}',
+            "gamma=0.1,gamma=0.2",
+        ],
+    )
+    def test_duplicate_text_keys_rejected(self, value):
+        with pytest.raises(ConfigurationError, match="duplicate key 'gamma'"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                clipping_mode="auto",
+                clipping_kwargs=value,
+            )
+
+    def test_non_string_key_rejected(self):
+        with pytest.raises(InputTypeError, match="keys must be strings"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                sampling_kwargs={1: 2},
+            )
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (torch.float32, torch.float32),
+            (torch.float64, torch.float64),
+            ("float32", torch.float32),
+            ("torch.float64", torch.float64),
+        ],
+    )
+    def test_gaussian_compute_dtype_codec(self, value, expected):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            privacy_noise_mechanism_kwargs={"compute_dtype": value},
+        )
+        assert resolve_privacy_config(args).mechanism.as_kwargs() == {
+            "compute_dtype": expected
+        }
+
+    @pytest.mark.parametrize("value", [torch.float16, torch.bfloat16, "float16"])
+    def test_gaussian_compute_dtype_rejects_lower_precision(self, value):
+        with pytest.raises(ConfigurationError, match="float32 or float64"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism_kwargs={"compute_dtype": value},
+            )
+
+    def test_bounded_gaussian_is_not_an_accounted_trainer_option(self):
+        with pytest.raises(ConfigurationError, match="bound"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism_kwargs={"bound": 3.0},
+            )
+
+    @pytest.mark.parametrize(
+        ("mechanism", "mechanism_kwargs", "expected"),
+        [
+            (
+                "mf_band",
+                {"bands": 4, "momentum": 0.9},
+                {"bands": 4, "momentum": 0.9},
+            ),
+            (
+                "mf_blt",
+                {"max_buffers": 4, "momentum": 0.9},
+                {"max_buffers": 4, "momentum": 0.9},
+            ),
+            (
+                "mf_bisr",
+                {
+                    "bandwidth": 2,
+                    "normalized": False,
+                    "momentum": 0.2,
+                    "inv_coefficients": [1.0, 0.1],
+                },
+                {
+                    "bandwidth": 2,
+                    "normalized": False,
+                    "momentum": 0.2,
+                    "inv_coefficients": (1.0, 0.1),
+                },
+            ),
+            (
+                "mf_bsr",
+                {"bandwidth": 4, "alpha": 0.8, "beta": 0.2},
+                {"bandwidth": 4, "alpha": 0.8, "beta": 0.2},
+            ),
+            (
+                "mf_lambda_cgd",
+                {"lambda_": 0.2, "normalized": False},
+                {"lambda_": 0.2, "normalized": False},
+            ),
+            ("mf_identity", {}, {}),
+        ],
+    )
+    def test_mechanism_schemas_forward_canonical_values(
+        self, mechanism, mechanism_kwargs, expected
+    ):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            privacy_noise_mechanism=mechanism,
+            privacy_noise_mechanism_kwargs=mechanism_kwargs,
+        )
+        resolved = resolve_privacy_config(args).mechanism
+        assert resolved.kind == mechanism
+        assert resolved.as_kwargs() == expected
+
+    @pytest.mark.parametrize(
+        ("mechanism", "mechanism_kwargs", "message"),
+        [
+            ("mf_blt", {"max_buffers": 16}, "max_buffers must be <= 15"),
+            (
+                "mf_bisr",
+                {"bandwidth": 2, "inv_coefficients": [0.0, 1.0]},
+                "inv_coefficients\\[0\\]",
+            ),
+        ],
+    )
+    def test_mechanism_schema_enforces_factory_bounds(
+        self, mechanism, mechanism_kwargs, message
+    ):
+        with pytest.raises(ConfigurationError, match=message):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism=mechanism,
+                privacy_noise_mechanism_kwargs=mechanism_kwargs,
+            )
+
+    def test_setup_revalidation_catches_mutation(self):
+        args = TrainingArguments(privacy_noise_multiplier=1.0)
+        args.sampling_kwargs["__unexpected__"] = 1
+        with pytest.raises(ConfigurationError, match="sampling_kwargs"):
+            resolve_privacy_config(args)
+
+    @pytest.mark.parametrize(
+        ("field_name", "value"),
+        [
+            ("clipping_norm", math.nan),
+            ("privacy_noise_multiplier", math.nan),
+            ("privacy_target_delta", 1.0),
+        ],
+    )
+    def test_setup_revalidation_catches_top_level_mutation(self, field_name, value):
+        args = TrainingArguments(privacy_noise_multiplier=1.0)
+        setattr(args, field_name, value)
+        with pytest.raises(ConfigurationError, match=field_name):
+            resolve_privacy_config(args)
+
+    def test_legacy_injected_calibration_defaults_are_not_explicit(self):
+        args = TrainingArguments(privacy_noise_multiplier=1.0)
+        args.noise_calibration_kwargs = dict(args.noise_calibration_kwargs)
+        assert resolve_privacy_config(args).calibration is None
+
+        args.noise_calibration_kwargs["min"] = 0.01
+        assert resolve_privacy_config(args).calibration is None
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"sampling_mode": "random_allocation"},
+            {
+                "sampling_mode": "k_out_of_t",
+                "sampling_kwargs": {"total_participations": 2},
+            },
+        ],
+    )
+    def test_removed_k_out_of_t_spellings_have_migration_error(self, kwargs):
+        with pytest.raises(ConfigurationError, match="replaced by"):
+            TrainingArguments(privacy_noise_multiplier=1.0, **kwargs)
+
+    def test_schema_registries_are_complete(self):
+        assert CLIPPING_SCHEMAS.keys() == {"fixed", "adaptive", "auto"}
+        assert SAMPLING_SCHEMAS.keys() == SAMPLING_MODES
+        assert MECHANISM_SCHEMAS.keys() == MECHANISMS
 
 
 # ---------------------------------------------------------------------------
@@ -772,6 +1153,7 @@ class TestDictFieldInputContract:
     def test_mapping_input_materialises_to_dict(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
             clipping_kwargs=_FakeDictConfig({"target_clipping_rate": 0.5}),
         )
         assert isinstance(args.clipping_kwargs, dict)
@@ -782,13 +1164,16 @@ class TestDictFieldInputContract:
         # ListConfig).  The nested container must come back as a plain
         # list — silently fixes the OmegaConf nested-ListConfig leak.
         nested = _FakeDictConfig({"items": _FakeListConfig([1, 2, 3])})
-        args = TrainingArguments(privacy_noise_multiplier=1.0, clipping_kwargs=nested)
-        assert args.clipping_kwargs == {"items": [1, 2, 3]}
-        assert isinstance(args.clipping_kwargs["items"], list)
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0, lr_scheduler_kwargs=nested
+        )
+        assert args.lr_scheduler_kwargs == {"items": [1, 2, 3]}
+        assert isinstance(args.lr_scheduler_kwargs["items"], list)
 
     def test_json_string_input_parses(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
             clipping_kwargs='{"target_clipping_rate": 0.5}',
         )
         assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
@@ -796,6 +1181,7 @@ class TestDictFieldInputContract:
     def test_hf_comma_string_input_parses(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
             clipping_kwargs="target_clipping_rate=0.5,norm_max=10.0",
         )
         assert args.clipping_kwargs == {

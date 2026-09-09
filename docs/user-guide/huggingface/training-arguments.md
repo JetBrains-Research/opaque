@@ -130,16 +130,44 @@ noise would yield infinite noise and `NaN` gradients.
 
 | Field | Use |
 |---|---|
-| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
-| `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for k-out-of-t allocation. |
-| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
-| `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
+| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit modes are limited to the compatible pairs below. |
+| `sampling_kwargs` | Sampler-specific parameters. `truncated_batch_size=N` caps Poisson draws. |
+| `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. With `mf_*`, `adaptive` resolves to `fixed` because MF noise requires constant per-step sensitivity. |
+| `clipping_kwargs` | Parameters for the resolved clipping mode. |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
-| `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: for example, `bound=...` for the bounded Gaussian variant. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
-| `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
+| `privacy_noise_mechanism_kwargs` | Mechanism-specific parameters. `mf_*` required parameters receive the defaults below. |
+| `noise_calibration_kwargs` | Calibration search parameters; defaults are `param_min=0.11`, `param_max=10.0`, and `tolerance=1e-3`. Explicit values require calibrated rather than fixed noise. |
 
 All dict-shaped fields accept a `Mapping`, a JSON object string, or
 the HF-style comma string `"a=1,b=2"`.
+
+The privacy dictionaries use strict schemas after automatic mode resolution:
+
+| Field / mode | Accepted keys |
+|---|---|
+| `clipping_kwargs`, `fixed` | none |
+| `clipping_kwargs`, `adaptive` | `target_quantile` (`target_clipping_rate` alias), `clipping_norm_max` (`norm_max` alias) |
+| `clipping_kwargs`, `auto` | `gamma` |
+| `sampling_kwargs`, `poisson` | `truncated_batch_size` (`max_batch_size` alias) |
+| `sampling_kwargs`, `k_out_of_t` | `k`, `allocation` (`"block"` or `"total"`); both required |
+| `sampling_kwargs`, other modes | none |
+| `noise_calibration_kwargs` | `param_min` (`min` alias), `param_max` (`max` alias), `tolerance` |
+| Gaussian mechanism kwargs | `compute_dtype` (`float32` or `float64`) |
+| BandMF mechanism kwargs | `bands`, `momentum`, `lr_schedule` |
+| BLT mechanism kwargs | `max_buffers`, `momentum`, `lr_schedule` |
+| BISR mechanism kwargs | `bandwidth`, `normalized`, `momentum`, `inv_coefficients` |
+| BSR mechanism kwargs | `bandwidth`, `alpha`, `beta` |
+| Lambda-CGD mechanism kwargs | `lambda_`, `normalized` |
+| Identity MF mechanism kwargs | none |
+
+Unknown, inactive, and conflicting alias keys fail at construction. Duplicate
+keys in JSON or comma syntax fail before normalization. `DPTrainer` does not
+offer bounded Gaussian noise because its accountant models the standard
+Gaussian mechanism. Supported numeric values must also be finite and in range;
+count fields are exact positive integers, and BLT allows at most 15 buffers.
+Training consumes one run-scoped resolved privacy snapshot and records it in
+the DP checkpoint. Callable `lr_schedule` values remain supported and are held
+by reference; the snapshot is not a deep-freeze of callable internals.
 
 ### DP-FTRL mechanisms
 
@@ -149,7 +177,7 @@ the strategy kwargs:
 | `privacy_noise_mechanism` | Auto-resolved sampler | Default kwargs |
 |---|---|---|
 | `mf_band` | `cyclic_poisson` (or explicit `b_min_sep`) | `{"bands": 16}` |
-| `mf_blt` | `balls_in_bins` | `{"max_buffers": 16}` |
+| `mf_blt` | `balls_in_bins` | `{"max_buffers": 10}` |
 | `mf_bisr` | `balls_in_bins` | `{"bandwidth": 4}` |
 | `mf_bsr` | `balls_in_bins` | `{"bandwidth": 8, "alpha": 1.0, "beta": 0.9}` |
 | `mf_lambda_cgd` | `balls_in_bins` | `{"lambda_": 0.5}` |
@@ -182,23 +210,27 @@ explicit `sampling_mode="b_min_sep"` alternative ([Dong & Ganesh
 2026](https://arxiv.org/abs/2602.09338)) if cyclic rotation does not fit
 your data pipeline.
 
-So the minimal DP-FTRL configuration is one field:
+Beyond the required privacy budget, selecting DP-FTRL takes one field:
 
 ```python
-args = TrainingArguments(privacy_noise_mechanism="mf_band")
+args = TrainingArguments(
+    privacy_target_epsilon=8.0,
+    privacy_noise_mechanism="mf_band",
+)
 # sampling_mode resolves to "cyclic_poisson"
 # privacy_noise_mechanism_kwargs resolves to {"bands": 16}
 ```
 
 Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;
-they're a sensible starting point, not universally optimal. Override
-any kwarg explicitly via `privacy_noise_mechanism_kwargs={...}`; user
-keys win on collision with the defaults table.
+they're a sensible starting point, not universally optimal. Override any
+accepted strategy key from the schema above via
+`privacy_noise_mechanism_kwargs={...}`; user keys win on collision with the
+defaults table.
 
-Mechanism constraints (validated at construction):
+Mechanism constraints are checked as soon as their required context is known:
 
-- BandMF requires `bands <= total_steps`; shrink `bands` for short
-  runs.
+- BandMF requires `bands <= total_steps`; this horizon-dependent check runs at
+  trainer setup, so shrink `bands` for short runs.
 - BallsInBins requires `total_steps % num_bins == 0` where
   `num_bins = expected_steps_per_epoch` (so configure `max_steps` /
   dataset / batch size to satisfy this).

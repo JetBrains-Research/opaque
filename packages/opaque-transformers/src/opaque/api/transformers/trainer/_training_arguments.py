@@ -72,10 +72,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import math
 import multiprocessing
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import field
 from functools import cached_property
 from pathlib import Path
@@ -91,12 +90,9 @@ from transformers.training_args import ParallelMode
 from transformers.utils import is_torch_bf16_gpu_available, is_torch_xla_available
 from transformers.utils.logging import get_log_levels_dict
 
-from ._optim import (
-    resolve_optimizer_name as _resolve_optimizer_name,
-)
-from ._optim import (
-    supported_names as _supported_optimizer_names,
-)
+from . import _privacy_config as _privacy
+from ._optim import resolve_optimizer_name as _resolve_optimizer_name
+from ._optim import supported_names as _supported_optimizer_names
 
 # Plain-string strategy domains; replaces HF's ``IntervalStrategy`` and
 # ``SaveStrategy`` enums (we never need the enum form, only the value).
@@ -141,90 +137,21 @@ _DICT_FIELDS: tuple[str, ...] = (
     "optim_args",
 )
 
-# Privacy noise mechanism surface.  ``"gaussian"`` is the DP-SGD baseline;
-# ``"mf_*"`` are DP-FTRL matrix-factorization mechanisms from
-# :mod:`opaque.dpftrl.noise`, dispatched through ``_dpftrl.build_strategy``
-# in :meth:`DPTrainer._setup_training`.
-_MECHANISMS_DPFTRL: frozenset[str] = frozenset(
-    {"mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}
-)
-_MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 
-# Concrete sampling modes (resolved set; ``"auto"`` is the default field
-# value and is replaced by one of these in ``__post_init__``).
-_SAMPLING_MODES: frozenset[str] = frozenset(
-    {
-        "poisson",
-        "k_out_of_t",
-        "b_min_sep",
-        "balls_in_bins",
-        "cyclic_poisson",
-        "sequential",
-    }
-)
+class _CalibrationKwargs(dict[str, Any]):
+    """Calibration mapping that retains explicit-key provenance."""
 
-# Canonical sampler pairing.  Each mechanism has a single "best" sampler;
-# users opting into a mechanism shouldn't have to remember to pair the
-# sampler too.  ``sampling_mode="auto"`` (the default) resolves via this
-# table.  Explicit ``sampling_mode`` overrides are validated against
-# :data:`_ALLOWED_SAMPLERS` below.
-#
-# ``mf_band``'s canonical sampler is ``"cyclic_poisson"``: BandMF's
-# amplification (Choquette-Choo et al. 2023, Theorem 1 / Algorithm 2)
-# assumes the dataset is partitioned into ``bands`` disjoint groups with one
-# active group rotating per step, which is exactly what
-# ``CyclicPoissonSampler`` realises and ``opaque.dpftrl.accounting.poisson``
-# accounts for.
-_SAMPLER_BY_MECHANISM: dict[str, str] = {
-    "gaussian": "poisson",
-    "mf_identity": "poisson",
-    "mf_band": "cyclic_poisson",
-    "mf_blt": "balls_in_bins",
-    "mf_bisr": "balls_in_bins",
-    "mf_bsr": "balls_in_bins",
-    "mf_lambda_cgd": "balls_in_bins",
-}
+    explicit_keys: frozenset[str]
 
-# Per-mechanism allow-list for explicit ``sampling_mode`` overrides.
-# ``mf_band`` accepts ``"b_min_sep"`` (Dong & Ganesh 2026) as an explicit
-# alternative to its canonical ``"cyclic_poisson"`` participation pattern;
-# everything else pins a single sampler.  Plain ``"poisson"`` (whole-dataset
-# subsampling, no group rotation) is deliberately *not* allowed for
-# ``mf_band``: it does not realise the grouped participation pattern the
-# accountant assumes (issue #776).
-_ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
-    "gaussian": frozenset({"poisson", "k_out_of_t"}),
-    "mf_identity": frozenset({"poisson", "balls_in_bins"}),
-    "mf_band": frozenset({"cyclic_poisson", "b_min_sep"}),
-    "mf_blt": frozenset({"balls_in_bins"}),
-    "mf_bisr": frozenset({"balls_in_bins"}),
-    "mf_bsr": frozenset({"balls_in_bins"}),
-    "mf_lambda_cgd": frozenset({"balls_in_bins"}),
-}
+    def __init__(
+        self,
+        *args: Any,
+        explicit_keys: Iterable[str] = (),
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.explicit_keys = frozenset(explicit_keys)
 
-# Participation samplers require restoring their saved cursor.
-_CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
-
-# Per-mechanism kwargs defaults auto-filled into
-# ``privacy_noise_mechanism_kwargs`` when the user leaves them blank.
-# Tuned for a Mellum/Kstack-shaped causal-LM target; not universally
-# optimal, just a sensible starting point so ``privacy_noise_mechanism=
-# "mf_band"`` works out of the box.  User-supplied keys win on collision.
-# Keys match the strategy factory signatures in
-# :mod:`opaque.dpftrl.noise` exactly so the trainer can spread the dict
-# into the factory call.
-_MECH_DEFAULTS: dict[str, dict[str, Any]] = {
-    "mf_band": {"bands": 16},
-    # BLT buffer count is a rational-approximation degree (the optimizer
-    # searches up to max_buffers and stops early), NOT a band width; the
-    # BLT math rejects > 15 as ill-conditioned. 10 matches the library's
-    # own optimize() default.
-    "mf_blt": {"max_buffers": 10},
-    "mf_bisr": {"bandwidth": 4},
-    "mf_bsr": {"bandwidth": 8, "alpha": 1.0, "beta": 0.9},
-    "mf_lambda_cgd": {"lambda_": 0.5},
-    "mf_identity": {},
-}
 
 if TYPE_CHECKING:
     from opaque.scheduling.types import Schedule
@@ -499,17 +426,13 @@ class TrainingArguments:
     # ---- Noise mechanism / fixed multiplier -------------------------------
     privacy_noise_mechanism: str = "gaussian"
     privacy_noise_multiplier: float | None = None
-    #: Extra kwargs forwarded into :func:`opaque.dpsgd.noise.gaussian_noise`
-    #: (e.g. ``bound`` for the bounded Gaussian mechanism).  JSON/HF-style
-    #: parity with ``sampling_kwargs`` / ``clipping_kwargs``.
+    #: Mode-specific noise parameters. Gaussian accepts ``compute_dtype``;
+    #: matrix-factorization mechanisms use their strategy schemas.
     privacy_noise_mechanism_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Subsampling (cap via ``sampling_kwargs``) -----------------------
-    # ``"auto"`` (default) pairs the sampler with
-    # :attr:`privacy_noise_mechanism` via :data:`_SAMPLER_BY_MECHANISM` in
-    # ``__post_init__``; explicit overrides are validated against
-    # :data:`_ALLOWED_SAMPLERS`.  Downstream code only ever sees a
-    # resolved concrete mode.
+    # ``"auto"`` pairs the sampler with :attr:`privacy_noise_mechanism`.
+    # Downstream code receives the resolved concrete mode.
     sampling_mode: str = "auto"
     sampling_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
@@ -546,11 +469,8 @@ class TrainingArguments:
     def __post_init__(self) -> None:
         """Validate / coerce arguments.
 
-        Idempotent: re-entry (e.g. via ``dataclasses.replace`` or a
-        manual second call) short-circuits after the first successful
-        invocation, so the same ``TrainingArguments`` instance can be
-        reused — the dataclass output stays stable across constructions
-        even though many fields are mutated in-place.
+        Re-entry on the same instance returns after successful initialization.
+        ``dataclasses.replace`` constructs and validates a new instance.
         """
         if getattr(self, "_dp_post_init_done", False):
             return
@@ -954,6 +874,10 @@ class TrainingArguments:
         if self.logging_dir is not None:
             self.logging_dir = str(Path(self.logging_dir).expanduser())
 
+        calibration_explicit_keys = getattr(
+            self.noise_calibration_kwargs, "explicit_keys", None
+        )
+
         # Dict-shaped fields accept Mapping (incl. OmegaConf DictConfig),
         # JSON object string, HF-style "key=value,..." string, or None.
         # Normalize once here so downstream code only ever sees
@@ -962,7 +886,11 @@ class TrainingArguments:
             setattr(
                 self,
                 field_name,
-                _normalize_dict_field(getattr(self, field_name)),
+                _normalize_dict_field(
+                    getattr(self, field_name),
+                    reject_duplicate_keys=field_name in _privacy.PRIVACY_DICT_FIELDS,
+                    field_name=field_name,
+                ),
             )
 
         # Privacy / clipping / sampling kwargs default to ``{}`` rather
@@ -979,9 +907,20 @@ class TrainingArguments:
         ):
             if getattr(self, name) is None:
                 setattr(self, name, {})
+        if calibration_explicit_keys is None:
+            calibration_explicit_keys = frozenset(self.noise_calibration_kwargs)
         calibration = self.noise_calibration_kwargs
-        for key, default in (("min", 0.11), ("max", 10.0), ("tolerance", 1e-3)):
-            calibration.setdefault(key, default)
+        for canonical, alias, default in (
+            ("param_min", "min", _privacy.CALIBRATION_DEFAULTS["min"]),
+            ("param_max", "max", _privacy.CALIBRATION_DEFAULTS["max"]),
+        ):
+            if canonical not in calibration and alias not in calibration:
+                calibration[alias] = default
+        calibration.setdefault("tolerance", _privacy.CALIBRATION_DEFAULTS["tolerance"])
+        self.noise_calibration_kwargs = _CalibrationKwargs(
+            calibration,
+            explicit_keys=calibration_explicit_keys,
+        )
 
         if self.eval_strategy not in _INTERVAL_STRATEGIES:
             raise ConfigurationError(
@@ -1063,213 +1002,35 @@ class TrainingArguments:
         """Normalize and validate optimizer, clipping, noise, and sampling fields."""
         _resolve_optimizer_name(self.optim)
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
+        requested_clipping_mode = self.clipping_mode
+        privacy = _privacy.resolve_privacy_config(self)
+        self.clipping_mode = privacy.clipping.mode
+        self.sampling_mode = privacy.sampling.mode
 
-        # At least one of NM / target_epsilon must be set; NM=0.0 is allowed
-        # as an explicit non-private baseline.
-        if (
-            self.privacy_noise_multiplier is None
-            and self.privacy_target_epsilon is None
-        ):
-            raise ConfigurationError(
-                *(
-                    "Set either privacy_noise_multiplier (use 0.0 for non-private "
-                    "training) or privacy_target_epsilon (to calibrate noise to a "
-                    "budget); neither was provided.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier == 0.0
-            and self.privacy_target_epsilon is not None
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_noise_multiplier=0.0 is the non-private path; "
-                    "privacy_target_epsilon is meaningless there.  Drop the target "
-                    "or set a positive noise multiplier.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is None
-            and self.privacy_target_epsilon is not None
-            and self.privacy_target_epsilon <= 0
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_target_epsilon must be > 0 when calibrating noise; "
-                    f"got {self.privacy_target_epsilon!r}.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_noise_multiplier < 0
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_noise_multiplier must be >= 0; got "
-                    f"{self.privacy_noise_multiplier!r}.",
-                )
+        if requested_clipping_mode != self.clipping_mode:
+            log.warning(
+                "clipping_mode='adaptive' is incompatible with "
+                "privacy_noise_mechanism=%r (matrix-factorization requires "
+                "constant per-step sensitivity); resolving to clipping_mode='fixed'.",
+                self.privacy_noise_mechanism,
             )
 
-        # Infinite sensitivity is only meaningful for an explicitly
-        # non-private baseline.
-        clipping_disabled = (
-            isinstance(self.clipping_norm, float) and math.isinf(self.clipping_norm)
-        ) or (
-            isinstance(self.clipping_norm, dict)
-            and any(
-                isinstance(value, float) and math.isinf(value)
-                for value in self.clipping_norm.values()
-            )
-        )
-        if clipping_disabled and self.privacy_noise_multiplier != 0.0:
-            raise ConfigurationError(
-                *(
-                    "Disabling clipping (clipping_norm=math.inf) is only valid for "
-                    "a non-private baseline (privacy_noise_multiplier=0.0); got "
-                    f"privacy_noise_multiplier={self.privacy_noise_multiplier!r}. "
-                    "Set privacy_noise_multiplier=0.0, or pass a finite clipping_norm.",
-                )
-            )
-        if self.privacy_target_delta is not None and not (
-            0 < self.privacy_target_delta < 1
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_target_delta must lie in (0, 1); got "
-                    f"{self.privacy_target_delta!r}.",
-                )
-            )
-        if self.clipping_mode not in ("fixed", "adaptive", "auto"):
-            raise ConfigurationError(
-                *(
-                    f"clipping_mode must be 'fixed', 'adaptive', or 'auto'; "
-                    f"got {self.clipping_mode!r}.",
-                )
-            )
-        if self.privacy_noise_mechanism not in _MECHANISMS:
-            raise ConfigurationError(
-                *(
-                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                    f"expected one of {sorted(_MECHANISMS)}.",
-                )
-            )
-
-        if self.sampling_mode == "auto":
-            self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
-        elif self.sampling_mode not in _SAMPLING_MODES:
-            raise ConfigurationError(
-                *(
-                    f"sampling_mode={self.sampling_mode!r}; expected 'auto' or one "
-                    f"of {sorted(_SAMPLING_MODES)}.",
-                )
-            )
-        if (
-            self.privacy_noise_multiplier is not None
-            and self.privacy_target_epsilon is not None
-            and (
-                self.privacy_noise_mechanism != "gaussian"
-                or self.sampling_mode == "k_out_of_t"
-            )
-        ):
-            raise ConfigurationError(
-                *(
-                    "privacy_target_epsilon cannot be combined with a fixed "
-                    "privacy_noise_multiplier for whole-horizon mechanisms; "
-                    "incomplete-horizon privacy accounting and early stopping are "
-                    "unsupported. Set only privacy_target_epsilon to calibrate the "
-                    "complete horizon, or set only privacy_noise_multiplier.",
-                )
-            )
-        elif self.sampling_mode not in _ALLOWED_SAMPLERS[self.privacy_noise_mechanism]:
-            raise ConfigurationError(
-                *(
-                    f"sampling_mode={self.sampling_mode!r} is not valid for "
-                    f"privacy_noise_mechanism={self.privacy_noise_mechanism!r}; "
-                    f"allowed: {sorted(_ALLOWED_SAMPLERS[self.privacy_noise_mechanism])} "
-                    f"(omit sampling_mode or set 'auto' to pick automatically).",
-                )
-            )
+        if self.privacy_noise_mechanism in _privacy.MECHANISMS_DPFTRL:
+            for key, value in _privacy.MECHANISM_DEFAULTS[
+                self.privacy_noise_mechanism
+            ].items():
+                self.privacy_noise_mechanism_kwargs.setdefault(key, value)
 
         if (
             self.ignore_data_skip
-            and self.sampling_mode not in _CURSOR_FREE_SAMPLING_MODES
+            and self.sampling_mode not in _privacy.CURSOR_FREE_SAMPLING_MODES
         ):
             raise ConfigurationError(
                 *(
                     f"ignore_data_skip=True requires sampling_mode in "
-                    f"{sorted(_CURSOR_FREE_SAMPLING_MODES)}; got "
+                    f"{sorted(_privacy.CURSOR_FREE_SAMPLING_MODES)}; got "
                     f"{self.sampling_mode!r}. Restore the sampler snapshot, use "
                     "poisson sampling, or start a fresh run.",
-                )
-            )
-
-        if self.privacy_noise_mechanism in _MECHANISMS_DPFTRL:
-            # Matrix-factorization mechanisms require constant per-step
-            # sensitivity; adaptive clipping therefore resolves to fixed.
-            if self.clipping_mode == "adaptive":
-                log.warning(
-                    "clipping_mode='adaptive' is incompatible with "
-                    "privacy_noise_mechanism=%r (matrix-factorization "
-                    "requires constant per-step sensitivity); resolving "
-                    "to clipping_mode='fixed'.",
-                    self.privacy_noise_mechanism,
-                )
-                self.clipping_mode = "fixed"
-            defaults = _MECH_DEFAULTS[self.privacy_noise_mechanism]
-            for key, value in defaults.items():
-                self.privacy_noise_mechanism_kwargs.setdefault(key, value)
-
-        # Privacy-derived sampler parameters are owned by the strategy /
-        # amplifier and must not be duplicated under sampling_kwargs.
-        privacy_owned = {"bands", "sampling_prob"}
-        if isinstance(self.sampling_kwargs, dict):
-            invalid = privacy_owned & self.sampling_kwargs.keys()
-            if invalid:
-                raise ConfigurationError(
-                    *(
-                        f"sampling_kwargs may not carry privacy-derived keys "
-                        f"{sorted(invalid)}; these are owned by "
-                        f"privacy_noise_mechanism_kwargs (the strategy recipe) "
-                        f"and read off the built amplifier at runtime.",
-                    )
-                )
-            if self.sampling_mode == "k_out_of_t":
-                missing = {"k", "allocation"} - self.sampling_kwargs.keys()
-                if missing:
-                    raise ConfigurationError(
-                        *(
-                            "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                            f"{sorted(missing)}.",
-                        )
-                    )
-                allocation = self.sampling_kwargs["allocation"]
-                if allocation not in ("block", "total"):
-                    raise ConfigurationError(
-                        *(
-                            "sampling_kwargs['allocation'] must be 'block' or "
-                            f"'total', got {allocation!r}.",
-                        )
-                    )
-            if (
-                self.sampling_mode == "k_out_of_t"
-                and {
-                    "truncated_batch_size",
-                    "max_batch_size",
-                }
-                & self.sampling_kwargs.keys()
-            ):
-                raise ConfigurationError(
-                    *(
-                        "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                        "supported with sampling_mode='poisson'.",
-                    )
-                )
-        elif self.sampling_mode == "k_out_of_t":
-            raise ConfigurationError(
-                *(
-                    "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                    "'k' and 'allocation'.",
                 )
             )
 
@@ -1581,7 +1342,12 @@ def _to_native(value: Any) -> Any:
     return _coerce_scalar(value)
 
 
-def _parse_dict_string(value: str) -> dict[str, Any]:
+def _parse_dict_string(
+    value: str,
+    *,
+    reject_duplicate_keys: bool = False,
+    field_name: str = "dict field",
+) -> dict[str, Any]:
     """Parse a CLI string into a ``dict`` — JSON first, HF comma form as fallback.
 
     When the stripped string starts with ``{`` it is parsed as JSON and
@@ -1598,7 +1364,18 @@ def _parse_dict_string(value: str) -> dict[str, Any]:
     """
     stripped = value.strip()
     if stripped.startswith("{"):
-        loaded = json.loads(stripped)
+
+        def materialize_pairs(pairs):
+            out: dict[str, Any] = {}
+            for key, item in pairs:
+                if reject_duplicate_keys and key in out:
+                    raise ConfigurationError(
+                        *(f"{field_name} contains duplicate key {key!r}.",)
+                    )
+                out[key] = item
+            return out
+
+        loaded = json.loads(stripped, object_pairs_hook=materialize_pairs)
         if not isinstance(loaded, Mapping):
             raise ConfigurationError(
                 *(f"expected a JSON object (dict); got {type(loaded).__name__}",)
@@ -1614,11 +1391,20 @@ def _parse_dict_string(value: str) -> dict[str, Any]:
         key = key.strip()
         if not key:
             raise ConfigurationError(*(f"entry {entry!r} has an empty key",))
+        if reject_duplicate_keys and key in out:
+            raise ConfigurationError(
+                *(f"{field_name} contains duplicate key {key!r}.",)
+            )
         out[key] = _coerce_scalar(val)
     return out
 
 
-def _normalize_dict_field(value: Any) -> dict[str, Any] | None:
+def _normalize_dict_field(
+    value: Any,
+    *,
+    reject_duplicate_keys: bool = False,
+    field_name: str = "dict field",
+) -> dict[str, Any] | None:
     """Normalize a dict-shaped field to ``dict[str, Any] | None``.
 
     Input contract (one of):
@@ -1630,7 +1416,11 @@ def _normalize_dict_field(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
     if isinstance(value, str):
-        return _parse_dict_string(value)
+        return _parse_dict_string(
+            value,
+            reject_duplicate_keys=reject_duplicate_keys,
+            field_name=field_name,
+        )
     if isinstance(value, Mapping):
         return _to_native(value)
     raise InputTypeError(

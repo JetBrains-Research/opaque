@@ -102,6 +102,7 @@ from ._callback import (
 )
 from ._eval import EvalPrediction
 from ._precision import eval_dtype
+from ._privacy_config import ResolvedPrivacyConfig, resolve_privacy_config
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
 from ._training_arguments import TrainingArguments
@@ -224,12 +225,14 @@ class _TrainingContext:
     lr_schedule: Callable[[int], float]
     accounting: Accountant
     mechanism: Callable
+    privacy_config: ResolvedPrivacyConfig
     # Cached process reused across independent step compositions. Whole-horizon
     # mechanisms are installed in ``accounting`` once and leave this as None.
     step_process: Any | None
     target_delta: float
     sample_rate: float
     calibration_source: str
+    expected_batch_size: int
     expected_steps_per_epoch: int
     total_steps: int
     num_epochs: int
@@ -377,7 +380,7 @@ class DPTrainer:
     - ``compute_per_example_loss()`` — DP-correct override hook; the
       single extension point for SFT / DPO / KTO subclasses
     - ``create_optimizer()`` — functional optimizer (torchopt)
-    - ``get_train_dataloader()`` — PoissonSampler
+    - ``get_train_dataloader()`` — accountant-paired private sampler
     - ``get_eval_dataloader()`` — standard DataLoader
     - ``log()`` — append to state + fire callbacks
     """
@@ -582,6 +585,7 @@ class DPTrainer:
 
         # Functional state (populated by _setup_training, used by evaluate)
         self._ctx: _TrainingContext | None = None
+        self._privacy_config: ResolvedPrivacyConfig | None = None
         # Privacy accountant lives at the trainer level so ``save_model()``
         # can write ``accountant.json`` after training finishes.  The
         # ``_setup_training`` finally block copies the live accountant
@@ -593,10 +597,9 @@ class DPTrainer:
         self._signature_columns: list[str] | None = None
         self._signature_columns_unavailable = False
 
-        # All cross-field validation (save/eval strategy invariants,
-        # load_best_model_at_end requirements, …) lives in
-        # ``TrainingArguments.__post_init__``.  The trainer reads the
-        # validated ``args`` directly — no defensive snapshots.
+        # General cross-field validation lives in ``TrainingArguments``.
+        # Privacy fields are resolved again into a run-scoped snapshot in
+        # ``_setup_training``.
 
         # Callback state.  ``state.{logging,eval,save}_steps`` are
         # resolved from ``args`` via ``state.compute_steps`` so
@@ -799,6 +802,7 @@ class DPTrainer:
         self._globalstep_last_logged = 0
         self._train_start_time = None
         self._ctx = None
+        self._privacy_config = None
         self._train_dataloader = None
         self._eval_dataloader = None
 
@@ -1182,36 +1186,37 @@ class DPTrainer:
             ),
         )
         self._ctx = ctx
+        self._privacy_config = ctx.privacy_config
 
         if resume_path is not None:
             # ``_read_runtime_for_resume`` guarantees a complete payload
             # (dp_state + optimizer + accountant) or raises — weights-only
             # exports are rejected there — so resume always restores the full
             # DP runtime, never a partial one.
+            self._warn_on_arg_drift(runtime_payload)
             self._apply_runtime_state(
                 ctx, runtime_payload, prefix_accountant, resume_path
             )
-            self._warn_on_arg_drift(runtime_payload)
             self._load_rng_state(resume_path)
             self._load_callback_states()
             # Stop-at-ε on resume: if the restored accountant already
             # exceeds target, skip the training loop.
-            a = self.args
+            privacy = ctx.privacy_config
             if (
                 not ctx.is_horizon_process
-                and a.privacy_noise_multiplier is not None
-                and a.privacy_noise_multiplier > 0
-                and a.privacy_target_epsilon is not None
+                and privacy.noise_multiplier is not None
+                and privacy.noise_multiplier > 0
+                and privacy.target_epsilon is not None
             ):
                 ctx.accounting = acc.cached(ctx.accounting)
                 resumed_eps = ctx.accounting.epsilon_at(ctx.target_delta)
-                if resumed_eps >= a.privacy_target_epsilon:
+                if resumed_eps >= privacy.target_epsilon:
                     self.state.privacy_target_epsilon_reached = True
                     log.info(
                         "stop-at-ε hit on resume: ε=%g >= target=%g; "
                         "skipping training loop",
                         resumed_eps,
-                        a.privacy_target_epsilon,
+                        privacy.target_epsilon,
                     )
                     return TrainOutput(
                         self.state.global_step,
@@ -1226,19 +1231,18 @@ class DPTrainer:
         # deterministic): the crossing step is binary-searchable up front, so
         # the in-loop check becomes a free integer comparison (#392). This is
         # only defined for independently composed step mechanisms.
-        a = self.args
+        privacy = ctx.privacy_config
         if (
             not ctx.is_horizon_process
-            and a.privacy_noise_multiplier is not None
-            and a.privacy_noise_multiplier > 0
-            and a.privacy_target_epsilon is not None
-            and a.sampling_mode not in ("b_min_sep", "balls_in_bins")
+            and privacy.noise_multiplier is not None
+            and privacy.noise_multiplier > 0
+            and privacy.target_epsilon is not None
             and self.state.global_step < ctx.total_steps
         ):
             ctx.stop_at_step = predict_stop_step(
                 ctx.accounting.process,
                 ctx.step_process,
-                target_epsilon=a.privacy_target_epsilon,
+                target_epsilon=privacy.target_epsilon,
                 delta=ctx.target_delta,
                 k0=self.state.global_step,
                 horizon=ctx.total_steps,
@@ -1248,7 +1252,7 @@ class DPTrainer:
                     "stop-at-ε: will stop after step %d of %d (target ε=%g at δ=%.2e)",
                     ctx.stop_at_step,
                     ctx.total_steps,
-                    a.privacy_target_epsilon,
+                    privacy.target_epsilon,
                     ctx.target_delta,
                 )
 
@@ -1329,6 +1333,7 @@ class DPTrainer:
         self._callback_handler.state = self.state
         self._control = TrainerControl()
         self._ctx = None
+        self._privacy_config = None
         self._train_dataloader = None
         self._eval_dataloader = None
         self._tr_loss = torch.tensor(0.0, device=self._device)
@@ -1375,6 +1380,20 @@ class DPTrainer:
         recalibrate their complete declared process without composing a prefix.
         """
         a = self.args
+        privacy = resolve_privacy_config(a)
+        if (
+            self._ddp.world_size > 1
+            and privacy.mechanism.kind == "gaussian"
+            and privacy.sampling.mode == "poisson"
+            and privacy.sampling.truncated_batch_size is not None
+        ):
+            raise ConfigurationError(
+                *(
+                    "Truncated Poisson sampling is not supported with distributed "
+                    "training because its accountant uses the global population "
+                    "while each sampler truncates a local shard.",
+                )
+            )
         # --- Gradient checkpointing ---
         if a.gradient_checkpointing:
             gc_kwargs = a.gradient_checkpointing_kwargs or {"use_reentrant": False}
@@ -1496,37 +1515,41 @@ class DPTrainer:
         self.state.save_steps = save_steps_resolved
 
         # --- Clipping norm (scalar ``clipping_norm`` or per-group dict) ---
-        mgn = a.clipping_norm
-        if isinstance(mgn, dict):
+        clipping_norm_value = privacy.clipping.norm_value()
+        if isinstance(clipping_norm_value, dict):
             from opaque.api.engine.clipping import per_group as per_group_clipper
 
-            fb = float(mgn["fallback"])
-            patterns = {k: float(v) for k, v in mgn.items() if k != "fallback"}
+            fallback = float(clipping_norm_value["fallback"])
+            patterns = {
+                name: float(value)
+                for name, value in clipping_norm_value.items()
+                if name != "fallback"
+            }
             if not patterns:
-                clip_norm: Any = fb
+                clip_norm: Any = fallback
             else:
                 clip_norm = per_group_clipper(
                     trainable_params,
-                    fallback=fb,
+                    fallback=fallback,
                     **patterns,
                 )
                 log.info("Per-group clipping: %d groups", len(clip_norm.values))
         else:
-            clip_norm = float(mgn)
+            clip_norm = float(clipping_norm_value)
 
         # AdaClip releases both a noisy clipping-rate estimate and noisy
         # gradients.  They must use independent streams for the composed
         # mechanism; reusing the root key makes both step-t streams identical.
         # Keep non-adaptive seeding unchanged for reproducibility.
         quantile_noise_key = gradient_noise_key = key(a.seed)
-        if a.clipping_mode == "adaptive":
+        if privacy.clipping.mode == "adaptive":
             quantile_noise_key, gradient_noise_key = split(gradient_noise_key)
 
         # --- Clipping ---
         grad_fn, clip_state = self._create_grad_fn(
             per_example_loss_fn,
             batch_argnums,
-            a,
+            privacy,
             clip_norm,
             expected_batch_size,
             microbatch_size,
@@ -1542,28 +1565,22 @@ class DPTrainer:
         lr_schedule = self.create_scheduler(num_training_steps=total_steps)
 
         # --- MF strategy (DP-FTRL only) ---
-        mechanism_kind = a.privacy_noise_mechanism
+        mechanism_kind = privacy.mechanism.kind
         mf: _dpftrl.MFContext | None = None
         if mechanism_kind != "gaussian":
             mf_strategy = _dpftrl.build_strategy(
                 mechanism_kind,
-                (
-                    a.privacy_noise_mechanism_kwargs
-                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
-                    else None
-                ),
+                privacy.mechanism.as_kwargs(),
                 lr_schedule=lr_schedule,
             )
-            sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
             mf_amplifier_factory = _dpftrl.build_amplifier_factory(
-                sampling_mode=a.sampling_mode,
+                sampling_mode=privacy.sampling.mode,
                 strategy=mf_strategy,
                 sample_rate=sample_rate,
                 n_steps=total_steps,
                 num_bins=expected_steps_per_epoch,
                 dataset_size=dataset_size,
-                truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
+                truncated_batch_size=privacy.sampling.truncated_batch_size,
             )
             mf = _dpftrl.MFContext(
                 strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
@@ -1571,12 +1588,12 @@ class DPTrainer:
 
         # --- Privacy calibration ---
         target_delta = (
-            a.privacy_target_delta
-            if a.privacy_target_delta is not None
+            privacy.target_delta
+            if privacy.target_delta is not None
             else 1.0 / (dataset_size**1.1)
         )
         mechanism = self._build_mechanism(
-            a,
+            privacy,
             expected_batch_size,
             sample_rate,
             clip_norm,
@@ -1586,7 +1603,7 @@ class DPTrainer:
             mf_amplifier_factory=mf.amplifier_factory if mf is not None else None,
         )
         noise_multiplier = self._calibrate_noise(
-            a,
+            privacy,
             mechanism,
             total_steps,
             target_delta,
@@ -1599,7 +1616,7 @@ class DPTrainer:
             global_step_already_done=global_step_already_done,
         )
         calibration_source = (
-            "fixed" if a.privacy_noise_multiplier is not None else "calibrated"
+            "fixed" if privacy.noise_multiplier is not None else "calibrated"
         )
         self._set_resolved_privacy_args(
             target_delta=target_delta,
@@ -1609,8 +1626,7 @@ class DPTrainer:
             expected_batch_size=expected_batch_size,
             total_steps=total_steps,
         )
-        _sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        _trunc_cap = _sk.get("truncated_batch_size", _sk.get("max_batch_size"))
+        truncation_cap = privacy.sampling.truncated_batch_size
         log.info(
             "Resolved privacy config: delta=%.2e, noise_multiplier=%.4f (%s), "
             "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
@@ -1620,7 +1636,7 @@ class DPTrainer:
             sample_rate,
             total_steps,
             # None ⇒ unbounded Poisson PLD; int ⇒ truncated_poisson_gaussian_pld.
-            int(_trunc_cap) if _trunc_cap is not None else None,
+            int(truncation_cap) if truncation_cap is not None else None,
         )
 
         # --- Optimizer ---
@@ -1637,18 +1653,10 @@ class DPTrainer:
         # ``.noise_stddev`` carries the realized σ for downstream
         # consumers (e.g. opaque optimizers' DP bias correction).
         if mechanism_kind == "gaussian":
-            _gn_extra: dict[str, Any] = {
-                _k: _v
-                for _k, _v in (
-                    a.privacy_noise_mechanism_kwargs.items()
-                    if isinstance(a.privacy_noise_mechanism_kwargs, dict)
-                    else ()
-                )
-                if _k in ("bound", "compute_dtype")
-            }
+            noise_kwargs = privacy.mechanism.as_kwargs()
             make_noise = (
-                functools.partial(gaussian_noise, **_gn_extra)
-                if _gn_extra
+                functools.partial(gaussian_noise, **noise_kwargs)
+                if noise_kwargs
                 else gaussian_noise
             )
             noise_fn, noise_state = make_noise(
@@ -1660,20 +1668,20 @@ class DPTrainer:
             # ``min_sep`` / ``max_participations``) off the raw amplifier so
             # the streaming noise matrix tracks the calibrated PLD exactly.
             assert mf is not None
-            _amp = mf.amplifier_factory(noise_multiplier)
-            if int(_amp.n_steps) != total_steps:
+            amplifier = mf.amplifier_factory(noise_multiplier)
+            if int(amplifier.n_steps) != total_steps:
                 raise OperationError(
                     *(
                         "DP-FTRL amplifier horizon does not match the training "
-                        f"horizon: {_amp.n_steps} != {total_steps}.",
+                        f"horizon: {amplifier.n_steps} != {total_steps}.",
                     )
                 )
             noise_fn, noise_state = mf_gaussian_noise(
                 trainable_params,
                 mf.strategy,
-                n_steps=int(_amp.n_steps),
-                min_sep=int(_amp.min_sep),
-                max_participations=int(_amp.max_participations),
+                n_steps=int(amplifier.n_steps),
+                min_sep=int(amplifier.min_sep),
+                max_participations=int(amplifier.max_participations),
                 noise_multiplier=noise_multiplier,
                 key=key(a.seed),
             )
@@ -1701,10 +1709,12 @@ class DPTrainer:
             lr_schedule=lr_schedule,
             accounting=accounting,
             mechanism=mechanism,
+            privacy_config=privacy,
             step_process=step_process,
             target_delta=target_delta,
             sample_rate=sample_rate,
             calibration_source=calibration_source,
+            expected_batch_size=expected_batch_size,
             expected_steps_per_epoch=expected_steps_per_epoch,
             total_steps=total_steps,
             num_epochs=num_epochs,
@@ -1726,6 +1736,23 @@ class DPTrainer:
             mf=mf,
         )
 
+    def _on_train_begin(self, ctx: _TrainingContext) -> None:
+        """Dispatch ``on_train_begin`` and reject privacy-setting changes."""
+        self._control = self._callback_handler.on_train_begin(
+            self.args, self.state, self._control
+        )
+        self._check_privacy_config(ctx.privacy_config)
+
+    def _check_privacy_config(self, expected: ResolvedPrivacyConfig) -> None:
+        """Reject changes to a run's resolved privacy configuration."""
+        if resolve_privacy_config(self.args) != expected:
+            raise ConfigurationError(
+                *(
+                    "Privacy configuration changed after run setup; privacy "
+                    "settings must remain unchanged for a run.",
+                )
+            )
+
     def _inner_training_loop(
         self,
         ctx: _TrainingContext,
@@ -1734,12 +1761,10 @@ class DPTrainer:
         saved_sampler_state: dict[str, Any] | None = None,
         ignore_keys_for_eval: list[str] | None = None,
     ) -> TrainOutput:
-        """Epoch/step loop with Poisson sampling."""
+        """Epoch/step loop with the resolved private sampler."""
         a = self.args
 
-        self._control = self._callback_handler.on_train_begin(
-            self.args, self.state, self._control
-        )
+        self._on_train_begin(ctx)
 
         # Emit setup-time constants once now so they land in W&B summary
         # (via _PRIVACY_SUMMARY_KEYS) for cross-run comparison while the run
@@ -1816,8 +1841,7 @@ class DPTrainer:
         if a.eval_on_start:
             self.evaluate(ignore_keys=ignore_keys_for_eval)
 
-        # Build the train loader ONCE: a single
-        # ``PoissonSampler(n_steps=total_steps)`` drives every
+        # Build the train loader once: one horizon-bounded sampler drives every
         # epoch; the outer loop's role is purely callback synthesis
         # (``on_epoch_begin`` / ``on_epoch_end``) and per-epoch break
         # handling.  Resume restores the sampler's ``consumed`` cursor
@@ -1875,10 +1899,8 @@ class DPTrainer:
                 # no step process because their complete run was attached once.
                 _account_independent_step(ctx)
 
-                # Training step: clip → noise → optimize.  DP-SGD has no
-                # substep concept; each iteration is a full optimizer step
-                # over one Poisson-sampled logical batch.  ``on_substep_end``
-                # is therefore not fired.
+                # Training step: clip → noise → optimize. Each iteration is a
+                # full optimizer step, so ``on_substep_end`` is not fired.
                 step_result = self.training_step(self._model, batch)
 
                 global_step += 1
@@ -3719,17 +3741,12 @@ class DPTrainer:
     def get_train_dataloader(self) -> DataLoader:
         """Train DataLoader.
 
-        During training (``self._ctx`` populated) returns a
-        single-pass :class:`PoissonSampler`-backed DataLoader bounded
-        by ``ctx.total_steps`` (one sampler instance for the whole
-        run; the outer epoch loop just synthesises boundaries for the
-        HF callback surface).  Outside training (``ctx is None``,
-        inspection mode) returns a standard DataLoader.
+        During training, returns a single-pass private-sampler DataLoader
+        bounded by ``ctx.total_steps``. Outside training, returns a standard
+        DataLoader for inspection.
 
-        Override in a subclass to plug in a custom sampler — DP
-        correctness depends on the sampler producing each example with
-        independent probability ``ctx.sample_rate``, so any override
-        must preserve that invariant.
+        A custom sampler must implement the participation process represented
+        by ``ctx.privacy_config.sampling`` and the paired accountant.
         """
         a = self.args
         ctx = self._ctx
@@ -3837,18 +3854,16 @@ class DPTrainer:
             if self._ddp.world_size > 1:
                 sampler_key = fold_in(sampler_key, self._ddp.rank)
             ctx.current_sampler = _dpftrl.build_sampler(
-                sampling_mode=a.sampling_mode,
+                sampling_mode=ctx.privacy_config.sampling.mode,
                 dataset=dataset,
                 sample_rate=ctx.sample_rate,
                 n_steps=ctx.total_steps,
                 key=sampler_key,
-                sampling_kwargs=(
-                    a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else None
-                ),
+                sampling_kwargs=ctx.privacy_config.sampling.as_kwargs(),
                 mf=ctx.mf,
                 noise_multiplier=ctx.noise_multiplier,
                 num_bins=ctx.expected_steps_per_epoch,
-                expected_batch_size=int(a.train_batch_size),
+                expected_batch_size=ctx.expected_batch_size,
                 dataset_size=ctx.dataset_size,
             )
         sampler = ctx.current_sampler
@@ -4103,14 +4118,14 @@ class DPTrainer:
             # for the log line.  Fixed-NM path only; the calibrated NM was
             # sized to hit target_epsilon at max_steps, so stopping earlier
             # would mean we over-noised the run.
-            a = self.args
+            privacy = ctx.privacy_config
             if (
                 ctx.stop_at_step is None
                 and not ctx.is_horizon_process
-                and a.privacy_noise_multiplier is not None
-                and a.privacy_noise_multiplier > 0
-                and a.privacy_target_epsilon is not None
-                and epsilon >= a.privacy_target_epsilon
+                and privacy.noise_multiplier is not None
+                and privacy.noise_multiplier > 0
+                and privacy.target_epsilon is not None
+                and epsilon >= privacy.target_epsilon
             ):
                 # Horizon configurations cannot reach this fallback: combining
                 # fixed noise with a target is rejected during validation.
@@ -4119,7 +4134,7 @@ class DPTrainer:
                 log.info(
                     "stop-at-ε hit: ε=%g >= target=%g at step %d",
                     epsilon,
-                    a.privacy_target_epsilon,
+                    privacy.target_epsilon,
                     global_step,
                 )
             # HF parity: ``loss`` is the *average* per-step loss across the
@@ -4263,7 +4278,7 @@ class DPTrainer:
         self,
         loss_fn: Callable[..., Any],
         batch_argnums: tuple[int, ...],
-        a: TrainingArguments,
+        privacy: ResolvedPrivacyConfig,
         clip_norm: Any,
         expected_batch_size: int,
         microbatch_size: int,
@@ -4280,35 +4295,35 @@ class DPTrainer:
         When ``has_aux`` is set, ``loss_fn`` returns ``(loss, aux_dict)`` and the
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
         """
-        ca = a.clipping_kwargs
-        target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
-        clip_norm_max = float(ca.get("norm_max", 10.0))
-        auto_gamma = float(ca.get("gamma", 0.01))
+        clipping = privacy.clipping
         compiler = self._grad_compiler()
 
-        if a.clipping_mode == "adaptive":
+        if clipping.mode == "adaptive":
+            assert clipping.target_quantile is not None
+            assert clipping.clipping_norm_max is not None
             grad_fn, state = adaptive_clipped_grad(
                 loss_fn,
                 argnums=0,
                 has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 initial_clipping_norm=clip_norm,
-                target_quantile=target_clip_rate,
-                clipping_norm_max=clip_norm_max,
+                target_quantile=clipping.target_quantile,
+                clipping_norm_max=clipping.clipping_norm_max,
                 microbatch_size=microbatch_size,
                 return_aux=True,
                 key=quantile_noise_key,
                 normalize_by=expected_batch_size,
                 _chunk_compiler=compiler,
             )
-        elif a.clipping_mode == "auto":
+        elif clipping.mode == "auto":
+            assert clipping.gamma is not None
             grad_fn, state = auto_clipped_grad(
                 loss_fn,
                 argnums=0,
                 has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 R=clip_norm,
-                gamma=auto_gamma,
+                gamma=clipping.gamma,
                 normalize_by=expected_batch_size,
                 microbatch_size=microbatch_size,
                 return_aux=True,
@@ -4330,7 +4345,7 @@ class DPTrainer:
 
     def _build_mechanism(
         self,
-        a: TrainingArguments,
+        privacy: ResolvedPrivacyConfig,
         expected_batch_size: int,
         sample_rate: float,
         clip_norm: Any,
@@ -4346,7 +4361,7 @@ class DPTrainer:
         DP-SGD k-out-of-t and all DP-FTRL mechanisms return complete
         whole-horizon processes and must not be composed per step.
         """
-        if a.privacy_noise_mechanism != "gaussian":
+        if privacy.mechanism.kind != "gaussian":
             if mf_amplifier_factory is None:
                 raise OperationError(
                     *(
@@ -4359,7 +4374,7 @@ class DPTrainer:
         num_groups = clip_norm.num_groups if isinstance(clip_norm, PerGroup) else 1
 
         base = dpsgd_acc.gaussian
-        if a.clipping_mode == "adaptive":
+        if privacy.clipping.mode == "adaptive":
             _base = base
 
             def base(nm, _b=_base):
@@ -4378,34 +4393,19 @@ class DPTrainer:
         def _unamplified(nm, _b=_dp_element):
             return acc.nonprivate() if nm == 0.0 else _b(nm)
 
-        sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
-        tb_cap = int(tb_raw) if tb_raw is not None else None
+        sampling = privacy.sampling
+        tb_cap = sampling.truncated_batch_size
 
-        if a.sampling_mode == "k_out_of_t":
-            k_raw = sk.get("k")
-            allocation = sk.get("allocation")
-            if k_raw is None or allocation is None:
-                raise ConfigurationError(
-                    *(
-                        "sampling_mode='k_out_of_t' requires sampling_kwargs with "
-                        "'k' and 'allocation'.",
-                    )
-                )
-            if allocation not in ("block", "total"):
-                raise ConfigurationError(
-                    *(
-                        "sampling_kwargs['allocation'] must be 'block' or 'total', "
-                        f"got {allocation!r}.",
-                    )
-                )
+        if sampling.mode == "k_out_of_t":
+            assert sampling.k is not None
+            assert sampling.allocation is not None
 
             def mechanism(
                 nm,
                 _u=_unamplified,
-                _k=int(k_raw),
+                _k=sampling.k,
                 _t=n_steps,
-                _allocation=allocation,
+                _allocation=sampling.allocation,
             ):
                 return dpsgd_acc.k_out_of_t(
                     _u(nm),
@@ -4438,7 +4438,7 @@ class DPTrainer:
 
     def _calibrate_noise(
         self,
-        a,
+        privacy: ResolvedPrivacyConfig,
         mechanism,
         total_steps,
         target_delta,
@@ -4454,15 +4454,15 @@ class DPTrainer:
         Whole-horizon mechanisms calibrate the complete declared process.
         """
         if resume_horizon_noise_multiplier is not None:
-            if a.privacy_noise_multiplier is not None and _drift_differs(
-                float(a.privacy_noise_multiplier),
+            if privacy.noise_multiplier is not None and _drift_differs(
+                privacy.noise_multiplier,
                 resume_horizon_noise_multiplier,
             ):
                 raise CheckpointError(
                     *(
                         "Whole-horizon resume forbids privacy_noise_multiplier "
                         f"drift: saved={resume_horizon_noise_multiplier!r}, "
-                        f"current={a.privacy_noise_multiplier!r}. Restart from "
+                        f"current={privacy.noise_multiplier!r}. Restart from "
                         "scratch to use a different fixed multiplier.",
                     )
                 )
@@ -4471,14 +4471,16 @@ class DPTrainer:
                 resume_horizon_noise_multiplier,
             )
             return resume_horizon_noise_multiplier
-        if a.privacy_noise_multiplier is not None:
-            log.info("Using fixed noise multiplier: %.4f", a.privacy_noise_multiplier)
-            return a.privacy_noise_multiplier
+        if privacy.noise_multiplier is not None:
+            log.info("Using fixed noise multiplier: %.4f", privacy.noise_multiplier)
+            return privacy.noise_multiplier
 
+        assert privacy.calibration is not None
+        assert privacy.target_epsilon is not None
         if prefix_accountant is None or global_step_already_done == 0:
             log.info(
                 "Calibrating privacy (target eps=%.2f, delta=%.2e)...",
-                a.privacy_target_epsilon,
+                privacy.target_epsilon,
                 target_delta,
             )
 
@@ -4496,7 +4498,7 @@ class DPTrainer:
                 "(target eps=%.2f, delta=%.2e)...",
                 remaining_steps,
                 total_steps,
-                a.privacy_target_epsilon,
+                privacy.target_epsilon,
                 target_delta,
             )
             prefix_process = prefix_accountant.process
@@ -4509,15 +4511,13 @@ class DPTrainer:
                     else _prefix | (process * _rem)
                 )
 
-        ecal = a.noise_calibration_kwargs
-        param_min = float(ecal["min"])
-        param_max = float(ecal["max"])
+        calibration = privacy.calibration
         result = cal.calibrate(
-            cal.epsilon_budget(a.privacy_target_epsilon, delta=target_delta),
+            cal.epsilon_budget(privacy.target_epsilon, delta=target_delta),
             objective,
-            param_min=param_min,
-            param_max=param_max,
-            tolerance=float(ecal["tolerance"]),
+            param_min=calibration.param_min,
+            param_max=calibration.param_max,
+            tolerance=calibration.tolerance,
         )
         log.info(
             "Calibrated: noise_multiplier=%.4f, achieved eps=%.3f (converged=%s)",
@@ -5110,10 +5110,10 @@ class DPTrainer:
         )
 
         if ctx.mf is not None:
-            _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)
-            mf_n_steps: int | None = int(_amp.n_steps)
-            mf_min_sep: int | None = int(_amp.min_sep)
-            mf_max_participations: int | None = int(_amp.max_participations)
+            amplifier = ctx.mf.amplifier_factory(ctx.noise_multiplier)
+            mf_n_steps: int | None = int(amplifier.n_steps)
+            mf_min_sep: int | None = int(amplifier.min_sep)
+            mf_max_participations: int | None = int(amplifier.max_participations)
         else:
             mf_n_steps = mf_min_sep = mf_max_participations = None
 
@@ -5127,17 +5127,19 @@ class DPTrainer:
             target_delta=ctx.target_delta,
             noise_multiplier=ctx.noise_multiplier,
             expected_steps_per_epoch=ctx.expected_steps_per_epoch,
-            expected_batch_size=int(a.train_batch_size),
+            expected_batch_size=ctx.expected_batch_size,
             total_steps=ctx.total_steps,
             mechanism_kind=ctx.mechanism_kind,
             is_horizon_process=ctx.is_horizon_process,
             calibration_source=ctx.calibration_source,
-            target_epsilon=a.privacy_target_epsilon,
+            target_epsilon=ctx.privacy_config.target_epsilon,
             horizon_process_state=(
                 opaque_state_dict(ctx.horizon_process)
                 if ctx.horizon_process is not None
                 else None
             ),
+            sampling_mode=ctx.privacy_config.sampling.mode,
+            privacy_config=ctx.privacy_config,
             mf_n_steps=mf_n_steps,
             mf_min_sep=mf_min_sep,
             mf_max_participations=mf_max_participations,
@@ -5204,6 +5206,8 @@ class DPTrainer:
         # ``torch.load(.../training_args.bin)`` accepts the bundled
         # ``TrainingArguments`` because the dataclass is a strict
         # superset of ``TrainingArguments``.
+        if self._privacy_config is not None:
+            self._check_privacy_config(self._privacy_config)
         torch.save(self.args, str(Path(ckpt_dir) / ckpt.TRAINING_ARGS_NAME))
 
     def _maybe_final_save(self, ctx: _TrainingContext, global_step: int) -> None:
@@ -5598,10 +5602,11 @@ class DPTrainer:
             fallback_rate = a.train_batch_size / max(
                 1, self._effective_train_dataset_size()
             )
+        privacy = ctx.privacy_config if ctx is not None else resolve_privacy_config(a)
         return {
             "sample_rate": fallback_rate,
             "target_delta": (
-                ctx.target_delta if ctx is not None else a.privacy_target_delta
+                ctx.target_delta if ctx is not None else privacy.target_delta
             ),
             # In *calibrated* mode the noise multiplier is recomputed over the
             # remaining steps and so legitimately differs from the saved one;
@@ -5615,18 +5620,20 @@ class DPTrainer:
                 else (
                     ctx.noise_multiplier
                     if ctx is not None
-                    else a.privacy_noise_multiplier
+                    else privacy.noise_multiplier
                 )
             ),
             "total_steps": (
                 ctx.total_steps if ctx is not None else self._predict_total_steps()
             ),
-            "expected_batch_size": int(a.train_batch_size),
+            "expected_batch_size": (
+                ctx.expected_batch_size if ctx is not None else int(a.train_batch_size)
+            ),
             "expected_steps_per_epoch": (
                 ctx.expected_steps_per_epoch if ctx is not None else None
             ),
             "mechanism_kind": (
-                ctx.mechanism_kind if ctx is not None else a.privacy_noise_mechanism
+                ctx.mechanism_kind if ctx is not None else privacy.mechanism.kind
             ),
             "is_horizon_process": (ctx.is_horizon_process if ctx is not None else None),
             "horizon_process_state": (
@@ -5634,6 +5641,8 @@ class DPTrainer:
                 if ctx is not None and ctx.horizon_process is not None
                 else None
             ),
+            "sampling_mode": privacy.sampling.mode,
+            "privacy_config": privacy,
             # MF strategy params: live values are derived inside MFContext
             # construction and surfaced via ctx.mf; before ctx exists we
             # can't compare, so return None to skip the check.

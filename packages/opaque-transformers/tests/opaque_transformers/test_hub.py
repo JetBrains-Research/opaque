@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import torch
 
 import opaque.api.transformers.trainer._hub as _hub
+from opaque.api.transformers.trainer._privacy_config import resolve_privacy_config
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 # ---------------------------------------------------------------------------
@@ -86,6 +87,19 @@ class TestNoPushDefault:
     def test_hub_model_id_is_none(self, tmp_path):
         trainer = _tiny_trainer(tmp_path)
         assert trainer.hub_model_id is None
+
+
+class TestPrivacySummary:
+    def test_uses_last_run_privacy_snapshot(self, tmp_path):
+        trainer = _tiny_trainer(tmp_path)
+        trainer._privacy_config = resolve_privacy_config(trainer.args)
+        trainer.args.privacy_noise_multiplier = 2.0
+        trainer.args.clipping_norm = 9.0
+
+        summary = _hub._build_privacy_summary(trainer)
+
+        assert summary["noise_multiplier"] == 1.0
+        assert summary["clipping_norm"] == 1.0
 
 
 class TestInitHfRepo:
