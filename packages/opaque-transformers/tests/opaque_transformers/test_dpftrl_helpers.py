@@ -194,6 +194,37 @@ class TestBuildAmplifierFactory:
         assert proc.n_steps == 100
         assert proc.sample_rate == pytest.approx(0.2)  # 0.05 * 4
 
+    def test_band_cyclic_poisson_non_divisible_dataset_size_uses_floor(self):
+        """``EQUAL_SPLIT`` truncates every group to ``floor(dataset_size /
+        bands)``; the group rate must target that denominator, not the
+        unfloored ``dataset_size / bands`` (Choquette-Choo et al. 2023,
+        Algorithm 2 / Theorem 4)."""
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 3})
+        amp = _dpftrl.build_amplifier_factory(
+            sampling_mode="cyclic_poisson",
+            strategy=strategy,
+            sample_rate=100 / 1000,
+            n_steps=100,
+            num_bins=10,
+            dataset_size=1000,
+            truncated_batch_size=None,
+        )
+        proc = amp(1.0)
+        assert proc.sample_rate == pytest.approx(100 / 333)  # floor(1000/3) == 333
+
+    def test_band_cyclic_poisson_rejects_undersized_dataset(self):
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        with pytest.raises(ValueError, match="dataset_size // bands"):
+            _dpftrl.build_amplifier_factory(
+                sampling_mode="cyclic_poisson",
+                strategy=strategy,
+                sample_rate=0.5,
+                n_steps=100,
+                num_bins=10,
+                dataset_size=3,  # 3 // 4 == 0
+                truncated_batch_size=None,
+            )
+
     def test_band_cyclic_poisson_rejects_rate_above_one(self):
         strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
         with pytest.raises(ValueError, match="<= 1"):
@@ -440,6 +471,40 @@ class TestBuildSampler:
         assert isinstance(sampler, CyclicPoissonSampler)
         assert sampler.bands == 4
         assert sampler.sample_rate == pytest.approx(0.4)  # 0.1 * 4
+
+    def test_cyclic_poisson_non_divisible_dataset_size_matches_accountant(self):
+        """Sampler and accountant must agree on the group rate when
+        ``dataset_size`` is not a multiple of ``bands`` (issue #776
+        follow-up), and ``dataset_size`` — not ``len(dataset)`` — must win,
+        since under DDP ``dataset`` is a per-rank shard."""
+        dataset = _ListDataset(250)  # e.g. one DDP rank's local shard
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": 3})
+        amplifier_factory = _dpftrl.build_amplifier_factory(
+            sampling_mode="cyclic_poisson",
+            strategy=strategy,
+            sample_rate=100 / 1000,
+            n_steps=8,
+            num_bins=4,
+            dataset_size=1000,
+            truncated_batch_size=None,
+        )
+        mf = _dpftrl.MFContext(strategy=strategy, amplifier_factory=amplifier_factory)
+        sampler = _dpftrl.build_sampler(
+            sampling_mode="cyclic_poisson",
+            dataset=dataset,
+            sample_rate=100 / 1000,
+            n_steps=8,
+            key=key(0),
+            sampling_kwargs=None,
+            mf=mf,
+            noise_multiplier=1.0,
+            num_bins=4,
+            expected_batch_size=100,
+            dataset_size=1000,
+        )
+        accountant_rate = amplifier_factory(1.0).sample_rate
+        assert sampler.sample_rate == pytest.approx(accountant_rate)
+        assert sampler.sample_rate == pytest.approx(100 / 333)  # floor(1000/3)
 
     def test_cyclic_poisson_without_mf_raises(self):
         dataset = _ListDataset(64)

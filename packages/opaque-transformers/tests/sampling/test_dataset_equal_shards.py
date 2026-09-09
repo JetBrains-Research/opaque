@@ -76,6 +76,7 @@ def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
     # take the training-branch path that shards the dataset.
     trainer._ctx = types.SimpleNamespace(
         sample_rate=0.5,
+        dataset_size=dataset_size,
         expected_steps_per_epoch=1,
         total_steps=1,
         current_sampler=None,

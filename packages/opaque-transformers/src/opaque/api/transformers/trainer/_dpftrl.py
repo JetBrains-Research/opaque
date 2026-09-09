@@ -114,26 +114,41 @@ def build_strategy(
     return factory(**extra)
 
 
-def _cyclic_poisson_group_rate(sample_rate: float, bands: int) -> float:
+def _cyclic_poisson_group_rate(
+    sample_rate: float, bands: int, dataset_size: int
+) -> float:
     """Convert the trainer's global rate into the per-active-group rate.
 
-    ``sample_rate`` is the Trainer's ``expected_batch_size / dataset_size``
-    (a global per-example rate). ``opaque.dpftrl.accounting.poisson``
+    ``sample_rate`` is ``expected_batch_size / dataset_size`` (a global
+    per-example rate). ``opaque.dpftrl.accounting.poisson``
     (``CyclicPoisson``) and ``CyclicPoissonSampler`` instead expect the
     conditional probability that an example participates given its group
-    is active this round: ``bands * sample_rate`` (Choquette-Choo et al.
-    2023, informal Theorem 1, Section 5). Both call sites must apply this
-    same conversion so the runtime sampler realises the participation
-    pattern the accountant is calibrated against.
+    is active this round — ``expected_batch_size / floor(dataset_size /
+    bands)`` — because ``EQUAL_SPLIT`` partitioning (Choquette-Choo et al.
+    2023, Algorithm 2 / Theorem 4) truncates every group to
+    ``floor(dataset_size / bands)`` examples, dropping any remainder.
+    Both call sites derive the group size from the same ``dataset_size``
+    so the runtime sampler realises the participation pattern the
+    accountant is calibrated against, including when ``dataset_size`` is
+    not a multiple of ``bands``.
     """
     bands = int(bands)
-    group_rate = float(sample_rate) * bands
+    dataset_size = int(dataset_size)
+    group_size = dataset_size // bands
+    if group_size < 1:
+        raise ConfigurationError(
+            *(
+                "sampling_mode='cyclic_poisson' requires dataset_size // "
+                f"bands >= 1; got dataset_size={dataset_size} and "
+                f"bands={bands}. Decrease bands or use a larger dataset.",
+            )
+        )
+    group_rate = float(sample_rate) * dataset_size / group_size
     if group_rate > 1.0:
         raise ConfigurationError(
             *(
                 "sampling_mode='cyclic_poisson' requires the per-band "
-                f"conditional rate (sample_rate={sample_rate!r} * "
-                f"bands={bands} = {group_rate!r}) to be <= 1. Reduce "
+                f"conditional rate ({group_rate!r}) to be <= 1. Reduce "
                 "expected_batch_size or decrease bands.",
             )
         )
@@ -211,7 +226,9 @@ def build_amplifier_factory(
                     "IdentityStrategy (mf_identity).",
                 )
             )
-        group_rate = _cyclic_poisson_group_rate(sample_rate, strategy.bands)
+        group_rate = _cyclic_poisson_group_rate(
+            sample_rate, strategy.bands, dataset_size
+        )
 
         def amp(
             nm: float,
@@ -254,6 +271,7 @@ def build_sampler(
     noise_multiplier: float | None,
     num_bins: int,
     expected_batch_size: int,
+    dataset_size: int | None = None,
 ) -> Any:
     """Construct the Opaque sampler matching ``sampling_mode``.
 
@@ -265,6 +283,12 @@ def build_sampler(
     accepts none and converts ``sample_rate`` via
     :func:`_cyclic_poisson_group_rate`, shared with
     :func:`build_amplifier_factory`.
+
+    ``dataset_size`` is the *global* population ``build_amplifier_factory``
+    accounted against; ``cyclic_poisson`` uses it (not ``len(dataset)``) for
+    the group-rate conversion, because under DDP ``dataset`` is a per-rank
+    shard whose length would desync the runtime sampler from the
+    accountant. Defaults to ``len(dataset)`` for single-process callers.
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
     if sampling_mode == "poisson":
@@ -360,9 +384,14 @@ def build_sampler(
                 )
             )
         bands = int(mf.strategy.bands)
+        effective_dataset_size = (
+            dataset_size if dataset_size is not None else len(dataset)
+        )
         return CyclicPoissonSampler(
             dataset,
-            sample_rate=_cyclic_poisson_group_rate(sample_rate, bands),
+            sample_rate=_cyclic_poisson_group_rate(
+                sample_rate, bands, effective_dataset_size
+            ),
             bands=bands,
             n_steps=n_steps,
             key=key,

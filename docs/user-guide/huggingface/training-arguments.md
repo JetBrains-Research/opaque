@@ -170,15 +170,17 @@ disjoint groups and rotates one active group per step (Choquette-Choo et al.
 2023, Theorem 1 / Algorithm 2). `sample_rate` here is `expected_batch_size /
 len(train_dataset)` — the *global* fraction of the whole dataset drawn per
 round — but the sampler and accountant both operate on the *conditional*
-rate within the active group. `DPTrainer` converts consistently as
-`bands * sample_rate` for both the runtime sampler and the accountant, and
-rejects the configuration if that product exceeds `1` (lower `bands` or
-`expected_batch_size`). Plain `sampling_mode="poisson"` (whole-dataset
-subsampling every step, ignoring `bands`) is not a valid override for
-`mf_band`: it does not realize the grouped participation pattern
-`cyclic_poisson` accounting assumes. Use the explicit `sampling_mode="b_min_sep"`
-alternative ([Dong & Ganesh 2026](https://arxiv.org/abs/2602.09338)) if
-cyclic rotation does not fit your data pipeline.
+rate within the active group, whose size is the exact per-group population
+`floor(dataset_size / bands)` (a group's remainder examples never
+participate). `DPTrainer` converts consistently for both the runtime
+sampler and the accountant, and rejects the configuration if the resulting
+conditional rate exceeds `1` (lower `bands` or `expected_batch_size`). Plain
+`sampling_mode="poisson"` (whole-dataset subsampling every step, ignoring
+`bands`) is not a valid override for `mf_band`: it does not realize the
+grouped participation pattern `cyclic_poisson` accounting assumes. Use the
+explicit `sampling_mode="b_min_sep"` alternative ([Dong & Ganesh
+2026](https://arxiv.org/abs/2602.09338)) if cyclic rotation does not fit
+your data pipeline.
 
 So the minimal DP-FTRL configuration is one field:
 

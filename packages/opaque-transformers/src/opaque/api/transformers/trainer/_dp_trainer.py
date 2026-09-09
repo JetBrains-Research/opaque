@@ -233,6 +233,11 @@ class _TrainingContext:
     expected_steps_per_epoch: int
     total_steps: int
     num_epochs: int
+    # Global (DDP-trimmed) population ``sample_rate`` was derived from —
+    # see ``_effective_train_dataset_size``. ``cyclic_poisson`` needs this
+    # rather than ``len(dataset)`` in ``get_train_dataloader`` because that
+    # ``dataset`` is a per-rank shard under DDP.
+    dataset_size: int
     collate_fn: Callable
     batch_keys: tuple[str, ...] = ()
     offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
@@ -1703,6 +1708,7 @@ class DPTrainer:
             expected_steps_per_epoch=expected_steps_per_epoch,
             total_steps=total_steps,
             num_epochs=num_epochs,
+            dataset_size=dataset_size,
             collate_fn=collate_fn,
             batch_keys=batch_keys,
             offload_ctx=offload_ctx,
@@ -3843,6 +3849,7 @@ class DPTrainer:
                 noise_multiplier=ctx.noise_multiplier,
                 num_bins=ctx.expected_steps_per_epoch,
                 expected_batch_size=int(a.train_batch_size),
+                dataset_size=ctx.dataset_size,
             )
         sampler = ctx.current_sampler
 

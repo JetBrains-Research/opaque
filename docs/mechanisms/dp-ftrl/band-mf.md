@@ -301,9 +301,11 @@ for batch in loader:
   whole-dataset rate. `opaque.transformers.TrainingArguments` auto-resolves
   `privacy_noise_mechanism="mf_band"` to `sampling_mode="cyclic_poisson"` and
   converts its global `expected_batch_size / len(train_dataset)` rate to that
-  conditional rate for you (`bands * sample_rate`); a plain whole-dataset
-  Poisson sampler does not realize the grouped participation this
-  amplification assumes and is rejected.
+  conditional rate for you, dividing by the exact per-group population
+  `floor(dataset_size / bands)` so a non-divisible dataset size still
+  matches Algorithm 2 / Theorem 4; a plain whole-dataset Poisson sampler
+  does not realize the grouped participation this amplification assumes
+  and is rejected.
 
 ## References
 
