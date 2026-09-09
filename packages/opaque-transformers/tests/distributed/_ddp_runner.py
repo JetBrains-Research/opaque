@@ -30,6 +30,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
+from transformers.trainer_callback import TrainerCallback
 
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
@@ -482,6 +483,69 @@ def scenario_env_backend_diagnostic(
     raise AssertionError("Expected DPTrainer to fail fast for unavailable xccl runtime")
 
 
+def scenario_checkpoint_save_failure(
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
+) -> None:
+    """Regression for issue #1002: saving-rank failure must not hang peers.
+
+    Installs an ``on_save`` callback that deterministically raises only on
+    the saving rank (rank 0 under the default ``save_on_each_node=False``).
+    Before the fix, non-saving ranks blocked forever at the unconditional
+    final checkpoint barrier once the saving rank raised ahead of it.  Every
+    rank must now raise: the saving rank re-raises the original error, and
+    every peer raises the propagated :class:`OperationError` instead of
+    waiting at the barrier.
+    """
+
+    class _RaiseOnSave(TrainerCallback):
+        def on_save(self, args, state, control, **kwargs):
+            raise RuntimeError("injected on_save failure (saving rank)")
+
+    cfg = TinyConfig()
+    model = TinyForCausalLM(cfg)
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        logging_steps=1,
+        save_steps=1,
+        save_strategy="steps",
+        report_to=[],
+        seed=7,
+        privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    ds = TinyDataset(n=8, seq_len=4, vocab=cfg.vocab_size)
+    trainer = DPTrainer(
+        model=model,
+        args=args,
+        train_dataset=ds,
+        data_collator=_collate,
+        callbacks=[_RaiseOnSave()],
+    )
+
+    try:
+        trainer.train()
+    except Exception as exc:
+        caught: Exception | None = exc
+        message = str(exc)
+    else:
+        caught = None
+        message = ""
+
+    if caught is None:
+        raise AssertionError(
+            f"rank {rank}: expected the injected checkpoint-save failure to "
+            "propagate, but train() completed successfully"
+        )
+    if rank == 0:
+        assert "injected on_save failure" in message, message
+    else:
+        assert "Checkpoint save failed on another rank" in message, message
+    raise caught
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -496,6 +560,7 @@ SCENARIOS = {
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
+    "checkpoint_save_failure": scenario_checkpoint_save_failure,
 }
 
 

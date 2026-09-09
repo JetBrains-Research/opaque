@@ -21,14 +21,16 @@ from typing import Any
 import torch
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
+from opaque.distributed.collectives import all_reduce_ as _opaque_all_reduce_
 from opaque.distributed.collectives import barrier as _opaque_barrier
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import ConfigurationError, OperationError
 from transformers.utils import logging as _hf_logging
 
 __all__ = [
     "DDPState",
     "apply_logging",
     "barrier",
+    "checkpoint_barrier",
     "resolve_ddp_state",
     "should_log",
     "should_save",
@@ -227,3 +229,47 @@ def barrier(ddp: DDPState) -> None:
     """
     if ddp.is_distributed:
         _opaque_barrier()
+
+
+def checkpoint_barrier(ddp: DDPState, local_error: BaseException | None) -> None:
+    """Synchronise one stage of the checkpoint-save path, propagating failure.
+
+    Every rank must call this once per synchronisation stage of
+    ``DPTrainer._save_checkpoint``, regardless of whether its own segment of
+    that stage raised. Wrap the risky segment (e.g. the saving rank's
+    artefact writes, or an ``on_save`` callback) in try/except and pass the
+    caught exception — or ``None`` on success — as ``local_error``. This
+    replaces the plain, unconditional ``barrier()`` calls that previously
+    let the saving rank raise *before* reaching the barrier, leaving every
+    peer rank blocked there forever.
+
+    Behaviour:
+    - Not distributed: re-raises ``local_error`` immediately (there are no
+      peers to protect from a hang); otherwise returns.
+    - Distributed: every rank participates in a collective that reduces
+      whether *any* rank failed in this stage. A rank whose own segment
+      raised re-raises that ``local_error`` (preserving its traceback) once
+      every rank has observed the failure. A rank that succeeded locally but
+      sees a peer failure raises :class:`OperationError` instead of
+      proceeding into the next stage.
+
+    Scope is intentionally narrow: this only guards the handful of
+    checkpoint-save barriers, not a general cross-rank control protocol.
+    """
+    if not ddp.is_distributed:
+        if local_error is not None:
+            raise local_error
+        return
+    failed = torch.tensor(
+        [1 if local_error is not None else 0], dtype=torch.int64, device=ddp.device
+    )
+    _opaque_all_reduce_(failed, op="max")
+    if local_error is not None:
+        raise local_error
+    if int(failed.item()) > 0:
+        raise OperationError(
+            *(
+                "Checkpoint save failed on another rank; aborting on rank "
+                f"{ddp.rank} instead of waiting at the checkpoint barrier.",
+            )
+        )
