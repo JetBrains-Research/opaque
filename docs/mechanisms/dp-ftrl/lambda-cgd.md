@@ -83,7 +83,11 @@ joint allocation.
 
 The identity is an integrity guard, not a portable snapshot of a generated
 noise vector. Exact replay still requires a compatible Opaque/PyTorch RNG
-environment.
+environment. Here, compatible means the same Opaque replay-contract version
+and a PyTorch release, device/backend, and generator implementation that
+produce the same draws. The checkpoint records the logical `RngKey` identity;
+it does not embed PyTorch's generator algorithm or certify bitwise equivalence
+across versions, platforms, or backends.
 
 Checkpoints written by older releases used an un-namespaced stream and are
 deliberately not resumable: changing the derivation at a resume boundary would
