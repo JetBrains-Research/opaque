@@ -4859,6 +4859,11 @@ class DPTrainer:
             _internal_call: Set by :meth:`push_to_hub` to avoid push recursion
                 (a direct user ``save_model`` with ``push_to_hub=True`` also
                 publishes; the push path saves with this flag to skip that).
+                ``push_to_hub`` is itself rank-gated (it returns immediately
+                on non-zero ranks, so only rank zero ever reaches this
+                internal save), so this flag also skips the collective
+                barrier below: non-zero ranks never call ``save_model`` on
+                this path, and waiting for them here would deadlock.
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -4874,8 +4879,11 @@ class DPTrainer:
             self._save_training_args(target)
             # Privacy provenance travels with every saved model.
             self.save_accountant(target)
-        # Barrier so non-saving ranks don't proceed before the save lands.
-        _distributed.barrier(self._ddp)
+        if not _internal_call:
+            # Barrier so non-saving ranks don't proceed before the save
+            # lands. Skipped for the ``push_to_hub`` internal call above,
+            # which only ever runs on the already rank-gated caller.
+            _distributed.barrier(self._ddp)
         # A direct user save with push_to_hub=True also publishes (HF parity).
         # ``_internal_call`` short-circuits the push triggered from within
         # ``push_to_hub`` itself.

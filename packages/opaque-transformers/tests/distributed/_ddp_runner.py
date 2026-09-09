@@ -451,6 +451,73 @@ def scenario_gather_paths(rank: int, world_size: int, **_) -> None:
     assert gathered_tree["pred"].shape == (2 * world_size, 3)
 
 
+def scenario_push_to_hub_no_deadlock(
+    rank: int, world_size: int, output_dir: str, use_cpu: bool = False, **_
+) -> None:
+    """Regression for issue #1004: ``push_to_hub`` must not deadlock DDP.
+
+    ``push_to_hub`` is rank-gated (non-zero ranks return immediately), while
+    ``save_model``'s collective barrier used to run unconditionally — so
+    rank zero blocked in that barrier waiting for peers that had already
+    returned. This scenario never calls a synchronizing collective after
+    ``train()`` returns: on the pre-fix code, rank zero hangs inside
+    ``save_model``'s barrier while rank one exits immediately, and the test
+    harness's bounded subprocess timeout turns that hang into a test
+    failure. On the fix, rank zero's internal ``save_model`` call skips the
+    barrier (it is already the sole, rank-gated caller), so both ranks
+    return promptly and only rank zero publishes.
+    """
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as mock_patch
+
+    cfg = TinyConfig()
+    model = TinyForCausalLM(cfg)
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        seed=3,
+        privacy_noise_multiplier=0.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+        push_to_hub=True,
+        hub_model_id="dummy-org/dummy-repo",
+    )
+    ds = TinyDataset(n=8, seq_len=4, vocab=cfg.vocab_size)
+
+    mock_repo_url = MagicMock()
+    mock_repo_url.repo_id = "dummy-org/dummy-repo"
+
+    with (
+        mock_patch(
+            "opaque.api.transformers.trainer._hub._create_repo",
+            return_value=mock_repo_url,
+        ),
+        mock_patch(
+            "opaque.api.transformers.trainer._hub._upload_folder",
+            return_value=MagicMock(),
+        ) as mock_upload,
+    ):
+        trainer = DPTrainer(
+            model=model, args=args, train_dataset=ds, data_collator=_collate
+        )
+        # No barrier before or after `train()`: the point of this scenario
+        # is that the *old* deadlock (rank zero stuck in `save_model`'s
+        # barrier while rank one already returned from `push_to_hub`) is
+        # caught by the harness's per-rank subprocess timeout, not masked
+        # by an incidental collective both ranks happen to reach.
+        trainer.train()
+
+    if rank == 0:
+        mock_upload.assert_called_once()
+        assert (Path(output_dir) / "README.md").exists()
+        assert (Path(output_dir) / "config.json").exists()
+    else:
+        mock_upload.assert_not_called()
+
+
 def scenario_env_backend_diagnostic(
     output_dir: str, use_cpu: bool = False, **_
 ) -> None:
@@ -495,6 +562,7 @@ SCENARIOS = {
     "batch_eval_metrics": scenario_batch_eval_metrics,
     "rank_gating_and_worker_seed": scenario_rank_gating_and_worker_seed,
     "gather_paths": scenario_gather_paths,
+    "push_to_hub_no_deadlock": scenario_push_to_hub_no_deadlock,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
 }
 
