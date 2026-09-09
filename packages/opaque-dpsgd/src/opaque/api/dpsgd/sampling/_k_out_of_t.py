@@ -9,12 +9,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.exceptions import ConfigurationError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.random import fold_in
 from opaque.random.types import RngKey
 
@@ -188,26 +188,100 @@ def _state_dict_k_out_of_t(sampler: KOutOfTSampler) -> dict[str, Any]:
     }
 
 
+def _checkpoint_value(state: Mapping[str, Any], name: str) -> Any:
+    try:
+        return state[name]
+    except KeyError:
+        raise CheckpointError(
+            *(f"KOutOfTSampler checkpoint is missing required field {name!r}.",)
+        ) from None
+
+
+def _checkpoint_int(
+    state: Mapping[str, Any],
+    name: str,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    value = _checkpoint_value(state, name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CheckpointError(
+            *(
+                f"KOutOfTSampler checkpoint field {name!r} must be an integer; "
+                f"got {value!r}.",
+            )
+        )
+    if value < minimum or (maximum is not None and value > maximum):
+        upper = "" if maximum is None else f" and <= {maximum}"
+        raise CheckpointError(
+            *(
+                f"KOutOfTSampler checkpoint field {name!r} must be >= {minimum}"
+                f"{upper}; got {value!r}.",
+            )
+        )
+    return value
+
+
+def _checkpoint_string(state: Mapping[str, Any], name: str) -> str:
+    value = _checkpoint_value(state, name)
+    if not isinstance(value, str) or not value:
+        raise CheckpointError(
+            *(
+                f"KOutOfTSampler checkpoint field {name!r} must be a non-empty "
+                f"string; got {value!r}.",
+            )
+        )
+    return value
+
+
 def _from_state_dict_k_out_of_t(
     template: KOutOfTSampler,
     state: Mapping[str, Any],
 ) -> KOutOfTSampler:
-    if len(template.data_source) != int(state["num_samples"]):
-        raise ConfigurationError(
+    num_samples = _checkpoint_int(state, "num_samples", minimum=1)
+    k = _checkpoint_int(state, "k", minimum=1)
+    t = _checkpoint_int(state, "t", minimum=1)
+    allocation_value = _checkpoint_string(state, "allocation")
+    if allocation_value not in ("block", "total"):
+        raise CheckpointError(
+            *(f"Invalid KOutOfTSampler checkpoint allocation {allocation_value!r}.",)
+        )
+    allocation = cast("_Allocation", allocation_value)
+    key_seed = _checkpoint_int(
+        state,
+        "key_seed",
+        minimum=0,
+        maximum=2**64 - 1,
+    )
+    key_impl = _checkpoint_string(state, "key_impl")
+    consumed = _checkpoint_int(state, "consumed", minimum=0, maximum=t)
+
+    if len(template.data_source) != num_samples:
+        raise CheckpointError(
             *(
                 "KOutOfTSampler.from_state_dict: template dataset length "
                 f"{len(template.data_source)} does not match snapshot "
-                f"num_samples={state['num_samples']}",
+                f"num_samples={num_samples}.",
+            )
+        )
+    saved_law = (k, t, allocation)
+    template_law = (template.k, template.t, template.allocation)
+    if template_law != saved_law:
+        raise CheckpointError(
+            *(
+                "KOutOfTSampler.from_state_dict: template sampling law "
+                f"{template_law!r} does not match snapshot {saved_law!r}.",
             )
         )
     restored = KOutOfTSampler._from_stream_key(
         template.data_source,
-        k=int(state["k"]),
-        t=int(state["t"]),
-        allocation=state["allocation"],
-        stream_key=RngKey(seed=int(state["key_seed"]), impl=str(state["key_impl"])),
+        k=k,
+        t=t,
+        allocation=allocation,
+        stream_key=RngKey(seed=key_seed, impl=key_impl),
     )
-    restored._consumed = int(state["consumed"])
+    restored._consumed = consumed
     return restored
 
 

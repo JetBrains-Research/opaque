@@ -40,9 +40,9 @@ DP_STATE_NAME = "dp_state.pt"
 DP_ACCOUNTANT_NAME = "accountant.json"
 RNG_STATE_NAME = "rng_state.pth"
 
-# Version 8 adds the run-scoped resolved privacy configuration to the version 7
-# calibration provenance and versioned MF runtime state.
-DP_STATE_BUNDLE_VERSION = 8
+# Version 9 adds sampling topology and dataset-schedule provenance to the
+# version 8 run-scoped privacy configuration and horizon runtime state.
+DP_STATE_BUNDLE_VERSION = 9
 
 _CHECKPOINT_RE = re.compile(rf"^{re.escape(PREFIX_CHECKPOINT_DIR)}\-(\d+)$")
 
@@ -214,11 +214,9 @@ class RuntimeCheckpoint:
     disposition that controls what happens when phase-2's value differs
     from phase-1's saved value:
 
-    - ``"dp_relevant"`` — affects privacy accounting.  DP-SGD warns
-      (heterogeneous RDP composition still yields a correct ε); DP-FTRL
-      raises (the matrix-factorization strategy is shape-locked for the
-      original composition, so drift would silently compose a different
-      ε).
+    - ``"dp_relevant"`` — affects privacy accounting. DP-SGD warns after
+      sampling-law validation; DP-FTRL raises because its strategy is
+      shape-locked to the original composition.
     - ``"shape"`` — affects training trajectory (LR schedule, etc.) but
       not privacy.  Warns.
     - ``"intentional_extend"`` — silently allowed.  Used for ``total_steps``
@@ -283,6 +281,12 @@ class RuntimeCheckpoint:
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
     )
+    world_size: int = field(
+        default=1,
+        metadata={"compare_on_resume": True, "drift": "dp_relevant"},
+    )
+    # Exact horizon check; never downgraded to a drift warning.
+    dataset_schedule_id: str | None = None
     privacy_config: ResolvedPrivacyConfig | None = field(
         default=None,
         metadata={"compare_on_resume": True, "drift": "dp_relevant"},
@@ -337,6 +341,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
     target_epsilon: float | None = None,
     horizon_process_state: dict[str, Any] | None = None,
     sampling_mode: str | None = None,
+    world_size: int = 1,
+    dataset_schedule_id: str | None = None,
     privacy_config: ResolvedPrivacyConfig | None = None,
     mf_n_steps: int | None = None,
     mf_min_sep: int | None = None,
@@ -376,6 +382,8 @@ def save_dp_runtime_state(  # noqa: PLR0913
         target_epsilon=(float(target_epsilon) if target_epsilon is not None else None),
         horizon_process_state=horizon_process_state,
         sampling_mode=str(sampling_mode) if sampling_mode is not None else None,
+        world_size=int(world_size),
+        dataset_schedule_id=dataset_schedule_id,
         privacy_config=privacy_config,
         mf_n_steps=int(mf_n_steps) if mf_n_steps is not None else None,
         mf_min_sep=int(mf_min_sep) if mf_min_sep is not None else None,

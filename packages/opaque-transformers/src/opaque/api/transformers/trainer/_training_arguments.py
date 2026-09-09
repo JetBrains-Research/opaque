@@ -435,6 +435,8 @@ class TrainingArguments:
     # Downstream code receives the resolved concrete mode.
     sampling_mode: str = "auto"
     sampling_kwargs: dict[str, Any] | str = field(default_factory=dict)
+    # Non-sensitive identity of the ordered horizon-sampler dataset.
+    dataset_schedule_id: str | None = None
 
     # ---- Noise-multiplier calibration to ε (search bounds + tolerance) ---
     noise_calibration_kwargs: dict[str, Any] | str = field(default_factory=dict)
@@ -1000,6 +1002,16 @@ class TrainingArguments:
 
     def _validate_privacy_fields(self) -> None:
         """Normalize and validate optimizer, clipping, noise, and sampling fields."""
+        if self.dataset_schedule_id is not None:
+            if not isinstance(self.dataset_schedule_id, str):
+                raise InputTypeError(
+                    *(
+                        "dataset_schedule_id must be a string or None; got "
+                        f"{type(self.dataset_schedule_id).__name__}.",
+                    )
+                )
+            if not self.dataset_schedule_id.strip():
+                raise ConfigurationError(*("dataset_schedule_id must not be empty.",))
         _resolve_optimizer_name(self.optim)
         self.clipping_norm = _coerce_clipping_norm(self.clipping_norm)
         requested_clipping_mode = self.clipping_mode

@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import Dataset
 
 from opaque.api.transformers.trainer._privacy_config import resolve_privacy_config
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 pytest.importorskip("transformers")
@@ -195,3 +196,10 @@ class TestSampleRateInvariant:
         assert trainer._ctx.current_sampler.sample_rate == pytest.approx(
             trainer._ctx.sample_rate
         )
+
+    def test_truncated_poisson_is_rejected_under_ddp(self):
+        trainer = _trainer_with_ddp(dataset_size=10, world_size=2)
+        trainer.args.sampling_kwargs["truncated_batch_size"] = 2
+
+        with pytest.raises(ConfigurationError, match="Truncated Poisson"):
+            trainer._setup_training()

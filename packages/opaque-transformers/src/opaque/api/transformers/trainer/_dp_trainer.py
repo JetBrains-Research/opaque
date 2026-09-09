@@ -102,7 +102,19 @@ from ._callback import (
 )
 from ._eval import EvalPrediction
 from ._precision import eval_dtype
-from ._privacy_config import ResolvedPrivacyConfig, resolve_privacy_config
+from ._privacy_config import (
+    CURSOR_FREE_SAMPLING_MODES,
+    ResolvedPrivacyConfig,
+    resolve_privacy_config,
+)
+from ._sampling_resume import (
+    KOutOfTSamplingLaw,
+    PoissonSamplingLaw,
+    validate_dataset_schedule,
+    validate_distributed_resume,
+    validate_k_out_of_t_checkpoint,
+    validate_poisson_checkpoint,
+)
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
 from ._training_arguments import TrainingArguments
@@ -226,6 +238,7 @@ class _TrainingContext:
     accounting: Accountant
     mechanism: Callable
     privacy_config: ResolvedPrivacyConfig
+    dataset_schedule_id: str | None
     # Cached process reused across independent step compositions. Whole-horizon
     # mechanisms are installed in ``accounting`` once and leave this as None.
     step_process: Any | None
@@ -1155,12 +1168,10 @@ class DPTrainer:
             resume_from_checkpoint = self.args.resume_from_checkpoint
         resume_path = self._resolve_resume_path(resume_from_checkpoint)
 
-        # Pre-load weights so make_functional starts from the saved values.
         prefix_accountant: Accountant | None = None
         runtime_payload: ckpt.RuntimeCheckpoint | None = None
         trainer_state_json: dict[str, Any] | None = None
         if resume_path is not None:
-            self._load_model_weights(resume_path)
             runtime_payload, prefix_accountant = self._read_runtime_for_resume(
                 resume_path
             )
@@ -1171,6 +1182,8 @@ class DPTrainer:
                 self._stamp_ddp_flags(self.state)
                 # Re-bind callback handler to the new state object.
                 self._callback_handler.state = self.state
+            self._validate_sampling_resume(runtime_payload, prefix_accountant)
+            self._load_model_weights(resume_path)
 
         ctx = self._setup_training(
             prefix_accountant=prefix_accountant,
@@ -1383,7 +1396,6 @@ class DPTrainer:
         privacy = resolve_privacy_config(a)
         if (
             self._ddp.world_size > 1
-            and privacy.mechanism.kind == "gaussian"
             and privacy.sampling.mode == "poisson"
             and privacy.sampling.truncated_batch_size is not None
         ):
@@ -1710,6 +1722,7 @@ class DPTrainer:
             accounting=accounting,
             mechanism=mechanism,
             privacy_config=privacy,
+            dataset_schedule_id=a.dataset_schedule_id,
             step_process=step_process,
             target_delta=target_delta,
             sample_rate=sample_rate,
@@ -1737,11 +1750,17 @@ class DPTrainer:
         )
 
     def _on_train_begin(self, ctx: _TrainingContext) -> None:
-        """Dispatch ``on_train_begin`` and reject privacy-setting changes."""
+        """Dispatch ``on_train_begin`` and reject run-identity changes."""
         self._control = self._callback_handler.on_train_begin(
             self.args, self.state, self._control
         )
+        self._check_run_configuration(ctx)
+
+    def _check_run_configuration(self, ctx: _TrainingContext) -> None:
+        """Reject changes to privacy or dataset identity during a run."""
         self._check_privacy_config(ctx.privacy_config)
+        if self.args.dataset_schedule_id != ctx.dataset_schedule_id:
+            raise ConfigurationError(*("dataset_schedule_id changed after run setup.",))
 
     def _check_privacy_config(self, expected: ResolvedPrivacyConfig) -> None:
         """Reject changes to a run's resolved privacy configuration."""
@@ -3782,27 +3801,8 @@ class DPTrainer:
         collate_fn = self._resolve_collate_fn(base_collator)
         collate_fn = self._maybe_prime_collate(collate_fn, dataset)
 
-        # Under DDP each rank operates on a disjoint shard of the dataset
-        # (``opaque.distributed.local_shard``) and runs the Poisson sampler
-        # over its shard's *local* positions.  The sampler key is folded by
-        # rank (below) so each rank draws an **independent** Bernoulli(q)
-        # mask: with a shared key every rank would select the *same* local
-        # offsets, perfectly co-including the records that happen to share a
-        # local index across shards — not the i.i.d. global Poisson draw the
-        # design intends (the per-record marginal stays Bernoulli(q) either
-        # way, so the privacy accounting is unaffected; this is a sampling
-        # *diversity* fix).  ``ctx.sample_rate`` was computed in
-        # ``_setup_training`` from the same trimmed denominator we use here
-        # (see :meth:`_effective_train_dataset_size`), so the rate the
-        # sampler is configured with matches the rate the accountant
-        # calibrated against — both bind to the post-trim ``q``.
-        #
-        # Resume caveat (multi-GPU only): the sampler snapshot is
-        # self-contained (carries its own key) and is written once on rank
-        # 0, so resuming a DDP run currently restores rank 0's per-rank key
-        # on every rank, re-introducing the cross-rank correlation after the
-        # resume point.  Fully fixing that needs per-rank sampler snapshots;
-        # tracked for the multi-GPU work and validated there.
+        # Each rank samples an independent, disjoint shard. Trimming keeps
+        # shard sizes aligned with the accountant's global denominator.
         if self._ddp.world_size > 1:
             from torch.utils.data import Subset
 
@@ -3847,10 +3847,7 @@ class DPTrainer:
                     IGNORE_DATA_SKIP_STREAM_FOLD,
                     ctx.sampler_restart_step,
                 )
-            # Per-rank independent sampling: fold the rank into the key so
-            # each shard draws a distinct Bernoulli(q) mask (see the block
-            # comment above).  No-op at world_size == 1, preserving the
-            # single-process seeding bit-for-bit.
+            # Distinct keys prevent equal local positions from sharing masks.
             if self._ddp.world_size > 1:
                 sampler_key = fold_in(sampler_key, self._ddp.rank)
             ctx.current_sampler = _dpftrl.build_sampler(
@@ -5098,16 +5095,37 @@ class DPTrainer:
         )
 
     def _save_dp_runtime(self, ckpt_dir: str, ctx: _TrainingContext) -> None:
-        # ``state_dict`` from the opaque.serialization registry — each
-        # sampler family (Poisson here, dp-ftrl variants in subclasses)
-        # registers its own serializer pair at module-import time.
+        self._check_run_configuration(ctx)
+        # Sampler serializers preserve both stream state and cursor.
         from opaque.serialization import state_dict as opaque_state_dict
 
+        sampling_mode = ctx.privacy_config.sampling.mode
         sampler_state = (
             opaque_state_dict(ctx.current_sampler)
             if ctx.current_sampler is not None
             else None
         )
+
+        if ctx.mechanism_kind == "gaussian" and sampling_mode == "poisson":
+            validate_poisson_checkpoint(
+                sampler_state=sampler_state,
+                runtime_sample_rate=ctx.sample_rate,
+                current_law=self._poisson_sampling_law(
+                    ctx.privacy_config,
+                    sample_rate=ctx.sample_rate,
+                ),
+                accounted_process=ctx.accounting.process,
+                global_step=int(self.state.global_step),
+            )
+        elif ctx.mechanism_kind == "gaussian" and sampling_mode == "k_out_of_t":
+            validate_k_out_of_t_checkpoint(
+                sampler_state=sampler_state,
+                current_law=self._k_out_of_t_sampling_law(
+                    ctx.privacy_config,
+                    n_steps=ctx.total_steps,
+                ),
+                accounted_process=ctx.accounting.process,
+            )
 
         if ctx.mf is not None:
             amplifier = ctx.mf.amplifier_factory(ctx.noise_multiplier)
@@ -5138,7 +5156,9 @@ class DPTrainer:
                 if ctx.horizon_process is not None
                 else None
             ),
-            sampling_mode=ctx.privacy_config.sampling.mode,
+            sampling_mode=sampling_mode,
+            world_size=self._ddp.world_size,
+            dataset_schedule_id=ctx.dataset_schedule_id,
             privacy_config=ctx.privacy_config,
             mf_n_steps=mf_n_steps,
             mf_min_sep=mf_min_sep,
@@ -5206,7 +5226,9 @@ class DPTrainer:
         # ``torch.load(.../training_args.bin)`` accepts the bundled
         # ``TrainingArguments`` because the dataclass is a strict
         # superset of ``TrainingArguments``.
-        if self._privacy_config is not None:
+        if self._ctx is not None:
+            self._check_run_configuration(self._ctx)
+        elif self._privacy_config is not None:
             self._check_privacy_config(self._privacy_config)
         torch.save(self.args, str(Path(ckpt_dir) / ckpt.TRAINING_ARGS_NAME))
 
@@ -5236,6 +5258,125 @@ class DPTrainer:
         target = str(Path(output_dir) / f"{ckpt.PREFIX_CHECKPOINT_DIR}-{global_step}")
         if Path(target).is_dir():
             self._save_trainer_state(target)
+
+    # ------------------------------------------------------------------
+    # Sampling checkpoint validation
+    # ------------------------------------------------------------------
+
+    def _sampling_population_sizes(self) -> tuple[int, int]:
+        """Return accountant-global and sampler-local population sizes."""
+        global_size = self._effective_train_dataset_size()
+        if global_size < 1:
+            raise CheckpointError(
+                *("Sampling-law validation requires a non-empty dataset.",)
+            )
+        world_size = self._ddp.world_size
+        if world_size < 1:
+            raise CheckpointError(*(f"Invalid distributed world size {world_size}.",))
+        return global_size, global_size // world_size
+
+    def _poisson_sampling_law(
+        self,
+        privacy: ResolvedPrivacyConfig,
+        *,
+        sample_rate: float | None = None,
+    ) -> PoissonSamplingLaw:
+        global_size, local_size = self._sampling_population_sizes()
+        rate = (
+            float(sample_rate)
+            if sample_rate is not None
+            else self.args.train_batch_size / global_size
+        )
+        return PoissonSamplingLaw(
+            sample_rate=rate,
+            truncated_batch_size=privacy.sampling.truncated_batch_size,
+            num_samples=local_size,
+        )
+
+    def _k_out_of_t_sampling_law(
+        self,
+        privacy: ResolvedPrivacyConfig,
+        *,
+        n_steps: int | None = None,
+    ) -> KOutOfTSamplingLaw:
+        global_size, local_size = self._sampling_population_sizes()
+        k = privacy.sampling.k
+        allocation = privacy.sampling.allocation
+        if k is None or allocation is None:
+            raise CheckpointError(*("K-out-of-T sampling parameters are incomplete.",))
+        total_steps = (
+            int(n_steps)
+            if n_steps is not None
+            else self._steps_breakdown(global_size)[1]
+        )
+        return KOutOfTSamplingLaw(
+            k=k,
+            t=total_steps,
+            allocation=allocation,
+            num_samples=local_size,
+        )
+
+    def _validate_sampling_resume(
+        self,
+        runtime: ckpt.RuntimeCheckpoint,
+        accountant: Accountant,
+    ) -> None:
+        privacy = resolve_privacy_config(self.args)
+        sampling_mode = privacy.sampling.mode
+        mechanism_kind = privacy.mechanism.kind
+        saved_mode = runtime.sampling_mode
+        if (
+            saved_mode is None
+            and runtime.sampler_state is not None
+            and "sample_rate" in runtime.sampler_state
+        ):
+            saved_mode = "poisson"
+        if saved_mode != sampling_mode:
+            raise CheckpointError(
+                *(
+                    "Sampling mode changed across resume: "
+                    f"saved={saved_mode!r}, current={sampling_mode!r}.",
+                )
+            )
+        if runtime.mechanism_kind != mechanism_kind:
+            raise CheckpointError(
+                *(
+                    "Privacy mechanism changed across resume: "
+                    f"saved={runtime.mechanism_kind!r}, "
+                    f"current={mechanism_kind!r}.",
+                )
+            )
+        validate_distributed_resume(
+            saved_world_size=runtime.world_size,
+            current_world_size=self._ddp.world_size,
+        )
+        requires_schedule_identity = sampling_mode not in CURSOR_FREE_SAMPLING_MODES
+        if requires_schedule_identity:
+            validate_dataset_schedule(
+                saved_identity=runtime.dataset_schedule_id,
+                current_identity=self.args.dataset_schedule_id,
+            )
+        if mechanism_kind == "gaussian" and sampling_mode == "poisson":
+            validate_poisson_checkpoint(
+                sampler_state=runtime.sampler_state,
+                runtime_sample_rate=runtime.sample_rate,
+                current_law=self._poisson_sampling_law(privacy),
+                accounted_process=accountant.process,
+                global_step=self.state.global_step,
+            )
+        elif mechanism_kind == "gaussian" and sampling_mode == "k_out_of_t":
+            validate_k_out_of_t_checkpoint(
+                sampler_state=runtime.sampler_state,
+                current_law=self._k_out_of_t_sampling_law(privacy),
+                accounted_process=accountant.process,
+            )
+        if requires_schedule_identity and runtime.privacy_config != privacy:
+            raise CheckpointError(
+                *(
+                    "Horizon resume requires an unchanged resolved privacy "
+                    "configuration.",
+                )
+            )
 
     # ------------------------------------------------------------------
     # Resume / load
@@ -5500,8 +5641,8 @@ class DPTrainer:
         :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`
         for the vocabulary):
 
-        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` — RDP composition
-          still yields a correct ε.
+        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` after sampling-law
+          validation.
         - ``"dp_relevant"`` + DP-FTRL: ``raise ValueError`` — the MF
           strategy is computed for a specific composition; drift would
           silently produce a different ε.
@@ -5553,8 +5694,7 @@ class DPTrainer:
                     )
                 log.warning(
                     "Resume arg drift on %s (dp_relevant, DP-SGD): "
-                    "saved=%r, current=%r — heterogeneous RDP composition "
-                    "still yields a correct ε.",
+                    "saved=%r, current=%r; the suffix uses the current value.",
                     f.name,
                     saved,
                     current,
@@ -5642,6 +5782,7 @@ class DPTrainer:
                 else None
             ),
             "sampling_mode": privacy.sampling.mode,
+            "world_size": self._ddp.world_size,
             "privacy_config": privacy,
             # MF strategy params: live values are derived inside MFContext
             # construction and surfaced via ctx.mf; before ctx exists we

@@ -83,13 +83,14 @@ def _args(
     noise_multiplier: float | None = 1.0,
     target_epsilon: float | None = None,
     clipping_norm: float | str = 1.0,
+    batch_size: int = 4,
     sampling_mode: str = "auto",
     sampling_kwargs: dict[str, object] | None = None,
 ) -> TrainingArguments:
     kwargs = dict(_MF_TEST_KWARGS[mechanism]) if mechanism in _MF_TEST_KWARGS else {}
     return TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=batch_size,
         max_steps=max_steps,
         save_steps=save_steps,
         save_strategy="steps" if save_steps else "no",
@@ -97,6 +98,7 @@ def _args(
         privacy_noise_mechanism_kwargs=kwargs,
         sampling_mode=sampling_mode,
         sampling_kwargs=sampling_kwargs,
+        dataset_schedule_id="tiny-v1",
         privacy_noise_multiplier=noise_multiplier,
         privacy_target_epsilon=target_epsilon,
         clipping_norm=clipping_norm,
@@ -398,7 +400,7 @@ class TestDpFtrlCheckpointRoundTrip:
             data_collator=_collate,
         )
 
-        with pytest.raises(CheckpointError, match="horizon_process_state"):
+        with pytest.raises(CheckpointError, match="resolved sampling law"):
             trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
 
     def test_mf_resume_rejects_same_shape_strategy_drift(self, tmp_path):
@@ -433,7 +435,9 @@ class TestDpFtrlCheckpointRoundTrip:
             data_collator=_collate,
         )
 
-        with pytest.raises(CheckpointError, match="horizon_process_state"):
+        with pytest.raises(
+            CheckpointError, match="unchanged resolved privacy configuration"
+        ):
             trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-4"))
 
     def test_calibrated_horizon_resume_restores_noise_multiplier(self, tmp_path):
@@ -574,6 +578,40 @@ class TestDpFtrlCheckpointRoundTrip:
         with pytest.raises(CheckpointError, match="privacy_noise_multiplier drift"):
             trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
 
+    def test_resume_rejects_balls_in_bins_batch_shape_drift(self, tmp_path):
+        outdir = tmp_path / "balls-in-bins"
+        dataset = _TinyDS()
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(outdir),
+                mechanism="mf_identity",
+                sampling_mode="balls_in_bins",
+                max_steps=16,
+                save_steps=8,
+            ),
+            train_dataset=dataset,
+            data_collator=_collate,
+        )
+        trainer.train()
+
+        resumed = DPTrainer(
+            model=_TinyLM(),
+            args=_args(
+                output_dir=str(tmp_path / "resumed"),
+                mechanism="mf_identity",
+                sampling_mode="balls_in_bins",
+                max_steps=16,
+                save_steps=8,
+                batch_size=8,
+            ),
+            train_dataset=dataset,
+            data_collator=_collate,
+        )
+
+        with pytest.raises(CheckpointError, match="Whole-horizon resume forbids drift"):
+            resumed.train(resume_from_checkpoint=str(outdir / "checkpoint-8"))
+
 
 class TestDpFtrlLrScheduleIntegration:
     """The optimizer LR schedule auto-flows into BandMF / BLT strategies.
@@ -656,6 +694,7 @@ class TestDpFtrlLrScheduleIntegration:
             "save_steps": 4,
             "privacy_noise_mechanism": "mf_band",
             "privacy_noise_mechanism_kwargs": {"bands": 4},
+            "dataset_schedule_id": "tiny-v1",
             "privacy_noise_multiplier": 1.0,
             "clipping_norm": 1.0,
             "learning_rate": 1e-3,

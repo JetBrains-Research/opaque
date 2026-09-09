@@ -473,6 +473,25 @@ class TestMaxGradNorm:
 class TestClippingAndSamplingSurfaces:
     """``clipping_mode`` / ``sampling_mode`` and JSON-style arg blobs."""
 
+    def test_dataset_schedule_id_accepts_nonempty_string(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            dataset_schedule_id="train-v1",
+        )
+
+        assert args.dataset_schedule_id == "train-v1"
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [(1, InputTypeError), ("  ", ConfigurationError)],
+    )
+    def test_dataset_schedule_id_rejects_invalid_values(self, value, error):
+        with pytest.raises(error, match="dataset_schedule_id"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                dataset_schedule_id=value,
+            )
+
     def test_invalid_clipping_mode_raises(self):
         with pytest.raises(ValueError, match="clipping_mode"):
             TrainingArguments(privacy_noise_multiplier=1.0, clipping_mode="unknown")

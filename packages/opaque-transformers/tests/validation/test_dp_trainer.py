@@ -574,6 +574,32 @@ class TestDPTrainerCallbacks:
         with pytest.raises(ConfigurationError, match="must remain unchanged for a run"):
             trainer.train()
 
+    def test_on_train_begin_cannot_change_dataset_schedule_id(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+
+        class MutatingCallback(_HFTrainerCallback):
+            def on_train_begin(self, args, state, control, **kwargs):
+                args.dataset_schedule_id = "train-v2"
+
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(
+                max_steps=1,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 1, "allocation": "block"},
+                dataset_schedule_id="train-v1",
+                privacy_target_epsilon=None,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            callbacks=[MutatingCallback()],
+        )
+
+        with pytest.raises(ConfigurationError, match="dataset_schedule_id changed"):
+            trainer.train()
+
     def test_checkpoint_rejects_late_privacy_change(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):
@@ -1750,6 +1776,117 @@ class TestDPTrainerCheckpointing:
         assert trainer2.state.global_step == 4
         # checkpoint-4 was just written by the final save / save_steps.
         assert (tmp_path / "checkpoint-4").is_dir()
+
+    @pytest.mark.parametrize(
+        ("saved_overrides", "current_overrides"),
+        [
+            ({}, {"per_device_train_batch_size": 2}),
+            (
+                {"sampling_kwargs": {"truncated_batch_size": 3}},
+                {"sampling_kwargs": {"truncated_batch_size": 4}},
+            ),
+        ],
+        ids=["sample-rate", "truncation-cap"],
+    )
+    def test_resume_rejects_poisson_sampling_law_drift(
+        self,
+        gpt2_with_lora,
+        tiny_lm_dataset,
+        tmp_path,
+        saved_overrides,
+        current_overrides,
+    ):
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(
+                tmp_path,
+                max_steps=2,
+                save_steps=2,
+                **saved_overrides,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+
+        model2, tokenizer2 = gpt2_with_lora
+        resumed = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                **current_overrides,
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        with pytest.raises(CheckpointError, match="resolved sampling law"):
+            resumed.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+
+    @pytest.mark.parametrize(
+        ("current_k", "current_dataset_id", "noise_multiplier", "message"),
+        [
+            (2, "tiny-v1", 1.0, "resolved sampling law"),
+            (1, None, 1.0, "dataset_schedule_id"),
+            (1, "tiny-v2", 1.0, "schedule changed"),
+            (1, "tiny-v1", 2.0, "unchanged resolved privacy configuration"),
+        ],
+        ids=[
+            "sampling-law",
+            "missing-dataset-schedule",
+            "dataset-schedule",
+            "privacy-configuration",
+        ],
+    )
+    def test_resume_rejects_k_out_of_t_drift(
+        self,
+        gpt2_with_lora,
+        tiny_lm_dataset,
+        tmp_path,
+        current_k,
+        current_dataset_id,
+        noise_multiplier,
+        message,
+    ):
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": 1, "allocation": "block"},
+                dataset_schedule_id="tiny-v1",
+                privacy_target_epsilon=None,
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+
+        model2, tokenizer2 = gpt2_with_lora
+        resumed = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                sampling_mode="k_out_of_t",
+                sampling_kwargs={"k": current_k, "allocation": "block"},
+                dataset_schedule_id=current_dataset_id,
+                privacy_noise_multiplier=noise_multiplier,
+                privacy_target_epsilon=None,
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        with pytest.raises(CheckpointError, match=message):
+            resumed.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
 
     def test_resume_true_finds_latest(self, gpt2_with_lora, tiny_lm_dataset, tmp_path):
         """resume_from_checkpoint=True picks the latest checkpoint under output_dir."""

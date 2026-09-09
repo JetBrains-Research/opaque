@@ -131,7 +131,7 @@ noise would yield infinite noise and `NaN` gradients.
 | Field | Use |
 |---|---|
 | `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit modes are limited to the compatible pairs below. |
-| `sampling_kwargs` | Sampler-specific parameters. `truncated_batch_size=N` caps Poisson draws. |
+| `sampling_kwargs` | Sampler-specific parameters. `truncated_batch_size=N` caps Poisson draws in single-process training. |
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. With `mf_*`, `adaptive` resolves to `fixed` because MF noise requires constant per-step sensitivity. |
 | `clipping_kwargs` | Parameters for the resolved clipping mode. |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
@@ -268,15 +268,23 @@ Standard HF save fields work as expected:
 | `save_on_each_node` | `False` | Every node's rank-0 writes a copy (for node-local storage). |
 | `save_only_model` | `False` | Skip the DP runtime bundle (optimizer / sampler / RNG); ships weights + `accountant.json` only. |
 | `load_best_model_at_end` | `False` | Restore the best-eval checkpoint after `train()`. Raises if no improving step was recorded. |
+| `dataset_schedule_id` | `None` | Opaque, non-sensitive version identifier for the ordered training dataset. Required to resume a horizon sampler. |
 
 Resume claims:
 
 - `train(resume_from_checkpoint=<path>)` restores model weights,
   optimizer / clip / noise state, sampler cursor, RNG snapshots, and
   the privacy accountant in one call.
-- For independent DP-SGD, the saved accountant contains the executed
-  composition and calibration covers the remaining steps against it.
-  Horizon mechanisms retain their single declared full-horizon process.
+- For independent-step DP-SGD, the saved accountant is the executed prefix.
+  Compatible suffix changes compose against it, and calibration covers the
+  remaining steps while the sampling law stays fixed.
+- Horizon mechanisms retain their single declared full-horizon process.
+  Horizon samplers require an unchanged privacy configuration and the same
+  `dataset_schedule_id` across resume. Change the identifier whenever record
+  order, filtering, transforms, or sharding changes; do not use raw record
+  identifiers or an unsalted content hash.
+- Distributed checkpoints cannot resume until the bundle stores rank-specific
+  sampler streams. A topology change is also rejected.
 - `resume_from_checkpoint` requires a **complete DP checkpoint**
   (`dp_state.pt` + `dp_optimizer.pt` + `accountant.json`).  A
   weights-only export (`save_only_model=True`, an HF checkpoint, a

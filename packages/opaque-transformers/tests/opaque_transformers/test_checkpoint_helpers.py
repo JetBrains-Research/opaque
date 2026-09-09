@@ -193,6 +193,8 @@ class TestDpRuntimeBundle:
             target_epsilon=5.0,
             horizon_process_state={"type": "ExampleHorizon", "n_steps": 30},
             sampling_mode="poisson",
+            world_size=1,
+            dataset_schedule_id="train-v1",
             privacy_config=privacy,
         )
         loaded = ckpt.load_dp_runtime_state(path)
@@ -215,6 +217,8 @@ class TestDpRuntimeBundle:
             "n_steps": 30,
         }
         assert loaded.sampling_mode == "poisson"
+        assert loaded.world_size == 1
+        assert loaded.dataset_schedule_id == "train-v1"
         assert loaded.privacy_config == privacy
 
     def test_unsupported_clip_state_type_raises(self, tmp_path):
@@ -632,6 +636,7 @@ class TestRuntimeCheckpointDriftMetadata:
             ("is_horizon_process", "dp_relevant"),
             ("horizon_process_state", "dp_relevant"),
             ("sampling_mode", "dp_relevant"),
+            ("world_size", "dp_relevant"),
             ("privacy_config", "dp_relevant"),
             ("mf_n_steps", "dp_relevant"),
             ("mf_min_sep", "dp_relevant"),

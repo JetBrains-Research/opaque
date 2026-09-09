@@ -8,6 +8,7 @@ from itertools import chain
 import pytest
 
 from opaque.dpsgd.sampling import KOutOfTSampler
+from opaque.exceptions import CheckpointError
 from opaque.random import key
 from opaque.serialization import from_state_dict, state_dict
 
@@ -115,3 +116,84 @@ def test_validation():
         KOutOfTSampler([1], k=1, t=0, allocation="total", key=key(0))
     with pytest.raises(ValueError, match="allocation"):
         KOutOfTSampler([1], k=1, t=1, allocation="bad", key=key(0))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("k", 1),
+        ("t", 9),
+        ("allocation", "total"),
+        ("num_samples", 39),
+    ],
+)
+def test_restore_rejects_template_sampling_law_drift(field, value):
+    template = KOutOfTSampler(
+        list(range(40)),
+        k=2,
+        t=8,
+        allocation="block",
+        key=key(0),
+    )
+    snapshot = state_dict(template)
+    snapshot[field] = value
+
+    with pytest.raises(CheckpointError, match="does not match snapshot"):
+        from_state_dict(template, snapshot)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("k", True),
+        ("t", 8.5),
+        ("num_samples", "40"),
+        ("consumed", 1.5),
+        ("key_seed", "7"),
+        ("key_impl", 7),
+        ("allocation", 1),
+    ],
+)
+def test_restore_rejects_coercible_checkpoint_fields(field, value):
+    template = KOutOfTSampler(
+        list(range(40)),
+        k=2,
+        t=8,
+        allocation="block",
+        key=key(0),
+    )
+    snapshot = state_dict(template)
+    snapshot[field] = value
+
+    with pytest.raises(CheckpointError, match=field):
+        from_state_dict(template, snapshot)
+
+
+def test_restore_rejects_cursor_past_horizon():
+    template = KOutOfTSampler(
+        list(range(40)),
+        k=2,
+        t=8,
+        allocation="block",
+        key=key(0),
+    )
+    snapshot = state_dict(template)
+    snapshot["consumed"] = 9
+
+    with pytest.raises(CheckpointError, match="consumed"):
+        from_state_dict(template, snapshot)
+
+
+def test_restore_rejects_missing_required_field():
+    template = KOutOfTSampler(
+        list(range(40)),
+        k=2,
+        t=8,
+        allocation="block",
+        key=key(0),
+    )
+    snapshot = state_dict(template)
+    del snapshot["k"]
+
+    with pytest.raises(CheckpointError, match="missing required field 'k'"):
+        from_state_dict(template, snapshot)
