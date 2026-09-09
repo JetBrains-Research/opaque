@@ -34,7 +34,7 @@ class Iris(ifed.Dataset):
     sepal_width = ifed.Float()
 
 
-# the rows this process holds, one value per record in each column
+# the rows this process holds
 IRIS = Iris.from_columns(
     sepal_length=[5.1, 4.9, 4.7, 4.6, 5.0, 5.4, 6.4, 6.9, 5.5, 6.5],
     sepal_width=[3.5, 3.0, 3.2, 3.1, 3.6, 3.9, 3.2, 3.1, 2.3, 2.8],
@@ -63,6 +63,7 @@ def datastore(target: str, sampler: fed.MinSepSampler):
         version=sampler.population.version,
         cardinality=cardinality,
         assign_delta=sampler.assign_delta,
+        datasets=[Iris.from_federation()],
         server=target,
         gpu=False,
     )
