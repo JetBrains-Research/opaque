@@ -95,8 +95,8 @@ splice two different correlated-noise processes. Restart from the original
 public/pre-training initialization with the current release; already
 DP-trained weights are not a zero-cost fresh initialization.
 The same base seed therefore produces deliberately different λ-CGD noise after
-this fix. All λ-CGD checkpoints written by v0.15.4 or the v0.15.5.rc1/rc2
-prereleases are restart-only, including step-zero, `lambda_=0`, and
+this fix. All λ-CGD checkpoints written by v0.15.4, v0.15.5.rc1/rc2, or final
+v0.15.5 are restart-only, including step-zero, `lambda_=0`, and
 completed-horizon states; the uniform rejection is the compatibility boundary,
 not a claim that every degenerate splice would change the covariance.
 
