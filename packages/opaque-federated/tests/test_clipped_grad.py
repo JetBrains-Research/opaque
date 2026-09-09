@@ -126,7 +126,7 @@ def test_one_real_federated_round(population):
         shuffle=False,
         strategy=strategy,
     )
-    points = ifed.BuiltInDataset("Points", ROWS)
+    points = Points.from_rows(ROWS)
     store = ifed.LocalDatastore(datasets=[points, points])
 
     with ifed.session(plan, store) as run:

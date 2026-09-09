@@ -28,27 +28,17 @@ from opaque.dpsgd.noise import gaussian_noise
 from opaque.optimizers import sgd
 from opaque.random import key
 
-# the rows this process holds, under the name the plan's source() reads them by
-IRIS = ifed.BuiltInDataset(
-    "Iris",
-    [
-        {"sepal_length": 5.1, "sepal_width": 3.5},
-        {"sepal_length": 4.9, "sepal_width": 3.0},
-        {"sepal_length": 4.7, "sepal_width": 3.2},
-        {"sepal_length": 4.6, "sepal_width": 3.1},
-        {"sepal_length": 5.0, "sepal_width": 3.6},
-        {"sepal_length": 5.4, "sepal_width": 3.9},
-        {"sepal_length": 6.4, "sepal_width": 3.2},
-        {"sepal_length": 6.9, "sepal_width": 3.1},
-        {"sepal_length": 5.5, "sepal_width": 2.3},
-        {"sepal_length": 6.5, "sepal_width": 2.8},
-    ],
-)
-
 
 class Iris(ifed.Dataset):
     sepal_length = ifed.Float()
     sepal_width = ifed.Float()
+
+
+# the rows this process holds, one value per record in each column
+IRIS = Iris.from_columns(
+    sepal_length=[5.1, 4.9, 4.7, 4.6, 5.0, 5.4, 6.4, 6.9, 5.5, 6.5],
+    sepal_width=[3.5, 3.0, 3.2, 3.1, 3.6, 3.9, 3.2, 3.1, 2.3, 2.8],
+)
 
 
 class Regression(nn.Module):

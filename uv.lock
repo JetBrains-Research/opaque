@@ -1117,7 +1117,7 @@ wheels = [
 
 [[package]]
 name = "ifed-sdk"
-version = "5.3.0"
+version = "5.4.0"
 source = { registry = "https://packages.jetbrains.team/pypi/p/fed/python/simple/" }
 dependencies = [
     { name = "autoflake", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
@@ -1131,9 +1131,9 @@ dependencies = [
     { name = "safetensors", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
     { name = "torch", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
-sdist = { url = "https://packages.jetbrains.team/pypi/p/fed/python/download/ifed-sdk/5.3.0/ifed_sdk-5.3.0.tar.gz", hash = "sha256:20735c05093b8c080fc2bccb1dc8901eb634f2273cdf8a23e7f85ddc6d84620d" }
+sdist = { url = "https://packages.jetbrains.team/pypi/p/fed/python/download/ifed-sdk/5.4.0/ifed_sdk-5.4.0.tar.gz", hash = "sha256:28a8f16b4b503b916bf8266dac2e7dd6534ba97debc2ea0bafb643624c708703" }
 wheels = [
-    { url = "https://packages.jetbrains.team/pypi/p/fed/python/download/ifed-sdk/5.3.0/ifed_sdk-5.3.0-py3-none-any.whl", hash = "sha256:80e5ac6a528f79601f51823d467c952d77f3857fbbe2f612a7c5080d796bac5d" },
+    { url = "https://packages.jetbrains.team/pypi/p/fed/python/download/ifed-sdk/5.4.0/ifed_sdk-5.4.0-py3-none-any.whl", hash = "sha256:5a438246c2f366cb0e4de7032f2e4c9c8a6c4f301af1b1569e5ea73d558e62ea" },
 ]
 
 [[package]]
@@ -2695,7 +2695,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ifed-agent-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", index = "https://packages.jetbrains.team/pypi/p/fed/python/simple/" },
-    { name = "ifed-sdk", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", specifier = "==5.3.0", index = "https://packages.jetbrains.team/pypi/p/fed/python/simple/" },
+    { name = "ifed-sdk", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", specifier = "==5.4.0", index = "https://packages.jetbrains.team/pypi/p/fed/python/simple/" },
     { name = "ifed-server-abi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')", index = "https://packages.jetbrains.team/pypi/p/fed/python/simple/" },
     { name = "opaque-engine", editable = "packages/opaque-engine" },
 ]
