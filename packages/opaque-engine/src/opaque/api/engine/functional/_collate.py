@@ -59,7 +59,11 @@ class _EmptyCollator(Generic[T]):
     def __init__(self, collate_fn: Callable[..., T]) -> None:
         self._collate_fn = collate_fn
         self._template: T | None = None
-        functools.update_wrapper(self, collate_fn)
+        # updated=() skips the default `__dict__` copy: without it,
+        # update_wrapper would merge collate_fn's (typically empty) instance
+        # dict into ours, risking non-pickleable attributes leaking onto the
+        # wrapper even when collate_fn itself pickles fine.
+        functools.update_wrapper(self, collate_fn, updated=())
 
     def __call__(self, examples):
         if not examples:
