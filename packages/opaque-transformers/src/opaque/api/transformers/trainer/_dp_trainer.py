@@ -4934,12 +4934,10 @@ class DPTrainer:
         Under DDP, the rank-0 process writes shared artefacts (model weights,
         trainer state, training args, accountant, optimizer, DP runtime),
         every rank writes its own RNG snapshot (per-rank file so each rank
-        can resume its own non-DP RNG), and a barrier at each stage keeps all
-        ranks in lockstep before any continues. Each of those barriers is a
+        can resume its own non-DP RNG), and each stage ends in a
         failure-propagating :func:`_distributed.checkpoint_barrier`: if any
-        rank's segment of a stage raises (most notably the saving rank's
-        artefact writes or its ``on_save`` callback invocation), every other
-        rank raises too instead of hanging at the barrier forever.
+        rank's segment of a stage raises, every rank raises instead of
+        hanging at the barrier.
 
         Signature mirrors HF ``Trainer._save_checkpoint(model, trial)`` so
         HF-side callbacks that invoke it directly — notably
@@ -5033,9 +5031,7 @@ class DPTrainer:
                 stage_error = exc
 
         # Per-rank RNG snapshot — every rank, after rank-0 has created the
-        # staging directory.  This barrier propagates a saving-rank failure
-        # from the block above to every rank instead of letting non-saving
-        # ranks wait here for a saving rank that already raised.
+        # staging directory.
         _distributed.checkpoint_barrier(self._ddp, stage_error)
 
         stage_error = None
@@ -5071,10 +5067,7 @@ class DPTrainer:
                 stage_error = exc
 
         # Final barrier so all ranks see post-save state consistently before
-        # any continues into the next training step / eval / rotation. This
-        # propagates a failure raised here (e.g. from an ``on_save``
-        # callback on the saving rank) to every rank instead of leaving
-        # peers blocked at this barrier forever.
+        # any continues into the next training step / eval / rotation.
         _distributed.checkpoint_barrier(self._ddp, stage_error)
         return ckpt_dir
 

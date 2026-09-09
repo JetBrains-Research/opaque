@@ -488,13 +488,10 @@ def scenario_checkpoint_save_failure(
 ) -> None:
     """Regression for issue #1002: saving-rank failure must not hang peers.
 
-    Installs an ``on_save`` callback that deterministically raises only on
-    the saving rank (rank 0 under the default ``save_on_each_node=False``).
-    Before the fix, non-saving ranks blocked forever at the unconditional
-    final checkpoint barrier once the saving rank raised ahead of it.  Every
-    rank must now raise: the saving rank re-raises the original error, and
-    every peer raises the propagated :class:`OperationError` instead of
-    waiting at the barrier.
+    An ``on_save`` callback raises only on the saving rank (rank 0). Each
+    rank asserts it saw the expected error and returns normally: the saving
+    rank sees its own error, every peer sees the propagated
+    ``OperationError`` instead of hanging at the checkpoint barrier.
     """
 
     class _RaiseOnSave(TrainerCallback):
@@ -528,22 +525,18 @@ def scenario_checkpoint_save_failure(
     try:
         trainer.train()
     except Exception as exc:
-        caught: Exception | None = exc
         message = str(exc)
     else:
-        caught = None
-        message = ""
-
-    if caught is None:
         raise AssertionError(
             f"rank {rank}: expected the injected checkpoint-save failure to "
             "propagate, but train() completed successfully"
         )
-    if rank == 0:
-        assert "injected on_save failure" in message, message
-    else:
-        assert "Checkpoint save failed on another rank" in message, message
-    raise caught
+    expected = (
+        "injected on_save failure"
+        if rank == 0
+        else "Checkpoint save failed on another rank"
+    )
+    assert expected in message, message
 
 
 # ---------------------------------------------------------------------------

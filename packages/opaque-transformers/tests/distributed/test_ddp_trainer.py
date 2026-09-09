@@ -97,72 +97,6 @@ def _run_ddp(
         raise AssertionError(f"DDP scenario {scenario!r} failed:\n{msg}")
 
 
-def _run_ddp_expect_failure(
-    scenario: str,
-    world_size: int,
-    *,
-    output_dir: str | None = None,
-    backend: str | None = None,
-    timeout: float = 60.0,
-) -> list[tuple[int, int, str, str]]:
-    """Like :func:`_run_ddp`, but every rank is expected to fail.
-
-    A bounded ``timeout`` turns a reintroduced hang (e.g. a non-saving rank
-    blocked forever at an unconditional checkpoint barrier) into a prompt,
-    explicit test failure instead of a silent CI stall. Returns
-    ``(rank, returncode, stdout, stderr)`` for every rank so the caller can
-    assert on the propagated failure message.
-    """
-    port = _free_port()
-    procs: list[subprocess.Popen] = []
-    common = [
-        sys.executable,
-        RUNNER,
-        "--world-size",
-        str(world_size),
-        "--port",
-        str(port),
-        "--scenario",
-        scenario,
-    ]
-    if output_dir is not None:
-        common += ["--output-dir", output_dir]
-    if backend is not None:
-        common += ["--backend", backend]
-    env = os.environ.copy()
-    env["TRANSFORMERS_VERBOSITY"] = "error"
-    try:
-        procs = [
-            subprocess.Popen(
-                [*common, "--rank", str(rank)],
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            for rank in range(world_size)
-        ]
-        results = []
-        for rank, p in enumerate(procs):
-            try:
-                stdout, stderr = p.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                stdout, stderr = p.communicate()
-                raise AssertionError(
-                    f"DDP scenario {scenario!r} rank={rank} did not terminate "
-                    f"within {timeout}s — looks like a hang, not a clean "
-                    f"failure.\nstdout:\n{stdout.decode()}\nstderr:\n"
-                    f"{stderr.decode()}"
-                ) from None
-            results.append((rank, p.returncode, stdout.decode(), stderr.decode()))
-    finally:
-        for p in procs:
-            if p.poll() is None:
-                p.kill()
-                p.wait()
-    return results
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -273,27 +207,17 @@ def test_vendor_backend_fails_fast_without_runtime(tmp_path) -> None:
 @pytest.mark.slow
 @pytest.mark.distributed
 def test_gloo_checkpoint_save_failure_propagates_to_all_ranks(tmp_path) -> None:
-    """Regression for issue #1002.
-
-    A saving-rank (rank 0) ``on_save`` failure must fail every rank
-    uniformly and promptly, instead of leaving the non-saving rank blocked
-    forever at the (previously unconditional) final checkpoint barrier.
+    """Regression for issue #1002: a saving-rank ``on_save`` failure must not
+    leave the non-saving rank hanging at the checkpoint barrier. On the old
+    code, rank 1 hangs there and this times out; the scenario itself asserts
+    each rank sees the expected error and exits 0 once fixed.
     """
-    results = _run_ddp_expect_failure(
+    _run_ddp(
         "checkpoint_save_failure",
         world_size=2,
         output_dir=str(tmp_path),
         backend="gloo",
-    )
-    by_rank = {rank: (rc, out, err) for rank, rc, out, err in results}
-    assert set(by_rank) == {0, 1}
-    for rank, (rc, out, _err) in by_rank.items():
-        assert rc != 0, f"rank={rank} unexpectedly succeeded\nstdout:\n{out}"
-    _rc0, out0, err0 = by_rank[0]
-    assert "injected on_save failure" in err0, f"rank=0 stderr:\n{err0}\n{out0}"
-    _rc1, out1, err1 = by_rank[1]
-    assert "Checkpoint save failed on another rank" in err1, (
-        f"rank=1 stderr:\n{err1}\n{out1}"
+        timeout=60,
     )
 
 

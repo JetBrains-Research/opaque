@@ -231,30 +231,15 @@ def barrier(ddp: DDPState) -> None:
         _opaque_barrier()
 
 
-def checkpoint_barrier(ddp: DDPState, local_error: BaseException | None) -> None:
-    """Synchronise one stage of the checkpoint-save path, propagating failure.
+def checkpoint_barrier(ddp: DDPState, local_error: Exception | None) -> None:
+    """Synchronise one checkpoint-save stage, propagating failure to all ranks.
 
-    Every rank must call this once per synchronisation stage of
-    ``DPTrainer._save_checkpoint``, regardless of whether its own segment of
-    that stage raised. Wrap the risky segment (e.g. the saving rank's
-    artefact writes, or an ``on_save`` callback) in try/except and pass the
-    caught exception — or ``None`` on success — as ``local_error``. This
-    replaces the plain, unconditional ``barrier()`` calls that previously
-    let the saving rank raise *before* reaching the barrier, leaving every
-    peer rank blocked there forever.
-
-    Behaviour:
-    - Not distributed: re-raises ``local_error`` immediately (there are no
-      peers to protect from a hang); otherwise returns.
-    - Distributed: every rank participates in a collective that reduces
-      whether *any* rank failed in this stage. A rank whose own segment
-      raised re-raises that ``local_error`` (preserving its traceback) once
-      every rank has observed the failure. A rank that succeeded locally but
-      sees a peer failure raises :class:`OperationError` instead of
-      proceeding into the next stage.
-
-    Scope is intentionally narrow: this only guards the handful of
-    checkpoint-save barriers, not a general cross-rank control protocol.
+    Every rank calls this once per stage, passing the exception it caught in
+    that stage (or ``None`` on success). If any rank failed, every rank
+    raises: the rank whose own segment failed re-raises ``local_error``,
+    every other rank raises :class:`OperationError`. Replaces plain
+    ``barrier()`` calls that let a saving-rank failure leave peers blocked
+    forever.
     """
     if not ddp.is_distributed:
         if local_error is not None:
