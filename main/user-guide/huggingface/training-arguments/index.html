@@ -3576,7 +3576,7 @@ the strategy kwargs:</p>
 <tbody>
 <tr>
 <td><code>mf_band</code></td>
-<td><code>b_min_sep</code> (or explicit <code>poisson</code>)</td>
+<td><code>cyclic_poisson</code> (or explicit <code>b_min_sep</code>)</td>
 <td><code>{"bands": 16}</code></td>
 </tr>
 <tr>
@@ -3615,9 +3615,27 @@ conservative block bound.
 Identity MF explicitly accepts <code>sampling_mode="balls_in_bins"</code>. Horizon modes
 are accounted once for their declared <code>n_steps</code>; every privacy metric reported
 during the run is the conservative full-horizon epsilon.</p>
+<p><code>mf_band</code>'s <code>cyclic_poisson</code> sampler partitions the dataset into <code>bands</code>
+disjoint groups and rotates one active group per step (Choquette-Choo et al.
+2023, Theorem 1 / Algorithm 2). <code>sample_rate</code> here is <code>expected_batch_size /
+len(train_dataset)</code> — the <em>global</em> fraction of the whole dataset drawn per
+round — but the sampler and accountant both operate on the <em>conditional</em>
+rate within the active group, whose size is the exact per-group population
+<code>floor(dataset_size / bands)</code> (or, under DDP, <code>floor((dataset_size //
+world_size) / bands)</code>, since each rank partitions its own shard
+independently — a group's remainder examples never participate).
+<code>DPTrainer</code> converts consistently for both the runtime sampler and the
+accountant, and rejects the configuration if the resulting conditional
+rate exceeds <code>1</code> (lower <code>bands</code> or <code>expected_batch_size</code>). Plain
+<code>sampling_mode="poisson"</code> (whole-dataset subsampling every step, ignoring
+<code>bands</code>) is not a valid override for <code>mf_band</code>: it does not realize the
+grouped participation pattern <code>cyclic_poisson</code> accounting assumes. Use the
+explicit <code>sampling_mode="b_min_sep"</code> alternative (<a href="https://arxiv.org/abs/2602.09338">Dong &amp; Ganesh
+2026</a>) if cyclic rotation does not fit
+your data pipeline.</p>
 <p>So the minimal DP-FTRL configuration is one field:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">args</span> <span class="o">=</span> <span class="n">TrainingArguments</span><span class="p">(</span><span class="n">privacy_noise_mechanism</span><span class="o">=</span><span class="s2">"mf_band"</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># sampling_mode resolves to "b_min_sep"</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># sampling_mode resolves to "cyclic_poisson"</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># privacy_noise_mechanism_kwargs resolves to {"bands": 16}</span>
 </code></pre></div>
 <p>Defaults are tuned for a Mellum/Kstack-shaped causal-LM target;

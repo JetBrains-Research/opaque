@@ -3537,6 +3537,9 @@ and compose them. Each group has:</p>
 <p>The total privacy is the <span class="arithmatex">\(k\)</span>-fold self-composition of the per-group PLD:</p>
 <div class="arithmatex">\[\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}\]</div>
 <p>This is computed efficiently with 2 FFTs (self-composition).</p>
+<p>This guarantee (Choquette-Choo et al. 2023, Theorem 4 / Algorithm 2) is
+proved under zero-out adjacency with the <span class="arithmatex">\((k, b)\)</span>-participation schedule
+held fixed across neighboring datasets.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3768,7 +3771,17 @@ baseline (<code>identity_mf</code> / <code>identity_strategy</code>):</p>
   better per-group amplification but more composition steps.</li>
 <li>BandMF requires knowing <code>n_steps</code> before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.</li>
-<li>Pair with <code>CyclicPoissonSampler</code> for consistent sampling and accounting.</li>
+<li>Pair with <code>CyclicPoissonSampler</code> for consistent sampling and accounting —
+  both take the per-active-group conditional rate (<code>q</code> above), not a
+  whole-dataset rate. <code>opaque.transformers.TrainingArguments</code> auto-resolves
+  <code>privacy_noise_mechanism="mf_band"</code> to <code>sampling_mode="cyclic_poisson"</code> and
+  converts its global <code>expected_batch_size / len(train_dataset)</code> rate to that
+  conditional rate for you, dividing by the exact per-group population
+  <code>floor(dataset_size / bands)</code> (or, under DDP, <code>floor((dataset_size //
+  world_size) / bands)</code>, since each rank independently partitions its own
+  shard) so a non-divisible dataset size still matches Algorithm 2 /
+  Theorem 4; a plain whole-dataset Poisson sampler does not realize the
+  grouped participation this amplification assumes and is rejected.</li>
 </ul>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
