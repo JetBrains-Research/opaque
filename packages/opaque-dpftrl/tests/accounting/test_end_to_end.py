@@ -22,15 +22,26 @@ class TestEndToEndCalibration:
         assert math.isfinite(eps)
         assert eps > 0
 
-    def test_blt_standalone(self):
-        import math
+    def test_blt_standalone_uses_full_horizon(self):
+        import pytest
 
         import opaque.dpftrl.accounting as ftrl_acc
+        from opaque.api.accounting.core import _native
+        from opaque.api.accounting.core.discretization import get_discretization
         from opaque.dpftrl.noise import blt_strategy
 
-        s = blt_strategy(momentum=1.0)
-        eps = ftrl_acc.mf_gaussian(
-            1.0, s, n_steps=10, min_sep=10, max_participations=1
+        strategy = blt_strategy(max_buffers=3)
+        context = {"n_steps": 32, "min_sep": 1, "max_participations": 1}
+        coefficients = strategy.coefficients(**context)
+        # The first Toeplitz column has the largest norm for one participation.
+        sensitivity = coefficients.norm().item()
+        reference = _native.gaussian_pld(
+            2.0 / sensitivity, get_discretization().to_native()
         ).epsilon_at(1e-5)
-        assert math.isfinite(eps)
-        assert eps > 0
+
+        eps = ftrl_acc.mf_gaussian(2.0, strategy, **context).epsilon_at(1e-5)
+        one_step = ftrl_acc.mf_gaussian(
+            2.0, strategy, n_steps=1, min_sep=1, max_participations=1
+        ).epsilon_at(1e-5)
+        assert eps == pytest.approx(reference, rel=1e-9)
+        assert eps > one_step

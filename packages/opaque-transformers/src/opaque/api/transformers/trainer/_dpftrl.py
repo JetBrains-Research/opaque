@@ -84,6 +84,19 @@ _STRATEGY_FACTORIES: dict[str, Callable[..., Any]] = {
 _LR_SCHEDULED_STRATEGIES: frozenset[str] = frozenset({"mf_band", "mf_blt"})
 
 
+def resume_process_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Compare unspecified inner MF horizons with legacy one-step defaults."""
+    inner = state.get("inner")
+    if (
+        state.get("type") in {"CyclicPoisson", "BMinSep", "BallsInBins"}
+        and isinstance(inner, dict)
+        and inner.get("type") == "MfGaussian"
+        and inner.get("n_steps", 1) is None
+    ):
+        return {**state, "inner": {**inner, "n_steps": 1}}
+    return state
+
+
 def build_strategy(
     mechanism: str,
     kwargs: dict[str, Any] | None,

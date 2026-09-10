@@ -194,7 +194,9 @@ class TestMfComposition:
         assert eps > 0
 
     def test_identity_strategy_composes_with_gaussian(self):
-        proc = ftrl_acc.mf_gaussian(1.0, identity_strategy()) | dpsgd_acc.gaussian(1.0)
+        proc = ftrl_acc.mf_gaussian(
+            1.0, identity_strategy(), n_steps=1
+        ) | dpsgd_acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps)
         assert eps > 0

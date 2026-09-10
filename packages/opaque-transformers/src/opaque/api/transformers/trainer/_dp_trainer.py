@@ -5531,6 +5531,9 @@ class DPTrainer:
             current = current_by_name.get(f.name)
             if saved is None or current is None:
                 continue
+            if f.name == "horizon_process_state":
+                saved = _dpftrl.resume_process_state(saved)
+                current = _dpftrl.resume_process_state(current)
             if not _drift_differs(saved, current):
                 continue
 

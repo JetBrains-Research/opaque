@@ -15,12 +15,14 @@ in-package CI signal so regressions surface immediately.
 from __future__ import annotations
 
 import math
+from functools import partial
 from pathlib import Path
 
 import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.api.transformers.trainer import _dpftrl
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
 from opaque.exceptions import CheckpointError
 from opaque.transformers import TrainingArguments
@@ -308,7 +310,10 @@ class TestDpFtrlCheckpointRoundTrip:
             ("mf_lambda_cgd", 16),
         ],
     )
-    def test_resume_from_midtrain_checkpoint(self, tmp_path, mechanism, max_steps):
+    @pytest.mark.parametrize("legacy_inner_horizon", [False, True])
+    def test_resume_from_midtrain_checkpoint(
+        self, tmp_path, monkeypatch, mechanism, max_steps, legacy_inner_horizon
+    ):
         outdir = tmp_path / mechanism
         ds = _TinyDS()
 
@@ -325,7 +330,12 @@ class TestDpFtrlCheckpointRoundTrip:
             train_dataset=ds,
             data_collator=_collate,
         )
-        out1 = trainer1.train()
+        with monkeypatch.context() as patch:
+            if legacy_inner_horizon:
+                patch.setattr(
+                    _dpftrl, "mf_gaussian", partial(_dpftrl.mf_gaussian, n_steps=1)
+                )
+            out1 = trainer1.train()
         assert out1.global_step == max_steps
         expected_params = {
             name: value.detach().clone()
