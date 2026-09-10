@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """``DPTrainer`` population validation under DDP.
 
-Divisible dataset sizes shard evenly; non-divisible sizes raise
-``ConfigurationError`` unless ``ddp_drop_uneven_population=True`` opts into
-trimming instead.
+Divisible dataset sizes shard evenly. Non-divisible sizes are trimmed to the
+nearest lower multiple by default (``ddp_drop_uneven_population=True``) or
+raise ``ConfigurationError`` when that flag is set to ``False``.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def _trainer_with_ddp(
     dataset_size: int,
     world_size: int,
     rank: int = 0,
-    ddp_drop_uneven_population: bool = False,
+    ddp_drop_uneven_population: bool = True,
 ) -> DPTrainer:
     """Build a ``DPTrainer`` and pin ``_ddp`` to ``(rank, world_size)``."""
     model = torch.nn.Linear(2, 2)
@@ -77,7 +77,7 @@ def _shard_for(
     dataset_size: int,
     world_size: int,
     rank: int,
-    ddp_drop_uneven_population: bool = False,
+    ddp_drop_uneven_population: bool = True,
 ) -> Dataset:
     """Drive ``get_train_dataloader``'s sharding branch; return its dataset."""
     trainer = _trainer_with_ddp(
@@ -108,23 +108,20 @@ def test_divisible_dataset_shards_equally():
 
 
 def test_non_divisible_dataset_rejected():
-    """N=10, W=3 (10 % 3 == 1) raises instead of silently trimming to 9."""
+    """N=10, W=3 with ddp_drop_uneven_population=False raises instead of trimming."""
     with pytest.raises(ConfigurationError, match="not evenly divisible"):
-        _shard_for(dataset_size=10, world_size=3, rank=0)
-
-
-def test_non_divisible_dataset_trimmed_when_opted_in():
-    """N=10, W=3 with ddp_drop_uneven_population=True trims to 9 (3/rank)."""
-    sizes = {
-        r: len(
-            _shard_for(
-                dataset_size=10,
-                world_size=3,
-                rank=r,
-                ddp_drop_uneven_population=True,
-            )
+        _shard_for(
+            dataset_size=10,
+            world_size=3,
+            rank=0,
+            ddp_drop_uneven_population=False,
         )
-        for r in range(3)
+
+
+def test_non_divisible_dataset_trimmed_by_default():
+    """N=10, W=3 trims to 9 (3/rank) by default (ddp_drop_uneven_population=True)."""
+    sizes = {
+        r: len(_shard_for(dataset_size=10, world_size=3, rank=r)) for r in range(3)
     }
     assert sizes == {0: 3, 1: 3, 2: 3}
 

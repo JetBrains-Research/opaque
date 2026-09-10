@@ -4565,19 +4565,18 @@ class DPTrainer:
         """Length of ``self._train_dataset``, validated for DDP sharding.
 
         Single source of truth for the training-time dataset size, and for
-        the accounting sample-rate denominator. Requires the assumed-public
-        population size to already be an exact multiple of ``world_size``
-        under DDP, so every rank gets an identical-length shard (fixed-order
-        samplers need this to keep batch counts in sync across ranks) and
-        the accountant's denominator is exactly ``len(train_dataset)`` with
-        no hidden trim. Fails closed instead of silently dropping
-        ``len(train_dataset) % world_size`` tail examples, which would
-        otherwise let the effective population and the accounting
-        denominator drift without the caller noticing.
+        the accounting sample-rate denominator. Under DDP, every rank needs
+        an identical-length shard (fixed-order samplers need this to keep
+        batch counts in sync across ranks), so ``len(train_dataset)`` must
+        be an exact multiple of ``world_size``.
 
-        Set ``TrainingArguments.ddp_drop_uneven_population=True`` to opt
-        into the old trimming behavior instead: the tail examples are
-        dropped and the trimmed length becomes the denominator.
+        When it isn't, and ``TrainingArguments.ddp_drop_uneven_population``
+        (default ``True``) is set, the ``len(train_dataset) % world_size``
+        tail example(s) are dropped, a warning is logged, and the trimmed
+        length becomes the accounting sample-rate denominator. Set
+        ``ddp_drop_uneven_population=False`` to instead fail closed with a
+        ``ConfigurationError``, so the effective population and the
+        accounting denominator never move without the caller opting in.
 
         Raises:
             ConfigurationError: If ``world_size > 1``,
@@ -4624,9 +4623,9 @@ class DPTrainer:
                         "equal len(train_dataset) with no hidden trim. "
                         "Pass a train_dataset whose length is a multiple "
                         f"of world_size ({nearby}), choose a world_size "
-                        "that divides len(train_dataset), or set "
-                        "ddp_drop_uneven_population=True to opt into "
-                        "dropping the tail examples instead.",
+                        "that divides len(train_dataset), or leave "
+                        "ddp_drop_uneven_population at its default (True) "
+                        "to drop the tail examples instead.",
                     )
                 )
         if n == 0:

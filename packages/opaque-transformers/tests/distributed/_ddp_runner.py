@@ -542,7 +542,7 @@ def scenario_checkpoint_save_failure(
 def scenario_non_divisible_population_rejected(
     rank: int, world_size: int, use_cpu: bool = False, **_
 ) -> None:
-    """Every rank rejects a population that isn't a multiple of world_size."""
+    """Every rank rejects a non-divisible population when opted out of trimming."""
     from opaque.exceptions import ConfigurationError
 
     cfg = TinyConfig()
@@ -556,6 +556,7 @@ def scenario_non_divisible_population_rejected(
         privacy_noise_multiplier=1.0,
         use_cpu=use_cpu,
         use_compat_patches=False,
+        ddp_drop_uneven_population=False,
     )
     # ``world_size * 4 + 1`` is never a multiple of ``world_size``.
     n = world_size * 4 + 1

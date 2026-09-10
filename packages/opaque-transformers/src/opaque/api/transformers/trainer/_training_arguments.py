@@ -364,15 +364,14 @@ class TrainingArguments:
     # ``resolve_ddp_state`` when ``WORLD_SIZE > 1``. Matches HF default.
     ddp_timeout: int = 1800
     # ``DPTrainer`` requires ``len(train_dataset)`` to be an exact multiple
-    # of ``world_size`` under DDP (every rank needs an identical-length
-    # shard, and the accounting sample-rate denominator must equal
-    # ``len(train_dataset)`` with no hidden trim). Set this to ``True`` to
-    # opt into the old behavior instead: silently drop the
-    # ``len(train_dataset) % world_size`` tail examples and use the
-    # trimmed length as the denominator. Off by default because it lets
-    # the effective population and the accounting denominator drift
-    # without the caller noticing.
-    ddp_drop_uneven_population: bool = False
+    # of ``world_size`` under DDP so every rank gets an identical-length
+    # shard and the accounting sample-rate denominator equals
+    # ``len(train_dataset)``. When ``len(train_dataset)`` is not evenly
+    # divisible, this drops the ``len(train_dataset) % world_size`` tail
+    # example(s), logs a warning, and uses the trimmed length as the
+    # denominator. Set this to ``False`` to instead raise
+    # ``ConfigurationError`` on a non-divisible population.
+    ddp_drop_uneven_population: bool = True
 
     # =================================================================
     # Evaluation

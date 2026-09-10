@@ -224,7 +224,7 @@ def test_gloo_checkpoint_save_failure_propagates_to_all_ranks(tmp_path) -> None:
 @pytest.mark.slow
 @pytest.mark.distributed
 def test_gloo_non_divisible_population_rejected() -> None:
-    """DPTrainer rejects N % world_size != 0 instead of trimming."""
+    """DPTrainer rejects N % world_size != 0 when opted out of trimming."""
     _run_ddp("non_divisible_population_rejected", world_size=2, backend="gloo")
 
 
