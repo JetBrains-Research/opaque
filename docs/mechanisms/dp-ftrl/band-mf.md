@@ -95,6 +95,10 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 
 This is computed efficiently with 2 FFTs (self-composition).
 
+This guarantee (Choquette-Choo et al. 2023, Theorem 4 / Algorithm 2) is
+proved under zero-out adjacency with the $(k, b)$-participation schedule
+held fixed across neighboring datasets.
+
 ```python
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import band_mf_strategy
@@ -292,7 +296,17 @@ for batch in loader:
   better per-group amplification but more composition steps.
 - BandMF requires knowing `n_steps` before training starts. If the training
   length is uncertain, use standard Gaussian noise with early stopping.
-- Pair with `CyclicPoissonSampler` for consistent sampling and accounting.
+- Pair with `CyclicPoissonSampler` for consistent sampling and accounting —
+  both take the per-active-group conditional rate (`q` above), not a
+  whole-dataset rate. `opaque.transformers.TrainingArguments` auto-resolves
+  `privacy_noise_mechanism="mf_band"` to `sampling_mode="cyclic_poisson"` and
+  converts its global `expected_batch_size / len(train_dataset)` rate to that
+  conditional rate for you, dividing by the exact per-group population
+  `floor(dataset_size / bands)` (or, under DDP, `floor((dataset_size //
+  world_size) / bands)`, since each rank independently partitions its own
+  shard) so a non-divisible dataset size still matches Algorithm 2 /
+  Theorem 4; a plain whole-dataset Poisson sampler does not realize the
+  grouped participation this amplification assumes and is rejected.
 
 ## References
 

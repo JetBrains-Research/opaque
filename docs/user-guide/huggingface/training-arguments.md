@@ -148,7 +148,7 @@ the strategy kwargs:
 
 | `privacy_noise_mechanism` | Auto-resolved sampler | Default kwargs |
 |---|---|---|
-| `mf_band` | `b_min_sep` (or explicit `poisson`) | `{"bands": 16}` |
+| `mf_band` | `cyclic_poisson` (or explicit `b_min_sep`) | `{"bands": 16}` |
 | `mf_blt` | `balls_in_bins` | `{"max_buffers": 16}` |
 | `mf_bisr` | `balls_in_bins` | `{"bandwidth": 4}` |
 | `mf_bsr` | `balls_in_bins` | `{"bandwidth": 8, "alpha": 1.0, "beta": 0.9}` |
@@ -165,11 +165,30 @@ Identity MF explicitly accepts `sampling_mode="balls_in_bins"`. Horizon modes
 are accounted once for their declared `n_steps`; every privacy metric reported
 during the run is the conservative full-horizon epsilon.
 
+`mf_band`'s `cyclic_poisson` sampler partitions the dataset into `bands`
+disjoint groups and rotates one active group per step (Choquette-Choo et al.
+2023, Theorem 1 / Algorithm 2). `sample_rate` here is `expected_batch_size /
+len(train_dataset)` — the *global* fraction of the whole dataset drawn per
+round — but the sampler and accountant both operate on the *conditional*
+rate within the active group, whose size is the exact per-group population
+`floor(dataset_size / bands)` (or, under DDP, `floor((dataset_size //
+world_size) / bands)`, since each rank partitions its own shard
+independently — a group's remainder examples never participate).
+`DPTrainer` converts consistently for both the runtime sampler and the
+accountant, and rejects the configuration if the resulting conditional
+rate exceeds `1` (lower `bands` or `expected_batch_size`). Plain
+`sampling_mode="poisson"` (whole-dataset subsampling every step, ignoring
+`bands`) is not a valid override for `mf_band`: it does not realize the
+grouped participation pattern `cyclic_poisson` accounting assumes. Use the
+explicit `sampling_mode="b_min_sep"` alternative ([Dong & Ganesh
+2026](https://arxiv.org/abs/2602.09338)) if cyclic rotation does not fit
+your data pipeline.
+
 So the minimal DP-FTRL configuration is one field:
 
 ```python
 args = TrainingArguments(privacy_noise_mechanism="mf_band")
-# sampling_mode resolves to "b_min_sep"
+# sampling_mode resolves to "cyclic_poisson"
 # privacy_noise_mechanism_kwargs resolves to {"bands": 16}
 ```
 
