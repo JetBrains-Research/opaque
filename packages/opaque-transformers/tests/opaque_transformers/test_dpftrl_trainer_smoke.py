@@ -22,7 +22,7 @@ import torch
 from torch.utils.data import Dataset
 
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
-from opaque.exceptions import CheckpointError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.transformers import TrainingArguments
 
 
@@ -367,7 +367,12 @@ class TestDpFtrlCheckpointRoundTrip:
             out2.metrics["privacy_epsilon"], rel=1e-3
         )
 
-    def test_k_out_of_t_resume_rejects_parameter_drift(self, tmp_path):
+    @pytest.mark.parametrize("drift_target", ["arguments", "sampler_state"])
+    def test_k_out_of_t_resume_rejects_parameter_drift(
+        self, tmp_path, monkeypatch, drift_target
+    ):
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
         outdir = tmp_path / "k-out-of-t"
         ds = _TinyDS()
         trainer1 = DPTrainer(
@@ -385,6 +390,15 @@ class TestDpFtrlCheckpointRoundTrip:
         )
         trainer1.train()
 
+        checkpoint = outdir / "checkpoint-2"
+        if drift_target == "sampler_state":
+            # Keep the accountant and training arguments unchanged: restoring a
+            # different sampling law must still fail before another update.
+            runtime_path = checkpoint / ckpt.DP_STATE_NAME
+            runtime = ckpt.load_dp_runtime_state(str(runtime_path))
+            runtime.sampler_state["k"] = 1
+            torch.save(runtime, runtime_path)
+
         trainer2 = DPTrainer(
             model=_TinyLM(),
             args=_args(
@@ -392,14 +406,26 @@ class TestDpFtrlCheckpointRoundTrip:
                 mechanism="gaussian",
                 max_steps=4,
                 sampling_mode="k_out_of_t",
-                sampling_kwargs={"k": 1, "allocation": "block"},
+                sampling_kwargs={
+                    "k": 1 if drift_target == "arguments" else 2,
+                    "allocation": "block",
+                },
             ),
             train_dataset=ds,
             data_collator=_collate,
         )
 
-        with pytest.raises(CheckpointError, match="horizon_process_state"):
-            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+        def unexpected_step(*_args, **_kwargs):
+            pytest.fail("sampling-law drift must fail before the next training step")
+
+        monkeypatch.setattr(trainer2, "training_step", unexpected_step)
+        error, match = (
+            (CheckpointError, "horizon_process_state")
+            if drift_target == "arguments"
+            else (ConfigurationError, "k mismatch")
+        )
+        with pytest.raises(error, match=match):
+            trainer2.train(resume_from_checkpoint=str(checkpoint))
 
     def test_mf_resume_rejects_same_shape_strategy_drift(self, tmp_path):
         outdir = tmp_path / "mf-strategy-drift"

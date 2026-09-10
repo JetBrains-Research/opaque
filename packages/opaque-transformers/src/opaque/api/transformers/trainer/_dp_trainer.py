@@ -5504,14 +5504,12 @@ class DPTrainer:
         :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`
         for the vocabulary):
 
-        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` — RDP composition
-          still yields a correct ε.
-        - ``"dp_relevant"`` + DP-FTRL: ``raise ValueError`` — the MF
-          strategy is computed for a specific composition; drift would
-          silently produce a different ε.
+        - ``"dp_relevant"`` + independent-step DP-SGD: ``log.warning``.
+        - ``"dp_relevant"`` + a whole-horizon process or DP-FTRL:
+          ``raise ValueError`` — accounting uses the original schedule.
         - ``"shape"``: warn — trajectory differs but privacy is intact.
         - ``"intentional_extend"``: silent — normal user action (e.g.,
-          extending ``total_steps`` under DP-SGD).
+          extending ``total_steps`` under independent-step DP-SGD).
 
         Dict-valued dispositions resolve via the saved ``mechanism_kind``:
         the matching key wins; ``"default"`` is the fallback.
@@ -5557,8 +5555,7 @@ class DPTrainer:
                     )
                 log.warning(
                     "Resume arg drift on %s (dp_relevant, DP-SGD): "
-                    "saved=%r, current=%r — heterogeneous RDP composition "
-                    "still yields a correct ε.",
+                    "saved=%r, current=%r.",
                     f.name,
                     saved,
                     current,

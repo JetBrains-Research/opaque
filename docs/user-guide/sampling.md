@@ -236,6 +236,10 @@ Block sizes differ by at most one when `t` is not divisible by `k`. Batch sizes
 are Binomial, so **some batches are empty**. They are emitted rather than
 skipped: compacting them away changes the accounted participation schedule.
 
+Restoring a sampler requires the same dataset size, `k`, `t`, and `allocation`
+as the current template. The checkpoint supplies the RNG stream key and cursor,
+so the template's seed may differ without changing the resumed schedule.
+
 `dpsgd_acc.k_out_of_t(..., allocation="block")` provides an exact
 whole-horizon process:
 
