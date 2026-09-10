@@ -3,7 +3,8 @@
 """``DPTrainer`` population validation under DDP.
 
 Divisible dataset sizes shard evenly; non-divisible sizes raise
-``ConfigurationError`` instead of being silently trimmed.
+``ConfigurationError`` unless ``ddp_drop_uneven_population=True`` opts into
+trimming instead.
 """
 
 from __future__ import annotations
@@ -40,7 +41,11 @@ class _IdentityDataset(Dataset):
 
 
 def _trainer_with_ddp(
-    *, dataset_size: int, world_size: int, rank: int = 0
+    *,
+    dataset_size: int,
+    world_size: int,
+    rank: int = 0,
+    ddp_drop_uneven_population: bool = False,
 ) -> DPTrainer:
     """Build a ``DPTrainer`` and pin ``_ddp`` to ``(rank, world_size)``."""
     model = torch.nn.Linear(2, 2)
@@ -55,6 +60,7 @@ def _trainer_with_ddp(
         save_strategy="no",
         report_to=[],
         use_cpu=True,
+        ddp_drop_uneven_population=ddp_drop_uneven_population,
     )
     trainer = DPTrainer(model=model, args=args, train_dataset=dataset)
     trainer._ddp = dataclasses.replace(
@@ -66,10 +72,19 @@ def _trainer_with_ddp(
     return trainer
 
 
-def _shard_for(*, dataset_size: int, world_size: int, rank: int) -> Dataset:
+def _shard_for(
+    *,
+    dataset_size: int,
+    world_size: int,
+    rank: int,
+    ddp_drop_uneven_population: bool = False,
+) -> Dataset:
     """Drive ``get_train_dataloader``'s sharding branch; return its dataset."""
     trainer = _trainer_with_ddp(
-        dataset_size=dataset_size, world_size=world_size, rank=rank
+        dataset_size=dataset_size,
+        world_size=world_size,
+        rank=rank,
+        ddp_drop_uneven_population=ddp_drop_uneven_population,
     )
     trainer._ctx = types.SimpleNamespace(
         sample_rate=0.5,
@@ -96,6 +111,22 @@ def test_non_divisible_dataset_rejected():
     """N=10, W=3 (10 % 3 == 1) raises instead of silently trimming to 9."""
     with pytest.raises(ConfigurationError, match="not evenly divisible"):
         _shard_for(dataset_size=10, world_size=3, rank=0)
+
+
+def test_non_divisible_dataset_trimmed_when_opted_in():
+    """N=10, W=3 with ddp_drop_uneven_population=True trims to 9 (3/rank)."""
+    sizes = {
+        r: len(
+            _shard_for(
+                dataset_size=10,
+                world_size=3,
+                rank=r,
+                ddp_drop_uneven_population=True,
+            )
+        )
+        for r in range(3)
+    }
+    assert sizes == {0: 3, 1: 3, 2: 3}
 
 
 def test_sampler_rate_matches_accountant_rate():

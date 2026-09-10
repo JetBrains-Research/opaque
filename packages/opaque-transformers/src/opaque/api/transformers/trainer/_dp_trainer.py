@@ -3787,9 +3787,15 @@ class DPTrainer:
 
             world_size = self._ddp.world_size
             # Raises ``ConfigurationError`` unless ``len(dataset)`` is an
-            # exact multiple of ``world_size``, guaranteeing every rank's
-            # ``local_shard`` is the same length.
-            self._effective_train_dataset_size()
+            # exact multiple of ``world_size`` (or ``ddp_drop_uneven_
+            # population=True`` opts into trimming), guaranteeing every
+            # rank's ``local_shard`` is the same length as the
+            # denominator used above.
+            effective_n = self._effective_train_dataset_size()
+            if effective_n < len(dataset):
+                from torch.utils.data import Subset
+
+                dataset = Subset(dataset, range(effective_n))
             dataset = local_shard(
                 dataset,
                 rank=self._ddp.rank,
@@ -4569,10 +4575,16 @@ class DPTrainer:
         otherwise let the effective population and the accounting
         denominator drift without the caller noticing.
 
+        Set ``TrainingArguments.ddp_drop_uneven_population=True`` to opt
+        into the old trimming behavior instead: the tail examples are
+        dropped and the trimmed length becomes the denominator.
+
         Raises:
-            ConfigurationError: If ``world_size > 1`` and
+            ConfigurationError: If ``world_size > 1``,
                 ``len(train_dataset)`` is not an exact multiple of
-                ``world_size``, or if the train dataset is empty.
+                ``world_size``, and ``ddp_drop_uneven_population`` is
+                ``False``; or if the (possibly trimmed) train dataset is
+                empty.
         """
         if self._train_dataset is None:
             return 0
@@ -4581,24 +4593,42 @@ class DPTrainer:
         if world_size <= 1:
             return n
         if n % world_size != 0:
-            lower = n - (n % world_size)
-            upper = lower + world_size
-            nearby = (
-                f"e.g. {lower} or {upper} examples"
-                if lower > 0
-                else f"e.g. {upper} examples"
-            )
-            raise ConfigurationError(
-                *(
-                    f"Train dataset has {n} example(s), which is not evenly "
-                    f"divisible by world_size={world_size}. Every rank must "
-                    "get an identical-length shard, and the accounting "
-                    "sample-rate denominator must equal len(train_dataset) "
-                    f"with no hidden trim. Pass a train_dataset whose length "
-                    f"is a multiple of world_size ({nearby}), or choose a "
-                    "world_size that divides len(train_dataset).",
+            if self.args.ddp_drop_uneven_population:
+                trimmed = n - (n % world_size)
+                log.warning(
+                    "Train dataset has %d example(s), not evenly divisible "
+                    "by world_size=%d; dropping %d tail example(s) to %d "
+                    "per ddp_drop_uneven_population=True. The accounting "
+                    "sample-rate denominator is the trimmed length, not "
+                    "len(train_dataset).",
+                    n,
+                    world_size,
+                    n - trimmed,
+                    trimmed,
                 )
-            )
+                n = trimmed
+            else:
+                lower = n - (n % world_size)
+                upper = lower + world_size
+                nearby = (
+                    f"e.g. {lower} or {upper} examples"
+                    if lower > 0
+                    else f"e.g. {upper} examples"
+                )
+                raise ConfigurationError(
+                    *(
+                        f"Train dataset has {n} example(s), which is not "
+                        f"evenly divisible by world_size={world_size}. "
+                        "Every rank must get an identical-length shard, "
+                        "and the accounting sample-rate denominator must "
+                        "equal len(train_dataset) with no hidden trim. "
+                        "Pass a train_dataset whose length is a multiple "
+                        f"of world_size ({nearby}), choose a world_size "
+                        "that divides len(train_dataset), or set "
+                        "ddp_drop_uneven_population=True to opt into "
+                        "dropping the tail examples instead.",
+                    )
+                )
         if n == 0:
             raise ConfigurationError(
                 *(

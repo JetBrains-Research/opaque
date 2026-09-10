@@ -53,7 +53,9 @@ args = TrainingArguments(
 
 `per_rank` requires the public, fixed training population length to be evenly
 divisible by `WORLD_SIZE`; `DPTrainer` raises a configuration error otherwise
-instead of silently trimming examples.
+instead of silently trimming examples. Set `ddp_drop_uneven_population=True`
+to opt into the old trimming behavior; the dropped tail changes both the
+sharding and the accounting sample-rate denominator.
 
 ## Metrics and eval gather
 
