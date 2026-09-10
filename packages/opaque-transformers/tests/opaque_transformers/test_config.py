@@ -619,7 +619,8 @@ class TestMechanismAndSamplerDefaults:
         )
         assert args.sampling_mode == "b_min_sep"
 
-    def test_mf_band_rejects_poisson_override(self):
+    @pytest.mark.parametrize("bands", [1, 4])
+    def test_mf_band_rejects_poisson_override(self, bands):
         """``mf_band`` requires ``cyclic_poisson`` or ``b_min_sep``; a plain
         Poisson sampler does not realize BandMF's grouped participation
         pattern (issue #776)."""
@@ -627,6 +628,7 @@ class TestMechanismAndSamplerDefaults:
             TrainingArguments(
                 privacy_noise_multiplier=1.0,
                 privacy_noise_mechanism="mf_band",
+                privacy_noise_mechanism_kwargs={"bands": bands},
                 sampling_mode="poisson",
             )
 

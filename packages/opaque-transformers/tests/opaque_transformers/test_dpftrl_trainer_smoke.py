@@ -22,7 +22,7 @@ import torch
 from torch.utils.data import Dataset
 
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
-from opaque.exceptions import CheckpointError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.transformers import TrainingArguments
 
 
@@ -172,6 +172,60 @@ class TestDpFtrlTrain:
 
 
 class TestDpFtrlSamplerDispatch:
+    def test_band_poisson_mutation_rejected_before_calibration(
+        self, tmp_path, monkeypatch
+    ):
+        args = _args(
+            output_dir=str(tmp_path),
+            mechanism="mf_band",
+            max_steps=16,
+            noise_multiplier=None,
+            target_epsilon=8.0,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        args.sampling_mode = "poisson"
+
+        def unexpected_calibration(*_args, **_kwargs):
+            pytest.fail("invalid sampling must be rejected before calibration")
+
+        monkeypatch.setattr(trainer, "_calibrate_noise", unexpected_calibration)
+        with pytest.raises(ConfigurationError, match="sampling_mode='poisson'"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
+    def test_band_poisson_callback_mutation_rejected_before_sampling(
+        self, tmp_path, monkeypatch
+    ):
+        from transformers import TrainerCallback
+
+        from opaque.api.transformers.trainer import _dpftrl
+
+        args = _args(output_dir=str(tmp_path), mechanism="mf_band", max_steps=16)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        class _ChangeSampler(TrainerCallback):
+            def on_train_begin(self, args_, state_, control_, **_kw):
+                args_.sampling_mode = "poisson"
+
+        def unexpected_sampler(*_args, **_kwargs):
+            pytest.fail("invalid sampling must be rejected before sampler construction")
+
+        monkeypatch.setattr(_dpftrl, "PoissonSampler", unexpected_sampler)
+        trainer.add_callback(_ChangeSampler())
+        with pytest.raises(ConfigurationError, match="sampling_mode='poisson'"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
     @pytest.mark.parametrize(
         ("mechanism", "expected_sampler_module_name"),
         [

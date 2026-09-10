@@ -47,14 +47,11 @@ class CyclicPoisson(DpHorizonProcess):
     where ``bands = inner.strategy.bands``.  For ``IdentityStrategy``,
     ``num_groups = n_steps``.
 
-    Plain Poisson when ``truncated_batch_size is None``; capped Poisson when
-    ``truncated_batch_size`` and ``dataset_size`` are set together.
-    ``sample_rate=1.0`` represents full participation, so each group's
-    release is accounted as the plain Gaussian. Truncated Poisson is supported
-    only for ``IdentityStrategy`` (the per-step PLD reduces to the
-    DP-SGD truncated Poisson-Gaussian); ``BandMfStrategy`` is rejected
-    because the per-group population is the BandMF group of size
-    ``|D| / bands``, not the full dataset.
+    BandMF requires cyclic sampling over fixed dataset partitions;
+    ``sample_rate`` is conditional on the active partition. Identity uses
+    whole-dataset Poisson sampling, optionally capped with
+    ``truncated_batch_size`` and ``dataset_size``. At ``sample_rate=1.0``,
+    each accounted release is a plain Gaussian without amplification.
 
     Named ``CyclicPoisson`` (not ``Poisson``) to avoid a class-name collision
     with :class:`opaque.dpsgd.accounting.amplification.Poisson` in the
@@ -70,19 +67,12 @@ class CyclicPoisson(DpHorizonProcess):
 
     @property
     def min_sep(self) -> int:
-        # Cyclic Poisson provides no worst-case separation guarantee: any
-        # example could in principle be sampled on consecutive rounds.  The
-        # degenerate-limit value ``1`` is what downstream consumers (BLT-family
-        # noise/accounting) read; CyclicPoisson's validators already reject
-        # BLT-family inners, so this value only ever shows up for BandMF or
-        # Identity (which ignore it).
+        # Conservative bound; BandMF and identity derive sensitivity independently.
         return 1
 
     @property
     def max_participations(self) -> int:
-        # Worst case: every round is a participation.  Same degenerate-limit
-        # justification as :attr:`min_sep` — only BandMF/Identity ever read
-        # this on a CyclicPoisson.
+        # Conservative bound over the full horizon.
         return self.n_steps
 
     def __post_init__(self):
@@ -236,21 +226,18 @@ def poisson(
     ``n_steps`` training rounds.  Compose nothing externally with
     ``* num_steps``.
 
-    Plain Poisson when ``truncated_batch_size is None``; truncated
-    Poisson (capped batch) when ``truncated_batch_size`` and
-    ``dataset_size`` are both set.  Truncated Poisson is only supported
-    for ``IdentityStrategy`` inner — for ``BandMfStrategy`` it is
-    rejected because the per-group population (size ``|D| / bands``)
-    doesn't match the truncated Poisson-Gaussian PLD's assumption that
-    Bernoulli draws happen over a fixed dataset of ``dataset_size``
-    examples.
+    ``IdentityStrategy`` uses whole-dataset Poisson sampling. ``BandMfStrategy``
+    requires cyclic Poisson sampling over fixed dataset partitions, as provided
+    by :class:`opaque.dpftrl.sampling.CyclicPoissonSampler`.
+    Truncated Poisson (capped batches) is supported only for ``IdentityStrategy``.
 
     Args:
         inner: ``mf_gaussian(nm, BandMfStrategy(...))`` or
             ``mf_gaussian(nm, identity_strategy())``.
-        sample_rate: Per-step Poisson sampling probability ``∈ (0, 1]``.
-            At ``1.0`` every example participates — no amplification; each
-            step is accounted as the plain Gaussian.
+        sample_rate: Inclusion probability in ``(0, 1]``. For identity,
+            this applies to every record each step; for BandMF, it is
+            conditional on the record's partition being active. At ``1.0``,
+            each accounted release is a plain Gaussian without amplification.
         n_steps: Total number of training rounds.  For ``BandMfStrategy``
             the cycle count is ``ceil(n_steps / bands)``; for
             ``IdentityStrategy`` it equals ``n_steps``.
@@ -268,7 +255,7 @@ def poisson(
         from opaque.dpftrl.noise import band_mf_strategy, identity_strategy
 
         # BandMF
-        s = band_mf_strategy(n_steps=1000, bands=10)
+        s = band_mf_strategy(bands=10)
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(1.0, s),
             sample_rate=0.01, n_steps=1000,
