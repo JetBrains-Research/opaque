@@ -222,6 +222,7 @@ Do not reuse these shipped tags:
 | `opaque.dpsgd.poisson` | DP-SGD Poisson sampling |
 | `opaque.dpsgd.k_out_of_t` | DP-SGD k-out-of-t sampling |
 | `opaque.dpftrl.mf_gaussian` | `opaque.dpftrl.noise.mf_gaussian_noise` |
+| `opaque.dpftrl.lambda_cgd` | `opaque.dpftrl.noise.lambda_cgd_strategy` noise and replay |
 | `opaque.dpftrl.second_moment.first` / `.second` | paired MF second-moment streams |
 | `opaque.dpftrl.cyclic_poisson` | DP-FTRL cyclic Poisson sampling |
 | `opaque.dpftrl.b_min_sep` | DP-FTRL b-min-separation sampling |
@@ -233,6 +234,11 @@ Do not reuse these shipped tags:
 A component's stream is deterministic for a given caller key, configuration,
 and call sequence. Split the key or fold in an instance or rank identifier when
 streams must differ.
+
+Lambda-CGD checkpoints with prior noise calls must identify the
+`opaque.dpftrl.lambda_cgd` namespace. An incompatible checkpoint raises
+`CheckpointError` at the next noise call. A checkpoint saved before the first
+call starts under this namespace.
 
 **Use Cases:**
 - Step counters in loops: `fold_in(base, step)`
