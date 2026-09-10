@@ -302,10 +302,11 @@ for batch in loader:
   `privacy_noise_mechanism="mf_band"` to `sampling_mode="cyclic_poisson"` and
   converts its global `expected_batch_size / len(train_dataset)` rate to that
   conditional rate for you, dividing by the exact per-group population
-  `floor(dataset_size / bands)` so a non-divisible dataset size still
-  matches Algorithm 2 / Theorem 4; a plain whole-dataset Poisson sampler
-  does not realize the grouped participation this amplification assumes
-  and is rejected.
+  `floor(dataset_size / bands)` (or, under DDP, `floor((dataset_size //
+  world_size) / bands)`, since each rank independently partitions its own
+  shard) so a non-divisible dataset size still matches Algorithm 2 /
+  Theorem 4; a plain whole-dataset Poisson sampler does not realize the
+  grouped participation this amplification assumes and is rejected.
 
 ## References
 

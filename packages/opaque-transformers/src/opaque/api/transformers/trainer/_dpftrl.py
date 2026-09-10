@@ -115,35 +115,30 @@ def build_strategy(
 
 
 def _cyclic_poisson_group_rate(
-    sample_rate: float, bands: int, dataset_size: int
+    sample_rate: float, bands: int, dataset_size: int, world_size: int = 1
 ) -> float:
-    """Convert the trainer's global rate into the per-active-group rate.
+    """Per-active-group conditional rate (Choquette-Choo et al. 2023,
+    Algorithm 2 / Theorem 4).
 
-    ``sample_rate`` is ``expected_batch_size / dataset_size`` (a global
-    per-example rate). ``opaque.dpftrl.accounting.poisson``
-    (``CyclicPoisson``) and ``CyclicPoissonSampler`` instead expect the
-    conditional probability that an example participates given its group
-    is active this round — ``expected_batch_size / floor(dataset_size /
-    bands)`` — because ``EQUAL_SPLIT`` partitioning (Choquette-Choo et al.
-    2023, Algorithm 2 / Theorem 4) truncates every group to
-    ``floor(dataset_size / bands)`` examples, dropping any remainder.
-    Both call sites derive the group size from the same ``dataset_size``
-    so the runtime sampler realises the participation pattern the
-    accountant is calibrated against, including when ``dataset_size`` is
-    not a multiple of ``bands``.
+    Under DDP each rank ``EQUAL_SPLIT``-partitions its own local shard
+    (``dataset_size // world_size`` examples) into ``bands`` groups,
+    truncating to ``floor(local_size / bands)``; the rate must target that
+    *local* group size, not the global ``dataset_size // bands``, or the
+    realised batch drifts from ``expected_batch_size``. ``world_size=1``
+    is the single-process case.
     """
     bands = int(bands)
-    dataset_size = int(dataset_size)
-    group_size = dataset_size // bands
+    local_size = int(dataset_size) // int(world_size)
+    group_size = local_size // bands
     if group_size < 1:
         raise ConfigurationError(
             *(
-                "sampling_mode='cyclic_poisson' requires dataset_size // "
-                f"bands >= 1; got dataset_size={dataset_size} and "
-                f"bands={bands}. Decrease bands or use a larger dataset.",
+                "sampling_mode='cyclic_poisson' requires (dataset_size // "
+                f"world_size) // bands >= 1; got dataset_size={dataset_size}, "
+                f"world_size={world_size}, bands={bands}.",
             )
         )
-    group_rate = float(sample_rate) * dataset_size / group_size
+    group_rate = float(sample_rate) * local_size / group_size
     if group_rate > 1.0:
         raise ConfigurationError(
             *(
@@ -164,6 +159,7 @@ def build_amplifier_factory(
     num_bins: int,
     dataset_size: int,
     truncated_batch_size: int | None,
+    world_size: int = 1,
 ) -> Callable[[float], Any]:
     """Return ``nm → DpHorizonProcess`` — the *raw* amplifier instance.
 
@@ -227,7 +223,7 @@ def build_amplifier_factory(
                 )
             )
         group_rate = _cyclic_poisson_group_rate(
-            sample_rate, strategy.bands, dataset_size
+            sample_rate, strategy.bands, dataset_size, world_size
         )
 
         def amp(
@@ -271,24 +267,16 @@ def build_sampler(
     noise_multiplier: float | None,
     num_bins: int,
     expected_batch_size: int,
-    dataset_size: int | None = None,
 ) -> Any:
     """Construct the Opaque sampler matching ``sampling_mode``.
 
     Privacy-derived sampler parameters (``bands``, paper-``p``) are read
     off the built ``mf`` recipe / amplifier — never off ``sampling_kwargs``
     or ``mechanism_kwargs`` — so the runtime sampler cannot desync from
-    the accountant.  ``sampling_kwargs`` carries only sampler-ergonomics
-    knobs (e.g. ``truncated_batch_size`` for Poisson cap); ``cyclic_poisson``
-    accepts none and converts ``sample_rate`` via
-    :func:`_cyclic_poisson_group_rate`, shared with
-    :func:`build_amplifier_factory`.
-
-    ``dataset_size`` is the *global* population ``build_amplifier_factory``
-    accounted against; ``cyclic_poisson`` uses it (not ``len(dataset)``) for
-    the group-rate conversion, because under DDP ``dataset`` is a per-rank
-    shard whose length would desync the runtime sampler from the
-    accountant. Defaults to ``len(dataset)`` for single-process callers.
+    the accountant. ``cyclic_poisson`` reads its per-band rate straight
+    off ``mf.amplifier_factory(noise_multiplier).sample_rate``, the same
+    value :func:`build_amplifier_factory` calibrated the accountant with,
+    so there is a single source of truth under DDP.
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
     if sampling_mode == "poisson":
@@ -360,11 +348,12 @@ def build_sampler(
             key=key,
         )
     if sampling_mode == "cyclic_poisson":
-        if mf is None:
+        if mf is None or noise_multiplier is None:
             raise ConfigurationError(
                 *(
-                    "sampling_mode='cyclic_poisson' requires a built MFContext; "
-                    "got mf=None.",
+                    "sampling_mode='cyclic_poisson' requires a built MFContext "
+                    "and a calibrated noise_multiplier; got mf=None or "
+                    "noise_multiplier=None.",
                 )
             )
         if not isinstance(mf.strategy, BandMfStrategy):
@@ -383,16 +372,11 @@ def build_sampler(
                     "sampling_kwargs.",
                 )
             )
-        bands = int(mf.strategy.bands)
-        effective_dataset_size = (
-            dataset_size if dataset_size is not None else len(dataset)
-        )
+        amp = mf.amplifier_factory(noise_multiplier)
         return CyclicPoissonSampler(
             dataset,
-            sample_rate=_cyclic_poisson_group_rate(
-                sample_rate, bands, effective_dataset_size
-            ),
-            bands=bands,
+            sample_rate=float(amp.sample_rate),
+            bands=int(mf.strategy.bands),
             n_steps=n_steps,
             key=key,
         )

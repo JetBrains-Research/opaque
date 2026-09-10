@@ -171,10 +171,12 @@ disjoint groups and rotates one active group per step (Choquette-Choo et al.
 len(train_dataset)` — the *global* fraction of the whole dataset drawn per
 round — but the sampler and accountant both operate on the *conditional*
 rate within the active group, whose size is the exact per-group population
-`floor(dataset_size / bands)` (a group's remainder examples never
-participate). `DPTrainer` converts consistently for both the runtime
-sampler and the accountant, and rejects the configuration if the resulting
-conditional rate exceeds `1` (lower `bands` or `expected_batch_size`). Plain
+`floor(dataset_size / bands)` (or, under DDP, `floor((dataset_size //
+world_size) / bands)`, since each rank partitions its own shard
+independently — a group's remainder examples never participate).
+`DPTrainer` converts consistently for both the runtime sampler and the
+accountant, and rejects the configuration if the resulting conditional
+rate exceeds `1` (lower `bands` or `expected_batch_size`). Plain
 `sampling_mode="poisson"` (whole-dataset subsampling every step, ignoring
 `bands`) is not a valid override for `mf_band`: it does not realize the
 grouped participation pattern `cyclic_poisson` accounting assumes. Use the

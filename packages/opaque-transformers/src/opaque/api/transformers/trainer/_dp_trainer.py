@@ -233,11 +233,6 @@ class _TrainingContext:
     expected_steps_per_epoch: int
     total_steps: int
     num_epochs: int
-    # Global (DDP-trimmed) population ``sample_rate`` was derived from —
-    # see ``_effective_train_dataset_size``. ``cyclic_poisson`` needs this
-    # rather than ``len(dataset)`` in ``get_train_dataloader`` because that
-    # ``dataset`` is a per-rank shard under DDP.
-    dataset_size: int
     collate_fn: Callable
     batch_keys: tuple[str, ...] = ()
     offload_ctx: Any = dataclasses.field(default_factory=contextlib.nullcontext)
@@ -1564,6 +1559,7 @@ class DPTrainer:
                 num_bins=expected_steps_per_epoch,
                 dataset_size=dataset_size,
                 truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
+                world_size=self._ddp.world_size,
             )
             mf = _dpftrl.MFContext(
                 strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
@@ -1708,7 +1704,6 @@ class DPTrainer:
             expected_steps_per_epoch=expected_steps_per_epoch,
             total_steps=total_steps,
             num_epochs=num_epochs,
-            dataset_size=dataset_size,
             collate_fn=collate_fn,
             batch_keys=batch_keys,
             offload_ctx=offload_ctx,
@@ -3774,11 +3769,11 @@ class DPTrainer:
         # local index across shards — not the i.i.d. global Poisson draw the
         # design intends (the per-record marginal stays Bernoulli(q) either
         # way, so the privacy accounting is unaffected; this is a sampling
-        # *diversity* fix).  ``ctx.sample_rate`` was computed in
-        # ``_setup_training`` from the same trimmed denominator we use here
-        # (see :meth:`_effective_train_dataset_size`), so the rate the
-        # sampler is configured with matches the rate the accountant
-        # calibrated against — both bind to the post-trim ``q``.
+        # *diversity* fix). ``build_sampler`` binds each mode's rate off the
+        # same values ``_setup_training`` calibrated the accountant with
+        # (``ctx.sample_rate`` for plain Poisson; the built amplifier's
+        # per-band rate for ``cyclic_poisson``), so runtime and accountant
+        # cannot drift apart.
         #
         # Resume caveat (multi-GPU only): the sampler snapshot is
         # self-contained (carries its own key) and is written once on rank
@@ -3849,7 +3844,6 @@ class DPTrainer:
                 noise_multiplier=ctx.noise_multiplier,
                 num_bins=ctx.expected_steps_per_epoch,
                 expected_batch_size=int(a.train_batch_size),
-                dataset_size=ctx.dataset_size,
             )
         sampler = ctx.current_sampler
 
