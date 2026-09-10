@@ -37,6 +37,20 @@ class _UnboundedCachedProcess:
         return object()
 
 
+class _NamedCachedProcess:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.calls = 0
+
+    def _pld_cache_key(self) -> str:
+        return self.name
+
+    @pld_cache(maxsize=2)
+    def pld(self) -> object:
+        self.calls += 1
+        return object()
+
+
 @pytest.fixture(autouse=True)
 def _restore_discretization() -> None:
     from opaque.accounting import discretization
@@ -115,6 +129,19 @@ def test_pld_cache_reuses_entries_for_equal_processes() -> None:
     assert second.pld(discretization=0.1) is first_pld
     assert first.calls == 1
     assert second.calls == 0
+
+
+def test_pld_cache_bound_applies_across_live_processes() -> None:
+    _NamedCachedProcess.pld.cache_clear()
+    processes = [_NamedCachedProcess(str(index)) for index in range(3)]
+
+    first = processes[0].pld()
+    processes[1].pld()
+    processes[2].pld()
+
+    assert processes[0].pld() is not first
+    assert processes[0].calls == 2
+    assert _NamedCachedProcess.pld.cache_info().currsize == 2
 
 
 def test_pld_cache_supports_unbounded_entries() -> None:
