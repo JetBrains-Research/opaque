@@ -168,10 +168,17 @@ _SAMPLING_MODES: frozenset[str] = frozenset(
 # sampler too.  ``sampling_mode="auto"`` (the default) resolves via this
 # table.  Explicit ``sampling_mode`` overrides are validated against
 # :data:`_ALLOWED_SAMPLERS` below.
+#
+# ``mf_band``'s canonical sampler is ``"cyclic_poisson"``: BandMF's
+# amplification (Choquette-Choo et al. 2023, Theorem 1 / Algorithm 2)
+# assumes the dataset is partitioned into ``bands`` disjoint groups with one
+# active group rotating per step, which is exactly what
+# ``CyclicPoissonSampler`` realises and ``opaque.dpftrl.accounting.poisson``
+# accounts for.
 _SAMPLER_BY_MECHANISM: dict[str, str] = {
     "gaussian": "poisson",
     "mf_identity": "poisson",
-    "mf_band": "b_min_sep",
+    "mf_band": "cyclic_poisson",
     "mf_blt": "balls_in_bins",
     "mf_bisr": "balls_in_bins",
     "mf_bsr": "balls_in_bins",
@@ -179,13 +186,16 @@ _SAMPLER_BY_MECHANISM: dict[str, str] = {
 }
 
 # Per-mechanism allow-list for explicit ``sampling_mode`` overrides.
-# ``mf_band`` accepts ``"poisson"`` as a looser-but-valid alternative to
-# its canonical ``"b_min_sep"`` participation pattern; everything else
-# pins a single sampler.
+# ``mf_band`` accepts ``"b_min_sep"`` (Dong & Ganesh 2026) as an explicit
+# alternative to its canonical ``"cyclic_poisson"`` participation pattern;
+# everything else pins a single sampler.  Plain ``"poisson"`` (whole-dataset
+# subsampling, no group rotation) is deliberately *not* allowed for
+# ``mf_band``: it does not realise the grouped participation pattern the
+# accountant assumes (issue #776).
 _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "gaussian": frozenset({"poisson", "k_out_of_t"}),
     "mf_identity": frozenset({"poisson", "balls_in_bins"}),
-    "mf_band": frozenset({"b_min_sep", "poisson"}),
+    "mf_band": frozenset({"cyclic_poisson", "b_min_sep"}),
     "mf_blt": frozenset({"balls_in_bins"}),
     "mf_bisr": frozenset({"balls_in_bins"}),
     "mf_bsr": frozenset({"balls_in_bins"}),

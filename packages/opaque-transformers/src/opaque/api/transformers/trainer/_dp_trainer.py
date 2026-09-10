@@ -1559,6 +1559,7 @@ class DPTrainer:
                 num_bins=expected_steps_per_epoch,
                 dataset_size=dataset_size,
                 truncated_batch_size=int(tb_raw) if tb_raw is not None else None,
+                world_size=self._ddp.world_size,
             )
             mf = _dpftrl.MFContext(
                 strategy=mf_strategy, amplifier_factory=mf_amplifier_factory
@@ -3768,11 +3769,11 @@ class DPTrainer:
         # local index across shards — not the i.i.d. global Poisson draw the
         # design intends (the per-record marginal stays Bernoulli(q) either
         # way, so the privacy accounting is unaffected; this is a sampling
-        # *diversity* fix).  ``ctx.sample_rate`` was computed in
-        # ``_setup_training`` from the same trimmed denominator we use here
-        # (see :meth:`_effective_train_dataset_size`), so the rate the
-        # sampler is configured with matches the rate the accountant
-        # calibrated against — both bind to the post-trim ``q``.
+        # *diversity* fix). ``build_sampler`` binds each mode's rate off the
+        # same values ``_setup_training`` calibrated the accountant with
+        # (``ctx.sample_rate`` for plain Poisson; the built amplifier's
+        # per-band rate for ``cyclic_poisson``), so runtime and accountant
+        # cannot drift apart.
         #
         # Resume caveat (multi-GPU only): the sampler snapshot is
         # self-contained (carries its own key) and is written once on rank
@@ -3799,16 +3800,18 @@ class DPTrainer:
         # ``ctx.current_sampler`` from a registry-deserialised snapshot
         # before calling here, so the loader picks up the right cursor;
         # otherwise build a fresh sampler bound to the resolved
-        # ``sampling_mode``.  Three modes are reachable through
+        # ``sampling_mode``.  Five modes are reachable through
         # ``TrainingArguments`` (validated by ``_ALLOWED_SAMPLERS``):
-        # ``poisson`` (DP-SGD + ``mf_identity``), ``b_min_sep`` (``mf_band``),
-        # and ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
-        # constructs ``cyclic_poisson`` / ``sequential`` for subclasses that
-        # call it directly, but those are not exposed as config
-        # ``sampling_mode`` values (no matching accountant amplifier) and the
-        # config layer rejects them.  The sampler iterates end-to-end without
-        # per-epoch re-instantiation; the outer epoch loop is purely a
-        # synthetic boundary layer for HF callbacks.
+        # ``poisson`` (DP-SGD + ``mf_identity``) or its explicit
+        # ``k_out_of_t`` alternative (gaussian), ``cyclic_poisson`` (the
+        # ``mf_band`` default) or its explicit ``b_min_sep`` alternative, and
+        # ``balls_in_bins`` (other MF mechanisms).  ``build_sampler`` also
+        # constructs ``sequential`` for subclasses that call it directly, but
+        # that is not exposed as a config ``sampling_mode`` value (no
+        # matching accountant amplifier) and the config layer rejects it.
+        # The sampler iterates end-to-end without per-epoch
+        # re-instantiation; the outer epoch loop is purely a synthetic
+        # boundary layer for HF callbacks.
         if ctx.current_sampler is None:
             from opaque.random import fold_in
 

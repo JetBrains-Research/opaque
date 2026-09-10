@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 import functools
 from collections.abc import Callable, Mapping
-from typing import TypeVar
+from typing import Generic, TypeVar
 
 import torch
 
@@ -45,6 +45,60 @@ def _empty_like(template: T) -> T:
     if isinstance(template, list):
         return [_empty_like(v) for v in template]
     return template
+
+
+class _EmptyCollator(Generic[T]):
+    """Pickle-safe stateful wrapper used by :func:`empty_collate`.
+
+    ``DataLoader`` serializes its collator when workers use the ``spawn`` or
+    ``forkserver`` multiprocessing start methods.  Keeping this callable at
+    module scope makes the wrapper serializable whenever the wrapped collator
+    and learned template are serializable too.
+    """
+
+    def __init__(self, collate_fn: Callable[..., T]) -> None:
+        self._collate_fn = collate_fn
+        self._template: T | None = None
+        self._update_wrapper_metadata()
+
+    def _update_wrapper_metadata(self) -> None:
+        # updated=() skips the default `__dict__` merge, and restricting
+        # assigned to plain string metadata skips `__annotations__` /
+        # `__type_params__`: both default `update_wrapper` behaviors would
+        # otherwise copy arbitrary (possibly non-pickleable) objects from
+        # collate_fn onto this instance's __dict__, and __getstate__ below
+        # only protects the two attributes it explicitly names.
+        functools.update_wrapper(
+            self,
+            self._collate_fn,
+            assigned=("__module__", "__name__", "__qualname__", "__doc__"),
+            updated=(),
+        )
+
+    def __getstate__(self) -> dict[str, object]:
+        # Pickle only the state needed to reconstruct behavior. This avoids
+        # ever depending on what update_wrapper happens to have copied onto
+        # the instance, so a collate_fn with a non-pickleable annotation or
+        # type parameter still leaves the wrapper itself pickleable.
+        return {"_collate_fn": self._collate_fn, "_template": self._template}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        self._collate_fn = state["_collate_fn"]
+        self._template = state["_template"]
+        self._update_wrapper_metadata()
+
+    def __call__(self, examples):
+        if not examples:
+            if self._template is None:
+                return self._collate_fn(examples)
+            return _empty_like(self._template)
+
+        result = self._collate_fn(examples)
+
+        if self._template is None:
+            self._template = copy.deepcopy(result)
+
+        return result
 
 
 def empty_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
@@ -82,20 +136,4 @@ def empty_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
         Wrapped function that returns empty-batch-dim outputs for empty
         example lists.
     """
-    template: list[T | None] = [None]  # mutable cell for closure
-
-    @functools.wraps(collate_fn)
-    def wrapper(examples):
-        if not examples:
-            if template[0] is None:
-                return collate_fn(examples)
-            return _empty_like(template[0])
-
-        result = collate_fn(examples)
-
-        if template[0] is None:
-            template[0] = copy.deepcopy(result)
-
-        return result
-
-    return wrapper
+    return _EmptyCollator(collate_fn)

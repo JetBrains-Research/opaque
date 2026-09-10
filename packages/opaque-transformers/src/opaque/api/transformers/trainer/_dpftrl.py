@@ -39,6 +39,7 @@ from opaque.dpftrl.accounting import mf_gaussian
 from opaque.dpftrl.accounting import (
     poisson as _ftrl_poisson,
 )
+from opaque.dpftrl.noise.types import BandMfStrategy
 from opaque.dpsgd.sampling import (
     KOutOfTSampler,
     PoissonSampler,
@@ -113,6 +114,42 @@ def build_strategy(
     return factory(**extra)
 
 
+def _cyclic_poisson_group_rate(
+    sample_rate: float, bands: int, dataset_size: int, world_size: int = 1
+) -> float:
+    """Per-active-group conditional rate (Choquette-Choo et al. 2023,
+    Algorithm 2 / Theorem 4).
+
+    Under DDP each rank ``EQUAL_SPLIT``-partitions its own local shard
+    (``dataset_size // world_size`` examples) into ``bands`` groups,
+    truncating to ``floor(local_size / bands)``; the rate must target that
+    *local* group size, not the global ``dataset_size // bands``, or the
+    realised batch drifts from ``expected_batch_size``. ``world_size=1``
+    is the single-process case.
+    """
+    bands = int(bands)
+    local_size = int(dataset_size) // int(world_size)
+    group_size = local_size // bands
+    if group_size < 1:
+        raise ConfigurationError(
+            *(
+                "sampling_mode='cyclic_poisson' requires (dataset_size // "
+                f"world_size) // bands >= 1; got dataset_size={dataset_size}, "
+                f"world_size={world_size}, bands={bands}.",
+            )
+        )
+    group_rate = float(sample_rate) * local_size / group_size
+    if group_rate > 1.0:
+        raise ConfigurationError(
+            *(
+                "sampling_mode='cyclic_poisson' requires the per-band "
+                f"conditional rate ({group_rate!r}) to be <= 1. Reduce "
+                "expected_batch_size or decrease bands.",
+            )
+        )
+    return group_rate
+
+
 def build_amplifier_factory(
     *,
     sampling_mode: str,
@@ -122,6 +159,7 @@ def build_amplifier_factory(
     num_bins: int,
     dataset_size: int,
     truncated_batch_size: int | None,
+    world_size: int = 1,
 ) -> Callable[[float], Any]:
     """Return ``nm → DpHorizonProcess`` — the *raw* amplifier instance.
 
@@ -130,6 +168,16 @@ def build_amplifier_factory(
     time to read off ``(n_steps, min_sep, max_participations)``.
     """
     if sampling_mode == "poisson":
+        if isinstance(strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='poisson' does not realise the grouped, "
+                    "rotating-active-group participation pattern BandMF's "
+                    "cyclic-Poisson accounting assumes; use "
+                    "sampling_mode='cyclic_poisson' or 'b_min_sep' for "
+                    "privacy_noise_mechanism='mf_band' instead.",
+                )
+            )
 
         def amp(
             nm: float,
@@ -157,6 +205,35 @@ def build_amplifier_factory(
         ) -> Any:
             return _ftrl_b_min_sep(mf_gaussian(nm, _s), n_steps=_ns, p0=_p0)
 
+    elif sampling_mode == "cyclic_poisson":
+        if not isinstance(strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a BandMF "
+                    f"strategy; got {type(strategy).__name__}.",
+                )
+            )
+        if truncated_batch_size is not None:
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' does not support "
+                    "sampling_kwargs['truncated_batch_size'] — the BandMF "
+                    "cyclic-Poisson accountant only supports truncation for "
+                    "IdentityStrategy (mf_identity).",
+                )
+            )
+        group_rate = _cyclic_poisson_group_rate(
+            sample_rate, strategy.bands, dataset_size, world_size
+        )
+
+        def amp(
+            nm: float,
+            _s: Any = strategy,
+            _gr: float = group_rate,
+            _ns: int = n_steps,
+        ) -> Any:
+            return _ftrl_poisson(mf_gaussian(nm, _s), sample_rate=_gr, n_steps=_ns)
+
     elif sampling_mode == "balls_in_bins":
 
         def amp(
@@ -171,7 +248,8 @@ def build_amplifier_factory(
         raise ConfigurationError(
             *(
                 f"sampling_mode={sampling_mode!r} has no DP-FTRL amplifier "
-                f"configured.  Valid: 'poisson', 'b_min_sep', 'balls_in_bins'.",
+                "configured.  Valid: 'poisson', 'b_min_sep', "
+                "'cyclic_poisson', 'balls_in_bins'.",
             )
         )
     return amp
@@ -195,11 +273,23 @@ def build_sampler(
     Privacy-derived sampler parameters (``bands``, paper-``p``) are read
     off the built ``mf`` recipe / amplifier — never off ``sampling_kwargs``
     or ``mechanism_kwargs`` — so the runtime sampler cannot desync from
-    the accountant.  ``sampling_kwargs`` carries only sampler-ergonomics
-    knobs (e.g. ``truncated_batch_size`` for Poisson cap).
+    the accountant. ``cyclic_poisson`` reads its per-band rate straight
+    off ``mf.amplifier_factory(noise_multiplier).sample_rate``, the same
+    value :func:`build_amplifier_factory` calibrated the accountant with,
+    so there is a single source of truth under DDP.
     """
     sk = dict(sampling_kwargs) if sampling_kwargs else {}
     if sampling_mode == "poisson":
+        if mf is not None and isinstance(mf.strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='poisson' does not realise the grouped, "
+                    "rotating-active-group participation pattern BandMF's "
+                    "cyclic-Poisson accounting assumes; use "
+                    "sampling_mode='cyclic_poisson' or 'b_min_sep' for "
+                    "privacy_noise_mechanism='mf_band' instead.",
+                )
+            )
         tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
         truncated_batch_size = int(tb_raw) if tb_raw is not None else None
         return PoissonSampler(
@@ -258,16 +348,34 @@ def build_sampler(
             key=key,
         )
     if sampling_mode == "cyclic_poisson":
-        if mf is None:
+        if mf is None or noise_multiplier is None:
             raise ConfigurationError(
                 *(
-                    "sampling_mode='cyclic_poisson' requires a built MFContext; "
-                    "got mf=None.",
+                    "sampling_mode='cyclic_poisson' requires a built MFContext "
+                    "and a calibrated noise_multiplier; got mf=None or "
+                    "noise_multiplier=None.",
                 )
             )
+        if not isinstance(mf.strategy, BandMfStrategy):
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' requires a BandMF "
+                    f"strategy; got {type(mf.strategy).__name__}.",
+                )
+            )
+        if sk:
+            raise ConfigurationError(
+                *(
+                    "sampling_mode='cyclic_poisson' does not accept "
+                    f"sampling_kwargs; got {sorted(sk)!r}. bands and the "
+                    "per-band rate are derived from the MFContext, not from "
+                    "sampling_kwargs.",
+                )
+            )
+        amp = mf.amplifier_factory(noise_multiplier)
         return CyclicPoissonSampler(
             dataset,
-            sample_rate=sample_rate,
+            sample_rate=float(amp.sample_rate),
             bands=int(mf.strategy.bands),
             n_steps=n_steps,
             key=key,

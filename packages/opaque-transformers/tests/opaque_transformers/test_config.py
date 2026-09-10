@@ -597,7 +597,7 @@ class TestMechanismAndSamplerDefaults:
     @pytest.mark.parametrize(
         ("mechanism", "expected_sampler"),
         [
-            ("mf_band", "b_min_sep"),
+            ("mf_band", "cyclic_poisson"),
             ("mf_blt", "balls_in_bins"),
             ("mf_bisr", "balls_in_bins"),
             ("mf_bsr", "balls_in_bins"),
@@ -611,13 +611,24 @@ class TestMechanismAndSamplerDefaults:
         )
         assert args.sampling_mode == expected_sampler
 
-    def test_mf_band_accepts_poisson_override(self):
+    def test_mf_band_accepts_b_min_sep_override(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
             privacy_noise_mechanism="mf_band",
-            sampling_mode="poisson",
+            sampling_mode="b_min_sep",
         )
-        assert args.sampling_mode == "poisson"
+        assert args.sampling_mode == "b_min_sep"
+
+    def test_mf_band_rejects_poisson_override(self):
+        """``mf_band`` requires ``cyclic_poisson`` or ``b_min_sep``; a plain
+        Poisson sampler does not realize BandMF's grouped participation
+        pattern (issue #776)."""
+        with pytest.raises(ValueError, match="sampling_mode"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism="mf_band",
+                sampling_mode="poisson",
+            )
 
     def test_mf_blt_rejects_poisson_override(self):
         with pytest.raises(ValueError, match="sampling_mode"):
