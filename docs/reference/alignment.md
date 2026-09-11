@@ -75,7 +75,6 @@ Primary papers for the implemented alignment objectives:
 - WPO — Zhou et al., [*WPO: Enhancing RLHF with Weighted Preference Optimization*](https://arxiv.org/abs/2406.11827).
 - LD-DPO — Liu et al., [*Length Desensitization in Direct Preference Optimization*](https://arxiv.org/abs/2409.06411).
 - APO — D'Oosterlinck et al., [*Anchored Preference Optimization and Contrastive Revisions: Addressing Underspecification in Alignment*](https://arxiv.org/abs/2408.06266).
-- SquareChiPO — Zhou et al., [*SquareχPO: Differentially Private and Robust χ²-Preference Optimization in Offline Direct Alignment*](https://arxiv.org/abs/2505.21395).
 - NCA — Chen et al., [*Noise Contrastive Alignment of Language Models with Explicit Rewards*](https://arxiv.org/abs/2402.05369).
 - BCO — Jhunjhunwala et al., [*Binary Classifier Optimization for Large Language Model Alignment*](https://arxiv.org/abs/2404.04656).
 - SPPO — Wu et al., [*Self-Play Preference Optimization for Language Model Alignment*](https://arxiv.org/abs/2405.00675).

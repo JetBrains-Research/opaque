@@ -776,6 +776,23 @@ class TestDPTrainerTrainerContractFlags:
             )
 
 
+class TestPrivacyDefaults:
+    def test_unset_privacy_delta_uses_dataset_dependent_default(
+        self, gpt2_with_lora, tiny_lm_dataset
+    ):
+        model, tokenizer = gpt2_with_lora
+        trainer = DPTrainer(
+            model=model,
+            args=_default_args(max_steps=1),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+
+        ctx = trainer._setup_training()
+
+        assert ctx.target_delta == pytest.approx(1 / len(tiny_lm_dataset) ** 1.1)
+
+
 class TestDPTrainerAdaptiveClipping:
     """Test adaptive clipping mode."""
 

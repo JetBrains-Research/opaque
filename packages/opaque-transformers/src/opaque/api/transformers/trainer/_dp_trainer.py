@@ -104,7 +104,7 @@ from ._eval import EvalPrediction
 from ._precision import eval_dtype
 from ._scheduler import build_lr_schedule
 from ._state import DPTrainerState
-from ._training_arguments import TrainingArguments
+from ._training_arguments import TrainingArguments, _default_privacy_delta
 from .types import EvaluationResult, TrainOutput
 
 __all__ = [
@@ -986,11 +986,16 @@ class DPTrainer:
         - **Accountant on resume** preserves the mechanism lifecycle:
           independent releases load the saved ``Accountant`` as a prefix and
           calibrate remaining steps against it; whole-horizon mechanisms retain
-          their single declared process. Changing
-          ``privacy_noise_multiplier`` / ``privacy_target_epsilon`` between
-          checkpoint and resume warns but is allowed — the accountant
-          composes whatever process the user asks for, and the warning
-          guards against silent drift.
+          their single declared process. For independent releases, changing
+          ``privacy_noise_multiplier`` / ``privacy_target_epsilon`` warns and
+          composes the requested continuation onto the saved prefix. Whole-horizon
+          mechanisms reject privacy-relevant drift because their saved process
+          and schedule define one indivisible release.
+        - **Stop-at-epsilon is enforced after every accounted step.** With a fixed
+          positive noise multiplier and target epsilon, the crossing step is
+          predicted before the loop and checked independently of logging cadence.
+          A resumed run whose saved prefix has already spent the budget exits
+          before fetching another batch.
         """
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
@@ -1590,7 +1595,7 @@ class DPTrainer:
         target_delta = (
             a.privacy_target_delta
             if a.privacy_target_delta is not None
-            else 1.0 / (dataset_size**1.1)
+            else _default_privacy_delta(dataset_size)
         )
         mechanism = self._build_mechanism(
             a,

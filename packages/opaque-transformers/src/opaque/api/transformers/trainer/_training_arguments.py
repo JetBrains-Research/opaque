@@ -262,6 +262,13 @@ _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
     "mf_lambda_cgd": {"lambda_": 0.5},
     "mf_identity": {},
 }
+_DEFAULT_PRIVACY_DELTA_EXPONENT = 1.1
+
+
+def _default_privacy_delta(dataset_size: int) -> float:
+    """Return the dataset-dependent delta used when the user leaves it unset."""
+    return 1.0 / (dataset_size**_DEFAULT_PRIVACY_DELTA_EXPONENT)
+
 
 
 def _validate_privacy_kwargs(
@@ -547,6 +554,7 @@ class TrainingArguments:
     # ``privacy_target_epsilon`` (to calibrate noise).  For independently
     # composed mechanisms, setting both enables privacy-budget early stopping.
     privacy_target_epsilon: float | None = None
+    #: Defaults at training setup to ``1 / dataset_size**1.1`` when unset.
     privacy_target_delta: float | None = None
 
     # ---- Clipping (mode + JSON-style args, HF ``optim_args`` pattern) ---

@@ -47,7 +47,7 @@ The user-facing DP budget knobs:
 ```python
 args = TrainingArguments(
     privacy_target_epsilon=8.0,
-    privacy_target_delta=1e-5,          # default: 1 / (10 * dataset_size)
+    privacy_target_delta=1e-5,          # default: 1 / dataset_size**1.1
     clipping_norm=1.0,                  # scalar global clip, or per-group dict
     privacy_noise_multiplier=None,      # None ⇒ calibrate from epsilon
 )
@@ -77,15 +77,15 @@ configuration mistake.
 ### Stop-at-ε
 
 When `privacy_target_epsilon` is set alongside a non-zero
-`privacy_noise_multiplier`, training halts at the first logging
-boundary where the accumulated ε from the privacy accountant meets or
-exceeds the target. The halt records `state.privacy_target_epsilon_reached
+`privacy_noise_multiplier`, training halts after the first accounted step
+where the accumulated ε from the privacy accountant meets or exceeds the
+target. The halt records `state.privacy_target_epsilon_reached
 = True` and surfaces as a normal early-stop control flow (callbacks see
-the final eval / save / log pass). The check runs every
-`logging_steps` (so setting `logging_steps=0` disables it silently —
-explicit logging is the contract for stop-at-ε visibility). This mode is
-supported only for independent DP-SGD mechanisms. Horizon mechanisms reject
-this combination because privacy-based early stopping is unsupported.
+the final eval / save / log pass). The crossing step is predicted before the
+loop and enforced independently of `logging_strategy` and `logging_steps`.
+This mode is supported only for independent DP-SGD mechanisms. Horizon
+mechanisms reject this combination because privacy-based early stopping is
+unsupported.
 A resume against a checkpoint where the budget is already spent
 short-circuits before the first training step.
 
@@ -130,13 +130,13 @@ noise would yield infinite noise and `NaN` gradients.
 
 | Field | Use |
 |---|---|
-| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
+| `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; accepted explicit values are listed per mechanism below. |
 | `sampling_kwargs` | Mode-specific sampler kwargs. `truncated_batch_size=N` caps Poisson draws at `N`; k-out-of-t accepts `k` and `allocation`; other modes accept no keys. |
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Mode-specific clipping kwargs. Adaptive accepts the public factory names `target_quantile` and `clipping_norm_max`. AUTO-S accepts `gamma`; fixed accepts no keys. |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
 | `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: `compute_dtype` as a native `torch.dtype` or the string names `float16`, `bfloat16`, `float32`, `float64`. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
-| `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
+| `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.11, "max": 10.0, "tolerance": 1e-3}`. |
 
 All dict-shaped fields accept a `Mapping`, a JSON object string, or
 the HF-style comma string `"a=1,b=2"`.
@@ -146,14 +146,14 @@ the HF-style comma string `"a=1,b=2"`.
 Picking a `mf_*` mechanism auto-resolves the sampler and auto-fills
 the strategy kwargs:
 
-| `privacy_noise_mechanism` | Auto-resolved sampler | Default kwargs |
+| `privacy_noise_mechanism` | Accepted samplers (auto first) | Default kwargs |
 |---|---|---|
 | `mf_band` | `cyclic_poisson` (or explicit `b_min_sep`) | `{"bands": 16}` |
-| `mf_blt` | `balls_in_bins` | `{"max_buffers": 16}` |
+| `mf_blt` | `balls_in_bins` | `{"max_buffers": 10}` |
 | `mf_bisr` | `balls_in_bins` | `{"bandwidth": 4}` |
 | `mf_bsr` | `balls_in_bins` | `{"bandwidth": 8, "alpha": 1.0, "beta": 0.9}` |
 | `mf_lambda_cgd` | `balls_in_bins` | `{"lambda_": 0.5}` |
-| `mf_identity` | `poisson` | `{}` |
+| `mf_identity` | `poisson` (or explicit `balls_in_bins`) | `{}` |
 
 `"auto"` remains Poisson for Gaussian and identity MF. Gaussian explicitly
 accepts `sampling_mode="k_out_of_t"`. For exact block accounting, set
