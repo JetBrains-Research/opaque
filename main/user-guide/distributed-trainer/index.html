@@ -3296,6 +3296,10 @@ vendor runtime stacks and fail fast when unavailable.</p>
 <li><code>global</code>: full dataset per rank with rank-folded streams and
   <code>parallel_poisson</code> accounting.</li>
 </ul>
+<p><code>per_rank</code> requires the public, fixed training population length to be evenly
+divisible by <code>WORLD_SIZE</code>. When it isn't, <code>DPTrainer</code> drops the remaining
+tail examples and logs a warning; the dropped tail changes both the
+sharding and the accounting sample-rate denominator.</p>
 <h2 id="metrics-and-eval-gather">Metrics and eval gather<a class="headerlink" href="#metrics-and-eval-gather" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>compute_metrics(EvalPrediction)</code> runs on gathered cluster-wide payloads.</li>
