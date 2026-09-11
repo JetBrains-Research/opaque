@@ -37,8 +37,8 @@ def test_structurally_distinct_equivalent_schedules_reuse_cached_pld() -> None:
 
 
 def test_distinct_mf_gaussian_parameters_do_not_share_cached_plds() -> None:
-    first = ftrl_acc.mf_gaussian(0.0, identity_strategy())
-    second = ftrl_acc.mf_gaussian(1.0, identity_strategy())
+    first = ftrl_acc.mf_gaussian(0.0, identity_strategy(), n_steps=1)
+    second = ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1)
     first.pld.cache_clear()
 
     assert first.pld(discretization=0.1) is not second.pld(discretization=0.1)

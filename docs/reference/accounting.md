@@ -390,55 +390,60 @@ training = step * 1000
 
 ## Matrix factorization mechanisms
 
-MF mechanisms take pre-computed `sensitivity` and `gram_matrix` values from the
-corresponding noise **strategy** (e.g. `band_mf_strategy()`, `blt_strategy()`).
-The strategy is the single source of truth for these quantities — never hardcode
-them. This keeps noise generation and accounting in sync.
+MF mechanisms resolve sensitivity and Gram matrices from a noise strategy and
+its participation context. Use the same recipe and context for accounting and
+noise generation.
 
-All MF constructors return a `DpProcess` that composes with standard operators.
+### `mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None) -> DpProcess`
 
-### `band_mf(noise_multiplier, sensitivity, coefficients) -> DpProcess`
+Omitting `n_steps` creates a recipe for an amplifier. Calling `pld()` or
+`epsilon_at()` on that recipe directly raises `ConfigurationError`.
 
-BandMF mechanism for Poisson and b-min-sep amplification. Takes
-`sensitivity` and `coefficients` from a `band_mf_strategy()`. The
-band-width is `len(coefficients)`; `coefficients` must be non-empty.
-
-- `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `sensitivity` (float): From `strategy.sensitivity(n_steps=...)`.
-- `coefficients` (tuple of float values): From `strategy.coefficients`.
+For bare accounting, `n_steps` is the full release horizon, `min_sep` is the
+minimum separation between contributions, and `max_participations` bounds each
+protected unit's contributions. If omitted, `max_participations` defaults to
+`n_steps`. The resulting Gaussian PLD accounts for the declared context; do not
+compose it again by the number of rounds.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
+
+# One contribution per protected unit across 1000 rounds.
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+proc = dpftrl_acc.mf_gaussian(
+    1.0, strategy, n_steps=1000, min_sep=1, max_participations=1,
+)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `blt(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
-
-BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
-`gram_matrix` from a `blt_strategy()`.
+Bare BandMF and Identity sensitivity currently accounts for one participation.
+Do not use bare calls with these strategies to budget repeated participation.
+For amplified accounting, leave the inner horizon unspecified and supply the
+full horizon to the sampler-matching amplifier, which resolves its own context.
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Build via `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)` — the strategy owns
-sensitivity, Gram matrix, coefficients, min_sep, and max_participations:
+For bare BLT accounting, supply the same horizon and participation bounds as
+`mf_gaussian_noise`. This example assumes at most five contributions per
+protected unit, at least 1000 rounds apart:
 
 ```python
 from opaque.dpftrl.noise import blt_strategy
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified — single-Gaussian PLD
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified accounting for the full 5000-round context.
+proc = dpftrl_acc.mf_gaussian(
+    1.0, strategy, n_steps=5000, min_sep=1000, max_participations=5,
+)
 
-# With Balls-in-Bins amplification
+# With a fixed partition into 1000 bins, repeated for five epochs.
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=1000, n_steps=5000,
 )
 ```
 
-The same `as_mechanism` API works for `lambda_cgd_strategy`,
+The same amplified construction works for `lambda_cgd_strategy`,
 `bisr_strategy`, and `bsr_strategy`:
 
 ```python

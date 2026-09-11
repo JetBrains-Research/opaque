@@ -1,10 +1,10 @@
 """DP-FTRL-specific accounting factories façade.
 
-**DP-FTRL accountants describe whole training processes.** Unlike DP-SGD
-where a per-step factory composes externally with ``* num_steps``, every
-factory here returns a :class:`~opaque.accounting.DpProcess` representing
-the full training run.  Length lives on amplification factories as
-``n_steps``.
+**DP-FTRL amplifiers describe whole training processes.** Supply the full
+``n_steps`` to the amplifier, leaving its inner ``mf_gaussian`` recipe's
+horizon unspecified. For bare accounting, supply the horizon and runtime
+participation bounds directly to ``mf_gaussian``; a horizonless recipe
+cannot compute a PLD or epsilon on its own.
 
 The accounting mechanism is :class:`MfGaussian` — a thin wrapper over
 ``(noise_multiplier, strategy)``.  The strategy (from

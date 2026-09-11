@@ -12,7 +12,8 @@ The accounting amplifications (Poisson, BMinSep, BallsInBins) read
 ``(n_steps, min_sep, max_participations)`` at PLD time — they do not
 read the fields stored on :class:`MfGaussian` itself.  Those fields are
 only consulted when :meth:`MfGaussian.pld` is called bare
-(unamplified), where they describe the single-Gaussian PLD horizon.
+(unamplified), where an explicit horizon is required. With ``n_steps=None``
+the object is an unresolved recipe for an amplifier, not a bare accountant.
 
 Serialization: a custom serializer pair is registered here that emits
 ``{"type": "MfGaussian", "noise_multiplier": ..., "strategy":
@@ -51,7 +52,7 @@ class MfGaussian(DpProcess):
 
     noise_multiplier: float
     strategy: MfStrategy
-    n_steps: int = 1
+    n_steps: int | None = None
     min_sep: int = 1
     max_participations: int | None = None
 
@@ -62,7 +63,7 @@ class MfGaussian(DpProcess):
                     f"noise_multiplier must be non-negative, got {self.noise_multiplier}",
                 )
             )
-        if self.n_steps < 1:
+        if self.n_steps is not None and self.n_steps < 1:
             raise ConfigurationError(*(f"n_steps must be >= 1, got {self.n_steps}",))
         if self.min_sep < 1:
             raise ConfigurationError(*(f"min_sep must be >= 1, got {self.min_sep}",))
@@ -74,21 +75,34 @@ class MfGaussian(DpProcess):
             )
 
     @property
+    def _bare_n_steps(self) -> int:
+        if self.n_steps is None:
+            raise ConfigurationError(
+                *(
+                    "Bare MfGaussian accounting requires explicit n_steps. "
+                    "Supply the release horizon, or wrap the recipe in a "
+                    "DP-FTRL amplifier.",
+                )
+            )
+        return self.n_steps
+
+    @property
     def _effective_max_participations(self) -> int:
         return (
             self.max_participations
             if self.max_participations is not None
-            else self.n_steps
+            else self._bare_n_steps
         )
 
     def _pld_cache_key(self) -> tuple[object, ...]:
+        n_steps = self._bare_n_steps
         return (
             "MfGaussian",
             self.noise_multiplier,
-            self.n_steps,
+            n_steps,
             self.min_sep,
             self.max_participations,
-            strategy_cache_key(self.strategy, self.n_steps),
+            strategy_cache_key(self.strategy, n_steps),
         )
 
     @pld_cache(maxsize=8)
@@ -103,6 +117,7 @@ class MfGaussian(DpProcess):
         mc_resolution: float | None = None,
         mc_failure_probability: float | None = None,
     ) -> Pld:
+        n_steps = self._bare_n_steps
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -115,7 +130,7 @@ class MfGaussian(DpProcess):
         if self.noise_multiplier == 0:
             return _native.non_private_pld(config.to_native())
         sens = self.strategy.sensitivity(
-            n_steps=self.n_steps,
+            n_steps=n_steps,
             min_sep=self.min_sep,
             max_participations=self._effective_max_participations,
         )
@@ -130,13 +145,15 @@ def mf_gaussian(
     noise_multiplier: float,
     strategy: MfStrategy,
     *,
-    n_steps: int = 1,
+    n_steps: int | None = None,
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> MfGaussian:
     """MF Gaussian mechanism — noise multiplier + strategy recipe.
 
-    Standalone, models a single Gaussian release with effective noise
+    Without ``n_steps``, constructs a recipe for an amplification factory;
+    bare PLD or epsilon evaluation raises. With an explicit horizon,
+    models a Gaussian release with effective noise
     multiplier ``noise_multiplier / strategy.sensitivity(n_steps, ...)``.
     Wrap in an amplification factory (``poisson``, ``b_min_sep``,
     ``balls_in_bins``) for the per-amplification PLD — those amplifiers
@@ -147,7 +164,8 @@ def mf_gaussian(
         noise_multiplier: Raw noise standard deviation σ (>= 0).
         strategy: One of the strategy dataclasses from
             :mod:`opaque.dpftrl.noise`.
-        n_steps: Horizon for bare-use sensitivity evaluation (default 1).
+        n_steps: Horizon for bare-use sensitivity evaluation. ``None`` (default)
+            leaves the recipe unresolved for an amplifier to supply its horizon.
         min_sep: Bare-use min separation between participations (default 1).
         max_participations: Bare-use max participations per example
             (``None`` ⇒ ``n_steps``).
@@ -197,7 +215,7 @@ def _load_mf_gaussian(_template: Any, sd: Mapping[str, Any]) -> MfGaussian:
     return MfGaussian(
         noise_multiplier=sd["noise_multiplier"],
         strategy=deserialize_strategy(dict(sd["strategy"])),
-        n_steps=sd.get("n_steps", 1),
+        n_steps=sd.get("n_steps"),
         min_sep=sd.get("min_sep", 1),
         max_participations=sd.get("max_participations"),
     )

@@ -226,24 +226,24 @@ the strategy internally and compute the correct sensitivity — do not use
 
 ### Strategy-driven accounting
 
-`mf_gaussian()` couples a noise multiplier to a strategy recipe. The enclosing
-amplifier owns the horizon and participation geometry, and asks the strategy to
-derive any required sensitivity or Gram matrix at PLD evaluation time. These
-values are never supplied manually.
+`mf_gaussian()` couples a noise multiplier to a strategy recipe. An explicit
+horizon is required for bare accounting, which resolves sensitivity using its
+participation bounds. When wrapped, the amplifier supplies that context and
+resolves the required sensitivity or Gram matrix at PLD evaluation time.
 
 The workflow is:
 
 1. Create a **noise strategy** (for example, `band_mf_strategy()` or
    `lambda_cgd_strategy()`) with its structural knobs: bands, correlation,
    momentum, and any supported workload schedule.
-2. Wrap it with `mf_gaussian(noise_multiplier, strategy)`.
+2. Create the inner mechanism with `mf_gaussian(noise_multiplier, strategy)`.
 3. Wrap that mechanism in the sampler-matching amplifier, which supplies
    `n_steps` and the participation pattern and derives the strategy's privacy
    quantities internally.
 
-This separation ensures that noise generation and privacy accounting always
-agree on the mechanism parameters — the strategy is the single source of
-truth.
+Use the same strategy for noise generation and accounting, and match the
+runtime context to the amplifier's horizon and participation pattern. A recipe
+can resolve to different encoders under different contexts.
 
 ```python
 from opaque.dpftrl.noise import band_mf_strategy
@@ -260,38 +260,47 @@ proc = dpftrl_acc.poisson(
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `dpftrl_acc.mf_gaussian(noise_multiplier, strategy)`
+### `dpftrl_acc.mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None)`
 
-Single MF Gaussian mechanism wrapping a strategy recipe.  The strategy
-carries only static workload knobs (e.g. `bands`, `momentum`); horizon
-(`n_steps`, `min_sep`, `max_participations`) is supplied by the
-surrounding amplification factory at PLD time.
+Without `n_steps`, this is an amplifier input: bare `pld()` and `epsilon_at()`
+calls raise `ConfigurationError`. The amplifier supplies the horizon once.
+
+For bare accounting, declare the full horizon and the participation bounds used
+by `mf_gaussian_noise`. This example assumes one contribution per protected unit
+across 1000 rounds:
 
 ```python
 strategy = band_mf_strategy(bands=10)
-proc = dpftrl_acc.mf_gaussian(1.0, strategy, n_steps=1000)  # bare use
+proc = dpftrl_acc.mf_gaussian(
+    1.0, strategy, n_steps=1000, min_sep=1, max_participations=1,
+)
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-For subsampling amplification, wrap with `dpftrl_acc.poisson(..., n_steps=...)`
-(see below).
+Bare BandMF and Identity sensitivity currently accounts for one participation.
+Do not use bare calls with these strategies to budget repeated participation.
+For subsampling amplification, leave the inner horizon unspecified and pass the
+full horizon to the sampler-matching amplifier (see below).
 
 ### Correlated MF mechanisms (BLT, λCGD, BISR, BSR)
 
-Correlated MF mechanisms use the same `dpftrl_acc.mf_gaussian(noise_multiplier,
-strategy)` factory — the strategy carries the static workload knobs and
-the amplifier supplies the participation context.  Wrap in
-`dpftrl_acc.balls_in_bins(...)` (BnB) for the full PLD:
+Correlated strategies use the same factory. Bare accounting must match the
+runtime horizon and participation bounds. This BLT example assumes at most five
+contributions per protected unit, at least 1000 rounds apart:
 
 ```python
+from opaque.dpftrl.noise import blt_strategy
+
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified — single-Gaussian PLD
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified accounting for the full 5000-round context.
+proc = dpftrl_acc.mf_gaussian(
+    1.0, strategy, n_steps=5000, min_sep=1000, max_participations=5,
+)
 eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
-# With Balls-in-Bins amplification
+# With a fixed partition into 1000 bins, repeated for five epochs.
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=1000, n_steps=5000,

@@ -31,6 +31,7 @@ from opaque.dpftrl.noise.types import (
 )
 from opaque.dpsgd.sampling import KOutOfTSampler, PoissonSampler
 from opaque.random import key
+from opaque.serialization import state_dict
 
 _STRATEGY_CASES = {
     "mf_band": ({"bands": 4}, BandMfStrategy),
@@ -131,6 +132,36 @@ class TestBuildStrategy:
 
 
 class TestBuildAmplifierFactory:
+    @pytest.mark.parametrize(
+        ("sampling_mode", "mechanism", "kwargs"),
+        [
+            ("poisson", "mf_identity", {}),
+            ("b_min_sep", "mf_band", {"bands": 4}),
+            ("cyclic_poisson", "mf_band", {"bands": 4}),
+            ("balls_in_bins", "mf_blt", {"max_buffers": 4}),
+        ],
+    )
+    def test_resume_comparison_only_normalizes_unused_inner_horizon(
+        self, sampling_mode, mechanism, kwargs
+    ):
+        amp = _dpftrl.build_amplifier_factory(
+            sampling_mode=sampling_mode,
+            strategy=_dpftrl.build_strategy(mechanism, kwargs),
+            sample_rate=0.05,
+            n_steps=100,
+            num_bins=10,
+            dataset_size=1000,
+            truncated_batch_size=None,
+        )
+        current = state_dict(amp(1.0))
+        saved = {**current, "inner": {**current["inner"], "n_steps": 1}}
+        assert _dpftrl.resume_process_state(current) == saved
+        assert _dpftrl.resume_process_state(saved) == saved
+        assert current["inner"]["n_steps"] is None
+        assert _dpftrl.resume_process_state(current["inner"])["n_steps"] is None
+        assert _dpftrl.resume_process_state({**current, "n_steps": 200}) != saved
+        assert _dpftrl.resume_process_state(state_dict(amp(2.0))) != saved
+
     def test_identity_poisson(self):
         strategy = _dpftrl.build_strategy("mf_identity", {})
         amp = _dpftrl.build_amplifier_factory(

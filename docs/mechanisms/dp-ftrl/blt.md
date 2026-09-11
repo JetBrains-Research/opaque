@@ -125,6 +125,8 @@ noise_fn, noise_state = mf_gaussian_noise(
     grad_template=params,
     strategy=strategy,
     n_steps=10000,
+    min_sep=1,
+    max_participations=1,
     noise_multiplier=noise_multiplier,
     key=key(42),
 )
@@ -151,22 +153,24 @@ noise_fn, noise_state = mf_gaussian_noise(
 
 ### Privacy accounting
 
-The accounting constructor receives `sensitivity` and `gram_matrix` from the
-same `blt_strategy` used for noise generation:
+Use the same strategy, horizon, and participation bounds as noise generation.
+The bare accountant below prices the 5000-round example above, assuming each
+protected unit contributes at most five times, at least 100 rounds apart:
 
 ```python
-import opaque.accounting as acc           # cross-cutting balls_in_bins
-import opaque.dpftrl.accounting as dpftrl_acc  # DP-FTRL factories
+import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.noise import blt_strategy
 
 strategy = blt_strategy(max_buffers=10)
 
-# Unamplified BLT
-proc = dpftrl_acc.mf_gaussian(1.0, strategy)
+# Unamplified accounting for the multi-participation context above.
+proc = dpftrl_acc.mf_gaussian(
+    noise_multiplier, strategy, n_steps=5000, min_sep=100, max_participations=5,
+)
 eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 
-# With Balls-in-Bins amplification (recommended)
+# Separate run: a fixed partition into 100 bins, repeated for five epochs.
 proc = dpftrl_acc.balls_in_bins(
     dpftrl_acc.mf_gaussian(1.0, strategy),
     num_bins=100, n_steps=500,
@@ -175,9 +179,10 @@ eps = proc.epsilon_at(delta=1e-5)
 ```
 
 !!! note
-    `dpftrl_acc.mf_gaussian(nm, strategy)` populates every structural field
-    (sensitivity, Gram matrix, coefficients, min_sep, max_participations)
-    from the optimized BLT parameters and the participation pattern.
+    BLT optimizes its encoder for the participation context. Sharing a strategy
+    recipe is sufficient only when accounting and noise generation use the same
+    `n_steps`, `min_sep`, and `max_participations`. Amplifiers supply these bounds
+    for their sampling scheme; leave the inner `mf_gaussian` horizon unspecified.
 
 ## Parameter guide
 
@@ -186,18 +191,18 @@ eps = proc.epsilon_at(delta=1e-5)
 | `noise_multiplier` | 0.1 – 10.0 (calibrate) | Higher = more private. Use `acc.calibrate()`. |
 | `n_steps` | Must be known in advance | Total training iterations. |
 | `min_sep` | 1 – `n_steps` (default 1) | Minimum steps between participations. Higher = lower sensitivity. |
-| `max_participations` | 1 – $\lceil n / \text{min\_sep} \rceil$ (default 1) | Number of times each user's data is used. |
+| `max_participations` | Positive integer or `None` (default) | Upper bound on contributions per protected unit; `None` permits all contributions allowed by the horizon and separation. |
 | `error` | `"max"` or `"mean"` | Error metric to optimize. `"max"` is conservative. |
 | `max_buffers` | 1 – 20 (default 10) | Number of exponential decay buffers. More = better noise reduction. |
 
 **Tips**:
 
 - **`max_buffers` = 10** is a good default. Going above 10 rarely helps.
-- **`min_sep`** should reflect the actual minimum number of steps between
-  a given example's appearances. For standard epoch training with batch
-  size $B$ and dataset size $N$: `min_sep = N // B` (steps per epoch).
-- **`max_participations`** is the number of epochs. Set it to the actual
-  number of epochs in your training run.
+- **`min_sep`** must be guaranteed by the sampler. Repeating a fixed ordering
+  or fixed bin assignment gives one epoch of separation. Independently
+  shuffling each epoch can place two appearances in consecutive rounds.
+- **`max_participations`** bounds contributions per protected unit. It equals
+  the number of epochs when that unit appears once per epoch.
 - **`error = "max"`** is the safe choice for worst-case guarantees.
   `"mean"` optimizes average error, which may be better for practical
   accuracy but gives worse worst-case behavior.
