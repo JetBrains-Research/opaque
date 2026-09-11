@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 
+from opaque.api.dpftrl.noise._engine import MF_GAUSSIAN_STREAM_FOLD
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -18,7 +19,7 @@ from opaque.dpftrl.noise import (
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
 from opaque.exceptions import ConfigurationError
 from opaque.pytree import tree_leaves
-from opaque.random import key
+from opaque.random import fold_in, generator_from_key, key
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import (
     NoisedPytree,
@@ -64,6 +65,67 @@ def _paired(grads):
 def _clipped(grads):
     """Wrap raw grad pytree as ClippedPytree at the test's standard max_norm."""
     return clipped(grads, max_norm=_SENSITIVITY)
+
+
+def test_lambda_cgd_streams_keep_namespaces_after_resume():
+    template = {"w": torch.zeros(8)}
+    strategy = lambda_cgd_strategy(lambda_=0.5, normalized=False)
+
+    def make_noise(seed):
+        return mf_gaussian_noise(
+            template,
+            strategy,
+            n_steps=4,
+            noise_multiplier=1.0,
+            key=key(seed),
+            second_moment_strategy=strategy,
+        )
+
+    noise_fn, state = make_noise(42)
+    inputs = SecondMomentClippingOutput(
+        grads=clipped(template, max_norm=1.0),
+        squared_grads=clipped(template, max_norm=1.0),
+    )
+    _, state = noise_fn(inputs, state)
+    resumed_fn, fresh = make_noise(73)
+    restored = from_state_dict(fresh, state_dict(state))
+
+    for step in range(1, 4):
+        expected, state = noise_fn(inputs, state)
+        actual, restored = resumed_fn(inputs, restored)
+        for name, expected_stream, actual_stream in (
+            ("first", expected.noisy_grads, actual.noisy_grads),
+            ("second", expected.noisy_squared_grads, actual.noisy_squared_grads),
+        ):
+            parent = fold_in(key(42), f"opaque.dpftrl.second_moment.{name}")
+            current = torch.randn(
+                (8,),
+                generator=generator_from_key(
+                    fold_in(
+                        parent,
+                        MF_GAUSSIAN_STREAM_FOLD,
+                        "mf_gaussian_column",
+                        step,
+                    )
+                ),
+            ) * math.sqrt(2.0)
+            previous = torch.randn(
+                (8,),
+                generator=generator_from_key(
+                    fold_in(
+                        parent,
+                        MF_GAUSSIAN_STREAM_FOLD,
+                        "mf_gaussian_column",
+                        step - 1,
+                    )
+                ),
+            ) * math.sqrt(2.0)
+            torch.testing.assert_close(
+                actual_stream.pytree["w"], current - 0.5 * previous
+            )
+            torch.testing.assert_close(
+                actual_stream.pytree, expected_stream.pytree, atol=0.0, rtol=0.0
+            )
 
 
 class TestSecondMomentCalibration:

@@ -29,13 +29,13 @@ import torch
 from opaque.api.dpftrl.noise._strategy_codec import register_strategy
 from opaque.exceptions import ConfigurationError
 from opaque.pytree import tree_map
-from opaque.random import fold_in as rng_fold_in
 from opaque.random import generator_from_key
 
 from ._engine import (
     MFNoiseState,
     _check_mf_horizon,
     _iid_normal_noise,
+    _mf_gaussian_column_key,
     _require_positive_int_horizon,
 )
 
@@ -278,7 +278,7 @@ def _make_lambda_cgd_noise(
         step = st._step_counter
         _check_mf_horizon(step, n_steps)
 
-        current_key = rng_fold_in(st._rng_key, step)
+        current_key = _mf_gaussian_column_key(st._rng_key, step)
         g_current = generator_from_key(current_key)
         z_t = _iid_normal_noise(
             clipped_grads,
@@ -290,7 +290,7 @@ def _make_lambda_cgd_noise(
         if step == 0 or lambda_ == 0.0:
             corr_noise = z_t
         else:
-            prev_key = rng_fold_in(st._rng_key, step - 1)
+            prev_key = _mf_gaussian_column_key(st._rng_key, step - 1)
             g_prev = generator_from_key(prev_key)
             z_prev = _iid_normal_noise(
                 clipped_grads,
