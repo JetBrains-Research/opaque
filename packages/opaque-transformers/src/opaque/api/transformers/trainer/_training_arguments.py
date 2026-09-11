@@ -270,7 +270,6 @@ def _default_privacy_delta(dataset_size: int) -> float:
     return 1.0 / (dataset_size**_DEFAULT_PRIVACY_DELTA_EXPONENT)
 
 
-
 def _validate_privacy_kwargs(
     field_name: str,
     kwargs: dict[str, Any],
