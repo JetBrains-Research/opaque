@@ -51,6 +51,11 @@ args = TrainingArguments(
 - `global`: full dataset per rank with rank-folded streams and
   `parallel_poisson` accounting.
 
+`per_rank` requires the public, fixed training population length to be evenly
+divisible by `WORLD_SIZE`. When it isn't, `DPTrainer` drops the remaining
+tail examples and logs a warning; the dropped tail changes both the
+sharding and the accounting sample-rate denominator.
+
 ## Metrics and eval gather
 
 - `compute_metrics(EvalPrediction)` runs on gathered cluster-wide payloads.

@@ -222,6 +222,13 @@ def test_gloo_checkpoint_save_failure_propagates_to_all_ranks(tmp_path) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.distributed
+def test_gloo_non_divisible_population_trimmed() -> None:
+    """DPTrainer trims N % world_size != 0 to an equal shard length on every rank."""
+    _run_ddp("non_divisible_population_trimmed", world_size=2, backend="gloo")
+
+
+@pytest.mark.slow
 def test_mpi_launcher_smoke_when_available() -> None:
     if not torch.distributed.is_mpi_available():
         pytest.skip("PyTorch was built without MPI backend support")

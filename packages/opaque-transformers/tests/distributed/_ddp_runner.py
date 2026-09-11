@@ -539,6 +539,39 @@ def scenario_checkpoint_save_failure(
     assert expected in message, message
 
 
+def scenario_non_divisible_population_trimmed(
+    rank: int, world_size: int, use_cpu: bool = False, **_
+) -> None:
+    """Every rank sees the same trimmed shard length for a non-divisible population."""
+    cfg = TinyConfig()
+    model = TinyForCausalLM(cfg)
+    args = TrainingArguments(
+        output_dir=tempfile.mkdtemp(prefix="dpt_ddp_trim_"),
+        per_device_train_batch_size=2,
+        max_steps=1,
+        save_strategy="no",
+        report_to=[],
+        privacy_noise_multiplier=1.0,
+        use_cpu=use_cpu,
+        use_compat_patches=False,
+    )
+    # ``world_size * 4 + 1`` is never a multiple of ``world_size``.
+    n = world_size * 4 + 1
+    ds = TinyDataset(n=n, seq_len=4, vocab=cfg.vocab_size)
+    trainer = DPTrainer(
+        model=model, args=args, train_dataset=ds, data_collator=_collate
+    )
+    trainer._ctx = trainer._setup_training()
+    local_len = len(trainer.get_train_dataloader().dataset)
+    gathered = [None] * world_size
+    dist.all_gather_object(gathered, local_len)
+    if rank == 0:
+        expected = n // world_size
+        assert gathered == [expected] * world_size, (
+            f"expected every rank to see {expected} trimmed example(s), got {gathered}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -554,6 +587,7 @@ SCENARIOS = {
     "gather_paths": scenario_gather_paths,
     "env_backend_diagnostic": scenario_env_backend_diagnostic,
     "checkpoint_save_failure": scenario_checkpoint_save_failure,
+    "non_divisible_population_trimmed": scenario_non_divisible_population_trimmed,
 }
 
 
