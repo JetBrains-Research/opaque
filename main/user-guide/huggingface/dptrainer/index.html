@@ -3390,11 +3390,9 @@ clip-noise-step over one Poisson sample.</p>
 <h2 id="custom-losses">Custom losses<a class="headerlink" href="#custom-losses" title="Permanent link">&para;</a></h2>
 <p><code>compute_loss_func</code> on the constructor accepts a callable
 <code>(outputs, labels) -&gt; scalar</code> for one-off losses without subclassing.
-The callable is invoked <strong>per example under vmap</strong> (one example's
-outputs, one example's labels), not once per batch — there's no
-<code>num_items_in_batch</code> argument.  Subclassing for full SFT / DPO / KTO
-trainers is supported but is a more advanced extension point; reach
-out if you need to wire one up.</p>
+Training invokes it per example under <code>vmap</code>; default evaluation invokes it
+once per batch. There is no <code>num_items_in_batch</code> argument, and a custom loss
+takes precedence over <code>label_smoothing_factor</code>.</p>
 <h2 id="peft-and-lora">PEFT and LoRA<a class="headerlink" href="#peft-and-lora" title="Permanent link">&para;</a></h2>
 <p>PEFT-wrapped models work transparently: wrap the model with
 <code>peft.get_peft_model(...)</code> before constructing the trainer.  The
