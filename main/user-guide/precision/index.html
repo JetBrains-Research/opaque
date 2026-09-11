@@ -3252,19 +3252,21 @@ that region and produce the sensitivity bound and noise scale the privacy
 accountant relies on.</p>
 <ul>
 <li><strong>Use the safe defaults.</strong> Clipping defaults to <code>compute_dtype=None</code>, which
-  promotes <code>bfloat16</code> and <code>float16</code> inputs to <code>float32</code> for L2 reductions while
-  leaving <code>float32</code> and <code>float64</code> inputs unchanged. Both <code>gaussian_noise(...)</code>
-  and <code>mf_gaussian_noise(...)</code> default to
+  promotes <code>bfloat16</code> and <code>float16</code> inputs to <code>float32</code> for L2 reductions and
+  leaf scaling while leaving <code>float32</code> and <code>float64</code> inputs unchanged. Both
+  <code>gaussian_noise(...)</code> and <code>mf_gaussian_noise(...)</code> default to
   <code>compute_dtype=torch.float32</code>.</li>
 <li><strong>Do not lower precision without a separate numerical argument.</strong> Setting
   <code>compute_dtype=torch.bfloat16</code> or <code>torch.float16</code> can make the realized
   sensitivity and noise scale diverge from the accountant's model.</li>
 <li><strong>You can raise it.</strong> Pass <code>compute_dtype=torch.float64</code> explicitly to both
   clipping and noise when higher-precision reductions and sampling are needed.</li>
-<li><strong>Output dtype is separate.</strong> A scale computed at higher precision must still
-  be stored in each output leaf's dtype. Clipping conservatively shrinks the
-  scale by a few ULPs of that leaf's dtype so the stored value continues to
-  satisfy <code>norm(output) &lt;= clipping_norm</code>.</li>
+<li><strong>The final output cast still matters.</strong> Clipping multiplies in the wider of
+  <code>compute_dtype</code> and the leaf's storage precision, then casts the result once
+  to the leaf dtype. That final cast can round up past the bound,
+  so clipping conservatively shrinks each leaf's scale and rounds outward
+  subnormal casts toward zero to preserve <code>norm(output) &lt;= clipping_norm</code> on
+  the values as stored.</li>
 </ul>
 <p>Under microbatching, the running sum is held at the accumulation precision and
 cast once at the end. A <code>bfloat16</code> run therefore uses one model-sized float32
