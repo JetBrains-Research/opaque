@@ -165,7 +165,7 @@ def _scale_tensor(
     *,
     clamp_to_one: bool,
 ) -> torch.Tensor:
-    """Scale a tensor in compute precision before one final storage cast."""
+    """Scale in compute precision and conservatively cast to storage precision."""
     if not (tensor.dtype.is_floating_point or tensor.dtype.is_complex):
         scale = _finalize_scale(
             ratio,
@@ -185,7 +185,23 @@ def _scale_tensor(
         clamp_to_one=clamp_to_one,
     )
     scaled = tensor.to(dtype=multiply_dtype) * scale.to(dtype=multiply_dtype)
-    return scaled.to(dtype=tensor.dtype)
+    stored = scaled.to(dtype=tensor.dtype)
+
+    def round_subnormals_toward_zero(
+        value: torch.Tensor, source: torch.Tensor
+    ) -> torch.Tensor:
+        smallest_normal = torch.finfo(value.dtype).smallest_normal
+        rounded_up_subnormal = (value.abs() <= smallest_normal) & (
+            value.abs() > source.abs()
+        )
+        return torch.where(rounded_up_subnormal, torch.zeros_like(value), value)
+
+    if tensor.dtype.is_complex:
+        return torch.complex(
+            round_subnormals_toward_zero(stored.real, scaled.real),
+            round_subnormals_toward_zero(stored.imag, scaled.imag),
+        )
+    return round_subnormals_toward_zero(stored, scaled)
 
 
 def _sq_accum_dtype(leaves: list[torch.Tensor]) -> torch.dtype:

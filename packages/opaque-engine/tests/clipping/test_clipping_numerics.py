@@ -153,6 +153,20 @@ def test_low_precision_leaf_does_not_zero_its_neighbours(low):
         assert clipped[name].abs().sum() > 0, f"{name} was zeroed by the {low} leaf"
 
 
+def test_final_cast_rounds_outward_subnormals_toward_zero():
+    """An fp16 final cast cannot increase a subnormal clipped value past C."""
+    quantum = (
+        torch.finfo(torch.float16).smallest_normal * torch.finfo(torch.float16).eps
+    )
+    clipped, _ = clip_pytree(
+        {"w": torch.tensor([2.0**-10], dtype=torch.float16)},
+        clipping_norm=0.5015 * quantum,
+        compute_dtype=torch.float32,
+    )
+
+    assert torch.equal(clipped["w"], torch.zeros(1, dtype=torch.float16))
+
+
 @pytest.mark.parametrize("dtype", LOW_PRECISION_DTYPES)
 def test_low_precision_scaling_uses_compute_dtype(dtype):
     """A wider compute dtype pays only for the final storage rounding."""

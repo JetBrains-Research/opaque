@@ -73,8 +73,9 @@ accountant relies on.
 - **The final output cast still matters.** Clipping multiplies in
   `compute_dtype` (never below the leaf's storage precision), then casts the
   result once to the leaf dtype. That final cast can round up past the bound,
-  so clipping conservatively shrinks each leaf's scale to account for rounding
-  and preserve `norm(output) <= clipping_norm` on the values as stored.
+  so clipping conservatively shrinks each leaf's scale and rounds outward
+  subnormal casts toward zero to preserve `norm(output) <= clipping_norm` on
+  the values as stored.
 
 Under microbatching, the running sum is held at the accumulation precision and
 cast once at the end. A `bfloat16` run therefore uses one model-sized float32
