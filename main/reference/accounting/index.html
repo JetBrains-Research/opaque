@@ -2958,21 +2958,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#band_mfnoise_multiplier-sensitivity-coefficients-dpprocess" class="md-nav__link">
+  <a href="#mf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        band_mf(noise_multiplier, sensitivity, coefficients) -&gt; DpProcess
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bltnoise_multiplier-sensitivity-gram_matrix-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        blt(noise_multiplier, sensitivity, gram_matrix=()) -&gt; DpProcess
+        mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None) -&gt; DpProcess
       
     </span>
   </a>
@@ -3684,21 +3673,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#band_mfnoise_multiplier-sensitivity-coefficients-dpprocess" class="md-nav__link">
+  <a href="#mf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       
-        band_mf(noise_multiplier, sensitivity, coefficients) -&gt; DpProcess
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bltnoise_multiplier-sensitivity-gram_matrix-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        blt(noise_multiplier, sensitivity, gram_matrix=()) -&gt; DpProcess
+        mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None) -&gt; DpProcess
       
     </span>
   </a>
@@ -4351,44 +4329,49 @@ inner transparently (zero privacy cost).</p>
 </code></pre></div>
 <hr />
 <h2 id="matrix-factorization-mechanisms">Matrix factorization mechanisms<a class="headerlink" href="#matrix-factorization-mechanisms" title="Permanent link">&para;</a></h2>
-<p>MF mechanisms take pre-computed <code>sensitivity</code> and <code>gram_matrix</code> values from the
-corresponding noise <strong>strategy</strong> (e.g. <code>band_mf_strategy()</code>, <code>blt_strategy()</code>).
-The strategy is the single source of truth for these quantities — never hardcode
-them. This keeps noise generation and accounting in sync.</p>
-<p>All MF constructors return a <code>DpProcess</code> that composes with standard operators.</p>
-<h3 id="band_mfnoise_multiplier-sensitivity-coefficients-dpprocess"><code>band_mf(noise_multiplier, sensitivity, coefficients) -&gt; DpProcess</code><a class="headerlink" href="#band_mfnoise_multiplier-sensitivity-coefficients-dpprocess" title="Permanent link">&para;</a></h3>
-<p>BandMF mechanism for Poisson and b-min-sep amplification. Takes
-<code>sensitivity</code> and <code>coefficients</code> from a <code>band_mf_strategy()</code>. The
-band-width is <code>len(coefficients)</code>; <code>coefficients</code> must be non-empty.</p>
-<ul>
-<li><code>noise_multiplier</code> (float): Raw noise standard deviation sigma.</li>
-<li><code>sensitivity</code> (float): From <code>strategy.sensitivity(n_steps=...)</code>.</li>
-<li><code>coefficients</code> (tuple of float values): From <code>strategy.coefficients</code>.</li>
-</ul>
+<p>MF mechanisms resolve sensitivity and Gram matrices from a noise strategy and
+its participation context. Use the same recipe and context for accounting and
+noise generation.</p>
+<h3 id="mf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone-dpprocess"><code>mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None) -&gt; DpProcess</code><a class="headerlink" href="#mf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone-dpprocess" title="Permanent link">&para;</a></h3>
+<p>Omitting <code>n_steps</code> creates a recipe for an amplifier. Calling <code>pld()</code> or
+<code>epsilon_at()</code> on that recipe directly raises <code>ConfigurationError</code>.</p>
+<p>For bare accounting, <code>n_steps</code> is the full release horizon, <code>min_sep</code> is the
+minimum separation between contributions, and <code>max_participations</code> bounds each
+protected unit's contributions. If omitted, <code>max_participations</code> defaults to
+<code>n_steps</code>. The resulting Gaussian PLD accounts for the declared context; do not
+compose it again by the number of rounds.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">)</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="c1"># One contribution per protected unit across 1000 rounds.</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    <span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="p">)</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="bltnoise_multiplier-sensitivity-gram_matrix-dpprocess"><code>blt(noise_multiplier, sensitivity, gram_matrix=()) -&gt; DpProcess</code><a class="headerlink" href="#bltnoise_multiplier-sensitivity-gram_matrix-dpprocess" title="Permanent link">&para;</a></h3>
-<p>BLT (Buffered Linear Toeplitz) mechanism. Takes <code>sensitivity</code> and optional
-<code>gram_matrix</code> from a <code>blt_strategy()</code>.</p>
+<p>Bare BandMF and Identity sensitivity currently accounts for one participation.
+Do not use bare calls with these strategies to budget repeated participation.
+For amplified accounting, leave the inner horizon unspecified and supply the
+full horizon to the sampler-matching amplifier, which resolves its own context.</p>
 <h3 id="correlated-mf-mechanisms-blt-cgd-bisr-bsr">Correlated MF mechanisms (BLT, λCGD, BISR, BSR)<a class="headerlink" href="#correlated-mf-mechanisms-blt-cgd-bisr-bsr" title="Permanent link">&para;</a></h3>
-<p>Build via <code>dpftrl_acc.mf_gaussian(noise_multiplier, strategy)</code> — the strategy owns
-sensitivity, Gram matrix, coefficients, min_sep, and max_participations:</p>
+<p>For bare BLT accounting, supply the same horizon and participation bounds as
+<code>mf_gaussian_noise</code>. This example assumes at most five contributions per
+protected unit, at least 1000 rounds apart:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">max_buffers</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Unamplified — single-Gaussian PLD</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">)</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># With Balls-in-Bins amplification</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
-<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
-<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="p">)</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Unamplified accounting for the full 5000-round context.</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="p">)</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="c1"># With a fixed partition into 1000 bins, repeated for five epochs.</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="p">)</span>
 </code></pre></div>
-<p>The same <code>as_mechanism</code> API works for <code>lambda_cgd_strategy</code>,
+<p>The same amplified construction works for <code>lambda_cgd_strategy</code>,
 <code>bisr_strategy</code>, and <code>bsr_strategy</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">lambda_cgd_strategy</span>
 <a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span><span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>

@@ -1164,10 +1164,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpftrl_accmf_gaussiannoise_multiplier-strategy" class="md-nav__link">
+  <a href="#dpftrl_accmf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpftrl_acc.mf_gaussian(noise_multiplier, strategy)
+        dpftrl_acc.mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None)
       
     </span>
   </a>
@@ -3596,10 +3596,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#dpftrl_accmf_gaussiannoise_multiplier-strategy" class="md-nav__link">
+  <a href="#dpftrl_accmf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone" class="md-nav__link">
     <span class="md-ellipsis">
       
-        dpftrl_acc.mf_gaussian(noise_multiplier, strategy)
+        dpftrl_acc.mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None)
       
     </span>
   </a>
@@ -4004,23 +4004,23 @@ modified sensitivity of the strategy matrix. These mechanisms optimize
 the strategy internally and compute the correct sensitivity — do not use
 <code>dpsgd_acc.gaussian()</code> for MF noise.</p>
 <h3 id="strategy-driven-accounting">Strategy-driven accounting<a class="headerlink" href="#strategy-driven-accounting" title="Permanent link">&para;</a></h3>
-<p><code>mf_gaussian()</code> couples a noise multiplier to a strategy recipe. The enclosing
-amplifier owns the horizon and participation geometry, and asks the strategy to
-derive any required sensitivity or Gram matrix at PLD evaluation time. These
-values are never supplied manually.</p>
+<p><code>mf_gaussian()</code> couples a noise multiplier to a strategy recipe. An explicit
+horizon is required for bare accounting, which resolves sensitivity using its
+participation bounds. When wrapped, the amplifier supplies that context and
+resolves the required sensitivity or Gram matrix at PLD evaluation time.</p>
 <p>The workflow is:</p>
 <ol>
 <li>Create a <strong>noise strategy</strong> (for example, <code>band_mf_strategy()</code> or
    <code>lambda_cgd_strategy()</code>) with its structural knobs: bands, correlation,
    momentum, and any supported workload schedule.</li>
-<li>Wrap it with <code>mf_gaussian(noise_multiplier, strategy)</code>.</li>
+<li>Create the inner mechanism with <code>mf_gaussian(noise_multiplier, strategy)</code>.</li>
 <li>Wrap that mechanism in the sampler-matching amplifier, which supplies
    <code>n_steps</code> and the participation pattern and derives the strategy's privacy
    quantities internally.</li>
 </ol>
-<p>This separation ensures that noise generation and privacy accounting always
-agree on the mechanism parameters — the strategy is the single source of
-truth.</p>
+<p>Use the same strategy for noise generation and accounting, and match the
+runtime context to the amplifier's horizon and participation pattern. A recipe
+can resolve to different encoders under different contexts.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
@@ -4034,34 +4034,42 @@ truth.</p>
 <a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">)</span>
 <a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="dpftrl_accmf_gaussiannoise_multiplier-strategy"><code>dpftrl_acc.mf_gaussian(noise_multiplier, strategy)</code><a class="headerlink" href="#dpftrl_accmf_gaussiannoise_multiplier-strategy" title="Permanent link">&para;</a></h3>
-<p>Single MF Gaussian mechanism wrapping a strategy recipe.  The strategy
-carries only static workload knobs (e.g. <code>bands</code>, <code>momentum</code>); horizon
-(<code>n_steps</code>, <code>min_sep</code>, <code>max_participations</code>) is supplied by the
-surrounding amplification factory at PLD time.</p>
+<h3 id="dpftrl_accmf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone"><code>dpftrl_acc.mf_gaussian(noise_multiplier, strategy, *, n_steps=None, min_sep=1, max_participations=None)</code><a class="headerlink" href="#dpftrl_accmf_gaussiannoise_multiplier-strategy-n_stepsnone-min_sep1-max_participationsnone" title="Permanent link">&para;</a></h3>
+<p>Without <code>n_steps</code>, this is an amplifier input: bare <code>pld()</code> and <code>epsilon_at()</code>
+calls raise <code>ConfigurationError</code>. The amplifier supplies the horizon once.</p>
+<p>For bare accounting, declare the full horizon and the participation bounds used
+by <code>mf_gaussian_noise</code>. This example assumes one contribution per protected unit
+across 1000 rounds:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>  <span class="c1"># bare use</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="p">)</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<p>For subsampling amplification, wrap with <code>dpftrl_acc.poisson(..., n_steps=...)</code>
-(see below).</p>
+<p>Bare BandMF and Identity sensitivity currently accounts for one participation.
+Do not use bare calls with these strategies to budget repeated participation.
+For subsampling amplification, leave the inner horizon unspecified and pass the
+full horizon to the sampler-matching amplifier (see below).</p>
 <h3 id="correlated-mf-mechanisms-blt-cgd-bisr-bsr">Correlated MF mechanisms (BLT, λCGD, BISR, BSR)<a class="headerlink" href="#correlated-mf-mechanisms-blt-cgd-bisr-bsr" title="Permanent link">&para;</a></h3>
-<p>Correlated MF mechanisms use the same <code>dpftrl_acc.mf_gaussian(noise_multiplier,
-strategy)</code> factory — the strategy carries the static workload knobs and
-the amplifier supplies the participation context.  Wrap in
-<code>dpftrl_acc.balls_in_bins(...)</code> (BnB) for the full PLD:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">max_buffers</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<p>Correlated strategies use the same factory. Bare accounting must match the
+runtime horizon and participation bounds. This BLT example assumes at most five
+contributions per protected unit, at least 1000 rounds apart:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># Unamplified — single-Gaussian PLD</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">)</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="k">assert</span> <span class="n">eps</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">eps</span> <span class="o">&lt;</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">),</span> <span class="sa">f</span><span class="s2">"epsilon out of range: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">"</span>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="c1"># With Balls-in-Bins amplification</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="p">)</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span><span class="n">max_buffers</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># Unamplified accounting for the full 5000-round context.</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="p">)</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="k">assert</span> <span class="n">eps</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">eps</span> <span class="o">&lt;</span> <span class="nb">float</span><span class="p">(</span><span class="s2">"inf"</span><span class="p">),</span> <span class="sa">f</span><span class="s2">"epsilon out of range: </span><span class="si">{</span><span class="n">eps</span><span class="si">}</span><span class="s2">"</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="c1"># With a fixed partition into 1000 bins, repeated for five epochs.</span>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>    <span class="n">dpftrl_acc</span><span class="o">.</span><span class="n">mf_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">strategy</span><span class="p">),</span>
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span>
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="p">)</span>
 </code></pre></div>
 <p>The same pattern works for <code>lambda_cgd_strategy</code>, <code>bisr_strategy</code>, and
 <code>bsr_strategy</code>:</p>
