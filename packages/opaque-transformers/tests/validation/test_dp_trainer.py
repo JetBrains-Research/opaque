@@ -1651,6 +1651,184 @@ class TestDPTrainerCheckpointing:
                 f"LR mismatch at global_step={step}: chained={got}, continuous={exp}"
             )
 
+    def test_dataloader_prefetch_checkpoints_trainer_consumed_not_sampler_cursor(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """#791: worker prefetch must not leak into the checkpointed cursor."""
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        model, tokenizer = gpt2_with_lora
+        live_consumed_at_save: list[int] = []
+
+        class _CaptureLiveSamplerCursor(_HFTrainerCallback):
+            def on_save(self, args, state, control, **kwargs):
+                live_consumed_at_save.append(trainer._ctx.current_sampler.consumed)
+
+        trainer = DPTrainer(
+            model=model,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                # "fork": macOS's "spawn" default can't pickle the
+                # trainer's collate-fn closure across processes.
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+            callbacks=[_CaptureLiveSamplerCursor()],
+        )
+        trainer.train()
+
+        # Prefetch must actually race ahead of global_step=2 here, or this
+        # test wouldn't exercise the bug.
+        assert live_consumed_at_save[0] > 2
+
+        payload = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-2" / ckpt.DP_STATE_NAME)
+        )
+        assert payload.sampler_state["consumed"] == 2
+
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+        assert out2.global_step == 6
+
+    def test_resume_normalizes_prefetched_legacy_sampler_cursor(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path, caplog
+    ):
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        batches: list[torch.Tensor] = []
+
+        class _CaptureBatches(DPTrainer):
+            def training_step(self, model, inputs):
+                batches.append(inputs["input_ids"].detach().clone())
+                return super().training_step(model, inputs)
+
+        model, tokenizer = gpt2_with_lora
+        trainer = _CaptureBatches(
+            model=model,
+            args=self._common_args(tmp_path, max_steps=6),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+        expected_batches = batches[2:]
+        batches.clear()
+
+        checkpoint = tmp_path / "checkpoint-2"
+        runtime_path = checkpoint / ckpt.DP_STATE_NAME
+        payload = ckpt.load_dp_runtime_state(str(runtime_path))
+        assert payload.version == 7
+        # Simulate a legacy snapshot taken after workers prefetched all draws.
+        payload.sampler_state["consumed"] = 6
+        torch.save(payload, runtime_path)
+
+        resumed = _CaptureBatches(
+            model=model,
+            args=self._common_args(tmp_path / "resumed", max_steps=6),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        result = resumed.train(resume_from_checkpoint=str(checkpoint))
+
+        assert result.global_step == 6
+        assert len(batches) == len(expected_batches) == 4
+        for actual, expected in zip(batches, expected_batches, strict=True):
+            assert torch.equal(actual, expected)
+        assert "Clamping checkpoint sampler consumed=6 to global_step=2" in caplog.text
+        for step in (4, 6):
+            saved = ckpt.load_dp_runtime_state(
+                str(tmp_path / "resumed" / f"checkpoint-{step}" / ckpt.DP_STATE_NAME)
+            )
+            assert saved.sampler_state["consumed"] == step
+
+    def test_chained_resume_after_ignore_data_skip_keeps_cursor_aligned(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path
+    ):
+        """#791: clamp must rebase across an ``ignore_data_skip`` resume."""
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        # Phase 1: plain run to checkpoint-2 (global_step=2).
+        model1, tokenizer1 = gpt2_with_lora
+        trainer1 = DPTrainer(
+            model=model1,
+            args=self._common_args(tmp_path, max_steps=2, save_steps=2),
+            processing_class=tokenizer1,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        trainer1.train()
+
+        # Phase 2: resume with ignore_data_skip=True (rebases the sampler
+        # stream at global_step=2) plus prefetch, 2 more steps to checkpoint-4.
+        model2, tokenizer2 = gpt2_with_lora
+        trainer2 = DPTrainer(
+            model=model2,
+            args=self._common_args(
+                tmp_path,
+                max_steps=4,
+                save_steps=2,
+                ignore_data_skip=True,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer2,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
+        assert out2.global_step == 4
+
+        # 2 post-rebase steps, not global_step=4 or a prefetch-inflated value.
+        payload = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-4" / ckpt.DP_STATE_NAME)
+        )
+        assert payload.sampler_state["consumed"] == 2
+
+        # Phase 3: normal resume to completion; the offset must carry
+        # forward so a further checkpoint under prefetch still clamps right.
+        model3, tokenizer3 = gpt2_with_lora
+        trainer3 = DPTrainer(
+            model=model3,
+            args=self._common_args(
+                tmp_path,
+                max_steps=6,
+                save_steps=2,
+                dataloader_num_workers=2,
+                dataloader_prefetch_factor=2,
+                dataloader_multiprocessing_context="fork",
+            ),
+            processing_class=tokenizer3,
+            train_dataset=tiny_lm_dataset,
+            eval_dataset=tiny_lm_dataset,
+        )
+        out3 = trainer3.train(resume_from_checkpoint=str(tmp_path / "checkpoint-4"))
+        assert out3.global_step == 6
+
+        payload6 = ckpt.load_dp_runtime_state(
+            str(tmp_path / "checkpoint-6" / ckpt.DP_STATE_NAME)
+        )
+        assert payload6.sampler_state["consumed"] == 4
+
     def test_resume_continues_global_step(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):

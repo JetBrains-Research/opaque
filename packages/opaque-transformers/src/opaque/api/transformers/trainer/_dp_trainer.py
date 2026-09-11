@@ -240,6 +240,10 @@ class _TrainingContext:
     current_sampler: Any = None
     # Checkpoint cursor for a distinct ignored-state Poisson stream.
     sampler_restart_step: int | None = None
+    # ``global_step`` value corresponding to ``current_sampler.consumed == 0``
+    # for this run — 0 unless a prior ``ignore_data_skip`` resume rebased the
+    # sampler stream. Set once in ``_inner_training_loop`` before iteration.
+    sampler_step_offset: int = 0
     save_steps_resolved: int = 0
     # Configured clip threshold (scalar or PerGroup).  Adaptive mode
     # overrides this each step via ``clip_state.clipping_norm``; fixed
@@ -1247,15 +1251,33 @@ class DPTrainer:
                     ctx.target_delta,
                 )
 
+        saved_sampler_state = (
+            runtime_payload.sampler_state if runtime_payload is not None else None
+        )
+        # Older snapshots may include prefetched, untrained draws.
+        # Normalize before deserialization replays the saved RNG stream.
+        if (
+            not a.ignore_data_skip
+            and saved_sampler_state is not None
+            and "consumed" in saved_sampler_state
+            and int(saved_sampler_state["consumed"]) > self.state.global_step
+        ):
+            log.warning(
+                "Clamping checkpoint sampler consumed=%s to global_step=%d "
+                "before restoring the sampler.",
+                saved_sampler_state["consumed"],
+                self.state.global_step,
+            )
+            saved_sampler_state = {
+                **saved_sampler_state,
+                "consumed": self.state.global_step,
+            }
+
         try:
             return self._inner_training_loop(
                 ctx,
                 resume_path=resume_path,
-                saved_sampler_state=(
-                    runtime_payload.sampler_state
-                    if runtime_payload is not None
-                    else None
-                ),
+                saved_sampler_state=saved_sampler_state,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
         finally:
@@ -1789,8 +1811,10 @@ class DPTrainer:
         # boundary so the first post-resume log row averages over the
         # post-resume window only.
         self._globalstep_last_logged = global_step
-        self._tr_loss = torch.tensor(0.0, device=self._device)
-        self._total_loss_scalar = 0.0
+        self._tr_loss, self._total_loss_scalar = (
+            torch.tensor(0.0, device=self._device),
+            0.0,
+        )
         self._train_start_time = time.time()
         self._memory_tracker.start()
         if resume_path is not None:
@@ -1839,6 +1863,14 @@ class DPTrainer:
             )
 
         train_loader = self.get_train_dataloader()
+        # Snapshot the ``global_step`` at which ``consumed`` is 0, before
+        # ``iter()`` can prefetch — lets a later checkpoint rebase the live
+        # cursor back to an absolute step count (see ``ignore_data_skip``).
+        ctx.sampler_step_offset = (
+            global_step - ctx.current_sampler.consumed
+            if ctx.current_sampler is not None
+            else 0
+        )
         train_loader_iter = iter(train_loader)
 
         for epoch in range(start_epoch, ctx.num_epochs):
@@ -5132,6 +5164,16 @@ class DPTrainer:
             if ctx.current_sampler is not None
             else None
         )
+        # Worker prefetch can draw sampler indices ahead of what the trainer
+        # has consumed; clamp to ``global_step - sampler_step_offset`` (the
+        # offset rebases across an ``ignore_data_skip`` resume) so restore
+        # never replays more than was actually trained on.
+        if sampler_state is not None and "consumed" in sampler_state:
+            trainer_consumed = self.state.global_step - ctx.sampler_step_offset
+            sampler_state = {
+                **sampler_state,
+                "consumed": min(int(sampler_state["consumed"]), int(trainer_consumed)),
+            }
 
         if ctx.mf is not None:
             _amp = ctx.mf.amplifier_factory(ctx.noise_multiplier)
