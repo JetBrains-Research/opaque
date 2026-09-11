@@ -10885,7 +10885,7 @@ non-zero.</p>
 
 
 <h4 id="opaque.alignment.dpo.loss.wpo_weights" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">wpo_weights</span><span class="p">(</span><span class="n">per_token_logps</span><span class="p">,</span> <span class="n">completion_mask</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">wpo_weights</span><span class="p">(</span><span class="n">per_token_logps</span><span class="p">,</span> <span class="n">completion_mask</span><span class="p">,</span> <span class="n">logits</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#opaque.alignment.dpo.loss.wpo_weights" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -10893,15 +10893,17 @@ non-zero.</p>
     <div class="doc doc-contents ">
 
         <p>Per-example WPO weight (arXiv:2406.11827).</p>
-<p>Computes the policy's average per-token probability on the completion and
-returns its (detached) exponential::</p>
-<div class="codehilite"><pre><span></span><code>avg_logp = sum(masked per_token_logps) / completion_token_count
-return avg_logp.detach().exp()
+<p>When <code>logits</code> are provided, computes the weight-aligned policy probability
+from Equation 2 of WPO and returns its detached geometric mean::</p>
+<div class="codehilite"><pre><span></span><code>log_denom = logsumexp(2 <span class="gs">* logits, -1) - 2 *</span> logsumexp(logits, -1)
+aligned_logp = per_token_logps - log_denom
+return exp(sum(masked aligned_logp) / completion_token_count)
 </code></pre></div>
 
-<p>The result is <strong>detached</strong>: it contributes no gradient and serves only as
-a per-example multiplicative reweighting of the downstream loss, keeping
-the per-example loss.</p>
+<p>Omitting <code>logits</code> retains the unaligned geometric-mean weighting for
+backward compatibility. The result is <strong>detached</strong>: it contributes no
+gradient and serves only as a per-example multiplicative reweighting of the
+downstream loss.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -10949,6 +10951,24 @@ multiplying.</p>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>logits</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional policy logits of shape <code>(..., T, V)</code> corresponding
+to <code>per_token_logps</code>. When present, the WPO weight-alignment term
+is computed over the vocabulary dimension.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
             </td>
           </tr>
       </tbody>
@@ -11034,41 +11054,77 @@ multiplying.</p>
 <span class="normal"><a href="#__codelineno-0-64">64</a></span>
 <span class="normal"><a href="#__codelineno-0-65">65</a></span>
 <span class="normal"><a href="#__codelineno-0-66">66</a></span>
-<span class="normal"><a href="#__codelineno-0-67">67</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">wpo_weights</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#__codelineno-0-68">68</a></span>
+<span class="normal"><a href="#__codelineno-0-69">69</a></span>
+<span class="normal"><a href="#__codelineno-0-70">70</a></span>
+<span class="normal"><a href="#__codelineno-0-71">71</a></span>
+<span class="normal"><a href="#__codelineno-0-72">72</a></span>
+<span class="normal"><a href="#__codelineno-0-73">73</a></span>
+<span class="normal"><a href="#__codelineno-0-74">74</a></span>
+<span class="normal"><a href="#__codelineno-0-75">75</a></span>
+<span class="normal"><a href="#__codelineno-0-76">76</a></span>
+<span class="normal"><a href="#__codelineno-0-77">77</a></span>
+<span class="normal"><a href="#__codelineno-0-78">78</a></span>
+<span class="normal"><a href="#__codelineno-0-79">79</a></span>
+<span class="normal"><a href="#__codelineno-0-80">80</a></span>
+<span class="normal"><a href="#__codelineno-0-81">81</a></span>
+<span class="normal"><a href="#__codelineno-0-82">82</a></span>
+<span class="normal"><a href="#__codelineno-0-83">83</a></span>
+<span class="normal"><a href="#__codelineno-0-84">84</a></span>
+<span class="normal"><a href="#__codelineno-0-85">85</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">wpo_weights</span><span class="p">(</span>
 <a id="__codelineno-0-34" name="__codelineno-0-34"></a>    <span class="n">per_token_logps</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a>    <span class="n">completion_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="w">    </span><span class="sd">"""Per-example WPO weight (arXiv:2406.11827).</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a>
-<a id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="sd">    Computes the policy's average per-token probability on the completion and</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    returns its (detached) exponential::</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41"></a>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">        avg_logp = sum(masked per_token_logps) / completion_token_count</span>
-<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">        return avg_logp.detach().exp()</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44"></a>
-<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">    The result is **detached**: it contributes no gradient and serves only as</span>
-<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="sd">    a per-example multiplicative reweighting of the downstream loss, keeping</span>
-<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    the per-example loss.</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48"></a>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    Args:</span>
-<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">        per_token_logps: Per-token log-probabilities of the completion under</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">            the current policy. Shape ``(..., T)``; the leading dims may be</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">            empty (per-example under ``vmap``) or a batch axis.</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        completion_mask: Tensor of shape ``(..., T)``; non-zero where a token</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">            belongs to the completion span. Cast to the logp dtype before</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">            multiplying.</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">    Returns:</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">        Detached per-example weight tensor of shape ``(...)`` (one weight per</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        sequence). All-zero mask rows are protected by ``clamp(min=1)`` so</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">        there is no division by zero.</span>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    """</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">completion_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">per_token_logps</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a>    <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">_compute_dtype</span><span class="p">(</span><span class="n">per_token_logps</span><span class="p">)</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="n">token_count</span> <span class="o">=</span> <span class="n">completion_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a>    <span class="n">avg_logp</span> <span class="o">=</span> <span class="p">(</span><span class="n">per_token_logps</span> <span class="o">*</span> <span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a>    <span class="n">avg_logp</span> <span class="o">=</span> <span class="n">avg_logp</span> <span class="o">/</span> <span class="n">token_count</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">)</span>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="k">return</span> <span class="n">avg_logp</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36"></a>    <span class="n">logits</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">    </span><span class="sd">"""Per-example WPO weight (arXiv:2406.11827).</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39"></a>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    When ``logits`` are provided, computes the weight-aligned policy probability</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">    from Equation 2 of WPO and returns its detached geometric mean::</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="sd">        log_denom = logsumexp(2 * logits, -1) - 2 * logsumexp(logits, -1)</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="sd">        aligned_logp = per_token_logps - log_denom</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="sd">        return exp(sum(masked aligned_logp) / completion_token_count)</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="sd">    Omitting ``logits`` retains the unaligned geometric-mean weighting for</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    backward compatibility. The result is **detached**: it contributes no</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="sd">    gradient and serves only as a per-example multiplicative reweighting of the</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">    downstream loss.</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        per_token_logps: Per-token log-probabilities of the completion under</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">            the current policy. Shape ``(..., T)``; the leading dims may be</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">            empty (per-example under ``vmap``) or a batch axis.</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">        completion_mask: Tensor of shape ``(..., T)``; non-zero where a token</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="sd">            belongs to the completion span. Cast to the logp dtype before</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="sd">            multiplying.</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">        logits: Optional policy logits of shape ``(..., T, V)`` corresponding</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">            to ``per_token_logps``. When present, the WPO weight-alignment term</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">            is computed over the vocabulary dimension.</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        Detached per-example weight tensor of shape ``(...)`` (one weight per</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        sequence). All-zero mask rows are protected by ``clamp(min=1)`` so</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">        there is no division by zero.</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">    """</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">_compute_dtype</span><span class="p">(</span><span class="n">per_token_logps</span><span class="p">)</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a>    <span class="k">if</span> <span class="n">logits</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a>        <span class="n">acc_dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">,</span> <span class="n">_compute_dtype</span><span class="p">(</span><span class="n">logits</span><span class="p">))</span>
+<a id="__codelineno-0-71" name="__codelineno-0-71"></a>
+<a id="__codelineno-0-72" name="__codelineno-0-72"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">completion_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a>    <span class="n">token_count</span> <span class="o">=</span> <span class="n">completion_mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a>        <span class="n">aligned_logps</span> <span class="o">=</span> <span class="n">per_token_logps</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a>        <span class="k">if</span> <span class="n">logits</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77"></a>            <span class="n">compute_logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-78" name="__codelineno-0-78"></a>            <span class="n">log_denom</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span>
+<a id="__codelineno-0-79" name="__codelineno-0-79"></a>                <span class="mf">2.0</span> <span class="o">*</span> <span class="n">compute_logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span>
+<a id="__codelineno-0-80" name="__codelineno-0-80"></a>            <span class="p">)</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span><span class="n">compute_logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<a id="__codelineno-0-81" name="__codelineno-0-81"></a>            <span class="n">aligned_logps</span> <span class="o">=</span> <span class="n">aligned_logps</span> <span class="o">-</span> <span class="n">log_denom</span>
+<a id="__codelineno-0-82" name="__codelineno-0-82"></a>        <span class="n">masked_logps</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">aligned_logps</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+<a id="__codelineno-0-83" name="__codelineno-0-83"></a>        <span class="n">mean_logps</span> <span class="o">=</span> <span class="n">masked_logps</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">token_count</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">acc_dtype</span><span class="p">)</span>
+<a id="__codelineno-0-84" name="__codelineno-0-84"></a>        <span class="n">weights</span> <span class="o">=</span> <span class="n">mean_logps</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+<a id="__codelineno-0-85" name="__codelineno-0-85"></a>    <span class="k">return</span> <span class="n">weights</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
