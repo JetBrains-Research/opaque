@@ -1,22 +1,18 @@
 """Tests for DP-lambda-CGD noise generation via PRNG replay."""
 
 import math
-from dataclasses import replace
-from unittest.mock import Mock
 
 import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise import _lambda_cgd as lambda_cgd_module
+from opaque.api.dpftrl.noise._engine import MF_GAUSSIAN_STREAM_FOLD
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.exceptions import CheckpointError
 from opaque.random import fold_in, generator_from_key, key
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import NoisedPytree, clipped
-
-_STREAM_ROOT = "opaque.dpftrl.lambda_cgd"
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
@@ -145,10 +141,10 @@ class TestLambdaCgdNoise:
         assert state._inner_state is None
         _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 1
-        assert state._inner_state == _STREAM_ROOT
+        assert state._inner_state is None
         _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 2
-        assert state._inner_state == _STREAM_ROOT
+        assert state._inner_state is None
 
     def test_rejects_invalid_lambda(self):
         for value in (-0.1, 1.0, float("nan"), float("inf")):
@@ -169,7 +165,14 @@ class TestLambdaCgdNoise:
         previous = tuple(torch.zeros_like(leaf) for leaf in template)
 
         for step in range(n_steps):
-            generator = generator_from_key(fold_in(base, _STREAM_ROOT, step))
+            generator = generator_from_key(
+                fold_in(
+                    base,
+                    MF_GAUSSIAN_STREAM_FOLD,
+                    "mf_gaussian_column",
+                    step,
+                )
+            )
             current = tuple(
                 torch.randn(leaf.shape, generator=generator) for leaf in template
             )
@@ -213,49 +216,6 @@ class TestLambdaCgdCheckpoint:
             expected, state = _call(noise_fn, template, state, max_norm=2.0)
             actual, restored = _call(resumed_fn, template, restored, max_norm=2.0)
             torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
-
-    @pytest.mark.parametrize(
-        ("step", "stream"),
-        [
-            pytest.param(1, None, id="legacy"),
-            pytest.param(1, "another-stream", id="unknown-root"),
-            pytest.param(1, torch.zeros(2), id="invalid-marker-type"),
-            pytest.param(0, _STREAM_ROOT, id="marker-without-progress"),
-        ],
-    )
-    @pytest.mark.parametrize("restore", [False, True])
-    @pytest.mark.parametrize("lambda_", [0.0, 0.5])
-    def test_incompatible_history_fails_before_drawing(
-        self, monkeypatch, step, stream, restore, lambda_
-    ):
-        template = {"w": torch.zeros(8)}
-        noise_fn, fresh = _make_noise(template, lambda_=lambda_)
-        if restore:
-            saved = state_dict(fresh)
-            saved.update(_step_counter=step, _inner_state=stream)
-            state = from_state_dict(fresh, saved)
-        else:
-            state = replace(fresh, _step_counter=step, _inner_state=stream)
-        draw = Mock(side_effect=AssertionError("incompatible history drew noise"))
-        monkeypatch.setattr(lambda_cgd_module, "generator_from_key", draw)
-
-        with pytest.raises(CheckpointError, match="incompatible stream history"):
-            _call(noise_fn, template, state)
-        draw.assert_not_called()
-
-    def test_unspent_checkpoint_starts_a_namespaced_stream(self):
-        template = {"w": torch.zeros(8)}
-        noise_fn, fresh = _make_noise(template)
-        saved = state_dict(fresh)
-        assert saved["_inner_state"] is None
-        restored = from_state_dict(fresh, saved)
-
-        expected, state = _call(noise_fn, template, fresh)
-        actual, restored = _call(noise_fn, template, restored)
-
-        torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
-        assert restored == state
-        assert restored._inner_state == _STREAM_ROOT
 
 
 _PARTICIPATION = {"n_steps": 100, "min_sep": 25, "max_participations": 4}

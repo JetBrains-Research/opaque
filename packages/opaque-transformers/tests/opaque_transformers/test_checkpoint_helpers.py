@@ -491,36 +491,6 @@ def _noise_streams(output: Any):
 class TestNoiseStreamContinuity:
     """DP noise state and outputs continue exactly across a runtime checkpoint."""
 
-    def test_spent_legacy_lambda_cgd_checkpoint_cannot_continue(self, tmp_path):
-        template = torch.zeros(8)
-        noise_fn, fresh = mf_gaussian_noise(
-            template,
-            lambda_cgd_strategy(lambda_=0.5),
-            n_steps=4,
-            noise_multiplier=1.0,
-            key=key(42),
-        )
-        grads = clipped(template, max_norm=1.0)
-        _, state = noise_fn(grads, fresh)
-        path = str(tmp_path / "dp_runtime.pt")
-        ckpt.save_dp_runtime_state(
-            path,
-            clip_state=FixedClipState(),
-            noise_state=dataclasses.replace(state, _inner_state=None),
-            sampler_state=None,
-            sample_rate=0.1,
-            target_delta=1e-5,
-            noise_multiplier=1.0,
-            expected_steps_per_epoch=1,
-            expected_batch_size=1,
-            total_steps=4,
-        )
-
-        checkpoint = ckpt.load_dp_runtime_state(path)
-        restored = opaque_from_state_dict(fresh, checkpoint.noise_state)
-        with pytest.raises(CheckpointError, match="incompatible stream history"):
-            noise_fn(grads, restored)
-
     @pytest.mark.parametrize("case", _NOISE_CASES)
     def test_continues_after_resume(self, tmp_path, case):
         uninterrupted_fn, uninterrupted_state = case.make_noise(key(42))

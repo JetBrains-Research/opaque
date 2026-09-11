@@ -1,11 +1,11 @@
 """Tests for private second-moment MF noise."""
 
 import math
-from dataclasses import replace
 
 import pytest
 import torch
 
+from opaque.api.dpftrl.noise._engine import MF_GAUSSIAN_STREAM_FOLD
 from opaque.api.engine.noise_allocation import paired_noise_stddevs
 from opaque.dpftrl.noise import (
     band_mf_strategy,
@@ -17,7 +17,7 @@ from opaque.dpftrl.noise import (
     mf_gaussian_noise,
 )
 from opaque.dpftrl.noise.types import SecondMomentMFNoiseState
-from opaque.exceptions import CheckpointError, ConfigurationError
+from opaque.exceptions import ConfigurationError
 from opaque.pytree import tree_leaves
 from opaque.random import fold_in, generator_from_key, key
 from opaque.serialization import from_state_dict, state_dict
@@ -101,13 +101,23 @@ def test_lambda_cgd_streams_keep_namespaces_after_resume():
             current = torch.randn(
                 (8,),
                 generator=generator_from_key(
-                    fold_in(parent, "opaque.dpftrl.lambda_cgd", step)
+                    fold_in(
+                        parent,
+                        MF_GAUSSIAN_STREAM_FOLD,
+                        "mf_gaussian_column",
+                        step,
+                    )
                 ),
             ) * math.sqrt(2.0)
             previous = torch.randn(
                 (8,),
                 generator=generator_from_key(
-                    fold_in(parent, "opaque.dpftrl.lambda_cgd", step - 1)
+                    fold_in(
+                        parent,
+                        MF_GAUSSIAN_STREAM_FOLD,
+                        "mf_gaussian_column",
+                        step - 1,
+                    )
                 ),
             ) * math.sqrt(2.0)
             torch.testing.assert_close(
@@ -116,27 +126,6 @@ def test_lambda_cgd_streams_keep_namespaces_after_resume():
             torch.testing.assert_close(
                 actual_stream.pytree, expected_stream.pytree, atol=0.0, rtol=0.0
             )
-
-
-@pytest.mark.parametrize("child", ["_first_state", "_second_state"])
-def test_paired_lambda_cgd_rejects_legacy_child(child):
-    template = {"w": torch.zeros(8)}
-    strategy = lambda_cgd_strategy(lambda_=0.5)
-    noise_fn, state = mf_gaussian_noise(
-        template,
-        strategy,
-        n_steps=4,
-        noise_multiplier=1.0,
-        key=key(42),
-        second_moment_strategy=strategy,
-    )
-    inputs = _paired(template)
-    _, state = noise_fn(inputs, state)
-    legacy_child = replace(getattr(state, child), _inner_state=None)
-    legacy = replace(state, **{child: legacy_child})
-
-    with pytest.raises(CheckpointError, match="incompatible stream history"):
-        noise_fn(inputs, legacy)
 
 
 class TestSecondMomentCalibration:
