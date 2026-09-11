@@ -150,7 +150,7 @@ class TestPoissonIdentity:
 
 
 class TestPoissonBandMf:
-    def test_passes_amplification_context_to_sensitivity(self, monkeypatch):
+    def test_requests_single_participation_sensitivity(self, monkeypatch):
         captured = {}
 
         def sensitivity(
@@ -176,10 +176,13 @@ class TestPoissonBandMf:
 
         proc.pld()
 
+        # Theorem 4 of arXiv:2306.08153 prices the repeat participations by
+        # the ``self_compose(num_groups)``, so this site must ask for the
+        # single-participation column norm explicitly.
         assert captured == {
             "n_steps": 6,
-            "min_sep": 1,
-            "max_participations": 6,
+            "min_sep": 6,
+            "max_participations": 1,
         }
 
     def test_pld_matches_self_composed_with_bands(self):
@@ -188,7 +191,11 @@ class TestPoissonBandMf:
         bands = 2
         n_steps = 100
         strategy = band_mf_strategy(bands=bands)
-        sens = strategy.sensitivity(n_steps=n_steps)
+        # Match the normaliser the amplifier applies: the single-participation
+        # column norm, not the schema sensitivity at the default min_sep=1.
+        sens = strategy.sensitivity(
+            n_steps=n_steps, min_sep=n_steps, max_participations=1
+        )
         proc = ftrl_acc.poisson(
             ftrl_acc.mf_gaussian(nm / sens, strategy),
             sample_rate=p,

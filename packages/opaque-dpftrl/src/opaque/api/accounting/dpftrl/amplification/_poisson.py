@@ -169,10 +169,18 @@ class CyclicPoisson(DpHorizonProcess):
 
         s = self.inner.strategy
         if isinstance(s, BandMfStrategy):
+            # Theorem 4 of https://arxiv.org/abs/2306.08153 reduces BandMF
+            # under cyclic-Poisson sampling to ``num_groups`` *sensitivity-κ*
+            # subsampled-Gaussian queries, where κ is the maximum column norm
+            # of C.  The repeat participations are priced by the
+            # ``self_compose(num_groups)`` below, so the normaliser here must
+            # be the single-participation value — ask for it explicitly
+            # rather than relying on the schema defaults, which describe the
+            # degenerate ``min_sep=1`` limit (see :attr:`min_sep`).
             sensitivity = s.sensitivity(
                 n_steps=self.n_steps,
-                min_sep=self.min_sep,
-                max_participations=self.max_participations,
+                min_sep=self.n_steps,
+                max_participations=1,
             )
             effective_nm = self.inner.noise_multiplier / sensitivity
             bands = s.bands

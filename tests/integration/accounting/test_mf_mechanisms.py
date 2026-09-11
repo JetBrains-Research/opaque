@@ -32,7 +32,9 @@ class TestBandMfGaussian:
     def test_fields_via_strategy(self):
         proc = _band(1.0, bands=2)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.strategy.sensitivity(n_steps=20) == pytest.approx(1.0, abs=1e-6)
+        assert proc.strategy.sensitivity(
+            n_steps=20, min_sep=20, max_participations=1
+        ) == pytest.approx(1.0, abs=1e-6)
         assert len(proc.strategy.coefficients(n_steps=20)) == proc.strategy.bands
         assert proc.strategy.bands == 2
 
@@ -101,7 +103,10 @@ class TestFtrlPoissonDataclass:
             n_steps=n_steps,
         )
 
-        sens = strategy.sensitivity(n_steps=n_steps)
+        # The route normalizes by the single-participation sensitivity.
+        sens = strategy.sensitivity(
+            n_steps=n_steps, min_sep=n_steps, max_participations=1
+        )
         manual = dpsgd_acc.poisson(dpsgd_acc.gaussian(nm / sens), rate) * n_steps
 
         assert proc.epsilon_at(1e-5) == pytest.approx(manual.epsilon_at(1e-5), rel=1e-6)

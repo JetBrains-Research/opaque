@@ -54,22 +54,43 @@ $d$ is the parameter dimension.
 
 ### Sensitivity
 
-Under single participation (each example appears at most once), the
-sensitivity is the maximum column $\ell_2$ norm of $C$:
+Sensitivity is a property of the *participation schema*, not of $C$ alone.
+Under single participation (each example appears at most once) it is the
+maximum column $\ell_2$ norm, which the Toeplitz optimization normalizes
+to 1 by construction:
 
-$$S = \max_j \|C_{\cdot, j}\|_2 = 1$$
+$$\kappa = \max_j \|C_{\cdot, j}\|_2 = 1$$
 
-This equals 1.0 by construction for the standard Toeplitz optimization.
+Under $b$-min-separation participation an example may contribute to up to
+$k' = \lceil n / \texttt{min\_sep} \rceil$ columns.  Because $C$ is
+$b$-banded, columns at least $b$ apart are orthogonal, so the schema
+sensitivity is
+
+$$S = \max_{\pi \in \Pi_{b}} \Big\| \sum_{j \in \pi} C_{\cdot, j} \Big\|_2
+\;\le\; \kappa \sqrt{k'}$$
+
+with equality when every participating column is untruncated
+([Choquette-Choo et al. 2023](https://arxiv.org/abs/2306.08153), Theorem 2).
+`band_mf_strategy(...).sensitivity(n_steps=..., min_sep=..., max_participations=...)`
+returns this value; pass `min_sep=n_steps, max_participations=1` to ask for
+$\kappa$ instead.
 
 ### Privacy analysis
 
-The entire training run reduces to a single Gaussian mechanism with
-effective noise multiplier:
+An **un-amplified** run reduces to a single Gaussian mechanism over the whole
+horizon with effective noise multiplier
 
-$$\sigma_{\text{eff}} = \frac{\sigma}{S} = \sigma$$
+$$\sigma_{\text{eff}} = \frac{\sigma}{S}$$
 
-The PLD is computed once for this effective Gaussian (not per-step),
-then optionally composed with subsampling amplification.
+evaluated at the `min_sep` / `max_participations` passed to
+`mf_gaussian(...)`.  The PLD is computed once for this effective Gaussian
+(not per-step).
+
+The amplified routes below do **not** use $S$.  Each prices repeat
+participations itself — cyclic Poisson by composing $k$ per-group PLDs,
+b-min-sep by its warm-start recursion — so both normalize by the
+single-participation $\kappa$.  Folding $\sqrt{k'}$ in there as well would
+double-count.
 
 ## Supported amplifications
 
@@ -86,7 +107,10 @@ separate `cyclic_poisson` factory).
 mechanism, we analyze $k$ independent Poisson-subsampled Gaussian mechanisms
 and compose them. Each group has:
 
-- Effective noise multiplier: $\sigma_{\text{eff}} = \sigma / S$
+- Effective noise multiplier: $\sigma_{\text{eff}} = \sigma / \kappa$, the
+  single-participation column norm — **not** $S$.  Repeat participation is
+  priced by the $k$-fold composition below, so normalizing by $S$ here
+  would count it twice.
 - Sample rate: $q$
 
 The total privacy is the $k$-fold self-composition of the per-group PLD:
@@ -152,14 +176,11 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
-    `opaque.dpftrl.accounting.poisson` wrapper (compose the Gaussian
-    mechanism directly if your accounting path supports it). Useful for
-    comparison when subsampling is not applicable.
-
-!!! note
-    The `dpftrl_acc.band_mf()` API takes pre-computed sensitivity and group count
-    from the noise strategy. For end-to-end usage, `mf_gaussian_noise()` +
-    `band_mf_strategy()` computes these automatically.
+    `opaque.dpftrl.accounting.poisson` wrapper. Pass the participation schema
+    you actually run under — `mf_gaussian(sigma, strategy, n_steps=n,
+    min_sep=b, max_participations=k)` — because the bare PLD is calibrated to
+    the schema sensitivity $S$, and the default `min_sep=1` means "an example
+    may participate on every step".
 
 ## Assumptions and limitations
 
