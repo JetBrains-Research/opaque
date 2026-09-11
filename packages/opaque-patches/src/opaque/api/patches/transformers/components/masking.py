@@ -23,8 +23,6 @@ def apply_module_masking_patch(mod) -> bool:
     if hasattr(mod, "create_sliding_window_causal_mask"):
         mod.create_sliding_window_causal_mask = vmap_create_sliding_window_causal_mask
         patched = True
-    # Hybrid linear-attention families (qwen3_next) import a recurrent 2D
-    # padding-mask builder whose all-ones short-circuit is not vmap-safe.
     if hasattr(mod, "create_recurrent_attention_mask"):
         mod.create_recurrent_attention_mask = vmap_create_recurrent_attention_mask
         patched = True
