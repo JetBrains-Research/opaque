@@ -1571,7 +1571,7 @@ class DPTrainer:
                 lr_schedule=lr_schedule,
             )
             sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-            tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+            tb_raw = sk.get("truncated_batch_size")
             mf_amplifier_factory = _dpftrl.build_amplifier_factory(
                 sampling_mode=a.sampling_mode,
                 strategy=mf_strategy,
@@ -1627,7 +1627,7 @@ class DPTrainer:
             total_steps=total_steps,
         )
         _sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        _trunc_cap = _sk.get("truncated_batch_size", _sk.get("max_batch_size"))
+        _trunc_cap = _sk.get("truncated_batch_size")
         log.info(
             "Resolved privacy config: delta=%.2e, noise_multiplier=%.4f (%s), "
             "sample_rate=%.6f, total_steps=%d, truncated_batch_size=%s",
@@ -4317,8 +4317,8 @@ class DPTrainer:
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
         """
         ca = a.clipping_kwargs
-        target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
-        clip_norm_max = float(ca.get("norm_max", 10.0))
+        target_quantile = float(ca.get("target_quantile", 0.5))
+        clipping_norm_max = float(ca.get("clipping_norm_max", 10.0))
         auto_gamma = float(ca.get("gamma", 0.01))
         compiler = self._grad_compiler()
 
@@ -4329,8 +4329,8 @@ class DPTrainer:
                 has_aux=has_aux,
                 batch_argnums=batch_argnums,
                 initial_clipping_norm=clip_norm,
-                target_quantile=target_clip_rate,
-                clipping_norm_max=clip_norm_max,
+                target_quantile=target_quantile,
+                clipping_norm_max=clipping_norm_max,
                 microbatch_size=microbatch_size,
                 return_aux=True,
                 key=quantile_noise_key,
@@ -4415,7 +4415,7 @@ class DPTrainer:
             return acc.nonprivate() if nm == 0.0 else _b(nm)
 
         sk = a.sampling_kwargs if isinstance(a.sampling_kwargs, dict) else {}
-        tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+        tb_raw = sk.get("truncated_batch_size")
         tb_cap = int(tb_raw) if tb_raw is not None else None
 
         if a.sampling_mode == "k_out_of_t":

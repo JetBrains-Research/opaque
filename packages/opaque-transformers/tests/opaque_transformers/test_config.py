@@ -552,15 +552,17 @@ class TestClippingAndSamplingSurfaces:
 
     def test_clipping_kwargs_json_string_parsed(self):
         args = TrainingArguments(
-            privacy_noise_multiplier=1.0, clipping_kwargs='{"norm_max": 9.0}'
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs='{"clipping_norm_max": 9.0}',
         )
-        assert args.clipping_kwargs == {"norm_max": 9.0}
+        assert args.clipping_kwargs == {"clipping_norm_max": 9.0}
 
     def test_sampling_kwargs_json_string_parsed(self):
         args = TrainingArguments(
-            privacy_noise_multiplier=1.0, sampling_kwargs='{"max_batch_size": 8}'
+            privacy_noise_multiplier=1.0, sampling_kwargs='{"truncated_batch_size": 8}'
         )
-        assert args.sampling_kwargs == {"max_batch_size": 8}
+        assert args.sampling_kwargs == {"truncated_batch_size": 8}
 
     def test_sampling_kwargs_rejects_bands(self):
         """``bands`` is owned by the strategy, not the sampler kwargs."""
@@ -579,6 +581,64 @@ class TestClippingAndSamplingSurfaces:
                 privacy_noise_mechanism="mf_band",
                 sampling_kwargs={"sampling_prob": 0.1},
             )
+
+    @pytest.mark.parametrize(
+        ("field", "selector"),
+        [
+            ("clipping_kwargs", {}),
+            ("sampling_kwargs", {}),
+            ("privacy_noise_mechanism_kwargs", {}),
+            ("noise_calibration_kwargs", {}),
+        ],
+    )
+    def test_privacy_kwargs_reject_unknown_keys(self, field, selector):
+        with pytest.raises(
+            ValueError,
+            match=rf"{field} contains unsupported keys.*unknown.*Allowed:",
+        ):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                **selector,
+                **{field: {"unknown": 1}},
+            )
+
+    @pytest.mark.parametrize(
+        ("field", "value", "selector"),
+        [
+            (
+                "clipping_kwargs",
+                {"target_clipping_rate": 0.5},
+                {"clipping_mode": "adaptive"},
+            ),
+            (
+                "clipping_kwargs",
+                {"norm_max": 10.0},
+                {"clipping_mode": "adaptive"},
+            ),
+            ("sampling_kwargs", {"max_batch_size": 8}, {}),
+        ],
+    )
+    def test_privacy_kwargs_reject_legacy_aliases(self, field, value, selector):
+        with pytest.raises(ValueError, match=rf"{field} contains unsupported keys"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                **selector,
+                **{field: value},
+            )
+
+    def test_adaptive_clipping_accepts_public_factory_names(self):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            clipping_mode="adaptive",
+            clipping_kwargs={
+                "target_quantile": 0.9,
+                "clipping_norm_max": 50.0,
+            },
+        )
+        assert args.clipping_kwargs == {
+            "target_quantile": 0.9,
+            "clipping_norm_max": 50.0,
+        }
 
 
 class TestMechanismAndSamplerDefaults:
@@ -813,35 +873,41 @@ class TestDictFieldInputContract:
     def test_mapping_input_materialises_to_dict(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
-            clipping_kwargs=_FakeDictConfig({"target_clipping_rate": 0.5}),
+            clipping_mode="adaptive",
+            clipping_kwargs=_FakeDictConfig({"target_quantile": 0.5}),
         )
         assert isinstance(args.clipping_kwargs, dict)
-        assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
+        assert args.clipping_kwargs == {"target_quantile": 0.5}
 
     def test_nested_listconfig_materialises_to_list(self):
         # A Mapping containing a non-list Sequence (e.g. OmegaConf
         # ListConfig).  The nested container must come back as a plain
         # list — silently fixes the OmegaConf nested-ListConfig leak.
-        nested = _FakeDictConfig({"items": _FakeListConfig([1, 2, 3])})
-        args = TrainingArguments(privacy_noise_multiplier=1.0, clipping_kwargs=nested)
-        assert args.clipping_kwargs == {"items": [1, 2, 3]}
-        assert isinstance(args.clipping_kwargs["items"], list)
+        nested = _FakeDictConfig({"include": _FakeListConfig([1, 2, 3])})
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            performance_kernels_config=nested,
+        )
+        assert args.performance_kernels_config == {"include": [1, 2, 3]}
+        assert isinstance(args.performance_kernels_config["include"], list)
 
     def test_json_string_input_parses(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
-            clipping_kwargs='{"target_clipping_rate": 0.5}',
+            clipping_mode="adaptive",
+            clipping_kwargs='{"target_quantile": 0.5}',
         )
-        assert args.clipping_kwargs == {"target_clipping_rate": 0.5}
+        assert args.clipping_kwargs == {"target_quantile": 0.5}
 
     def test_hf_comma_string_input_parses(self):
         args = TrainingArguments(
             privacy_noise_multiplier=1.0,
-            clipping_kwargs="target_clipping_rate=0.5,norm_max=10.0",
+            clipping_mode="adaptive",
+            clipping_kwargs="target_quantile=0.5,clipping_norm_max=10.0",
         )
         assert args.clipping_kwargs == {
-            "target_clipping_rate": 0.5,
-            "norm_max": 10.0,
+            "target_quantile": 0.5,
+            "clipping_norm_max": 10.0,
         }
 
     def test_optim_args_accepts_mapping(self):

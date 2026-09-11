@@ -845,7 +845,7 @@ def _validate_sampler_cli(
 def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
     sk: dict[str, Any] = {}
     if args.max_batch_size is not None:
-        sk["max_batch_size"] = args.max_batch_size
+        sk["truncated_batch_size"] = args.max_batch_size
     if args.sampler == "k_out_of_t":
         sk["k"] = int(args.k)
         sk["allocation"] = args.allocation
@@ -1103,11 +1103,16 @@ def main() -> int:
             if args.per_group_clipping
             else args.clipping_norm
         ),
-        clipping_kwargs={
-            "target_clipping_rate": args.target_clipping_rate,
-            "norm_max": args.clipping_norm_max,
-            "gamma": args.auto_clipping_gamma,
-        },
+        clipping_kwargs=(
+            {
+                "target_quantile": args.target_clipping_rate,
+                "clipping_norm_max": args.clipping_norm_max,
+            }
+            if args.clipping_mode == "adaptive"
+            else {"gamma": args.auto_clipping_gamma}
+            if args.clipping_mode == "auto"
+            else {}
+        ),
         sampling_mode=args.sampler,
         sampling_kwargs=_sampling_kwargs_for_trainer(args),
         privacy_noise_mechanism=args.noise_mechanism,

@@ -210,6 +210,35 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
     "mf_lambda_cgd": frozenset({"balls_in_bins"}),
 }
 
+_CLIPPING_KWARGS: dict[str, frozenset[str]] = {
+    "fixed": frozenset(),
+    "adaptive": frozenset({"target_quantile", "clipping_norm_max"}),
+    "auto": frozenset({"gamma"}),
+}
+
+_SAMPLING_KWARGS: dict[str, frozenset[str]] = {
+    "poisson": frozenset({"truncated_batch_size"}),
+    "k_out_of_t": frozenset({"k", "allocation"}),
+    "b_min_sep": frozenset(),
+    "balls_in_bins": frozenset(),
+    "cyclic_poisson": frozenset(),
+    "sequential": frozenset(),
+}
+
+_MECHANISM_KWARGS: dict[str, frozenset[str]] = {
+    "gaussian": frozenset({"bound", "compute_dtype"}),
+    "mf_band": frozenset({"bands", "momentum", "lr_schedule"}),
+    "mf_blt": frozenset({"max_buffers", "momentum", "lr_schedule"}),
+    "mf_bisr": frozenset(
+        {"bandwidth", "normalized", "momentum", "lr_schedule", "inv_coefficients"}
+    ),
+    "mf_bsr": frozenset({"bandwidth", "alpha", "beta"}),
+    "mf_lambda_cgd": frozenset({"lambda_", "normalized", "lr_schedule"}),
+    "mf_identity": frozenset(),
+}
+
+_NOISE_CALIBRATION_KWARGS = frozenset({"min", "max", "tolerance"})
+
 # Participation samplers require restoring their saved cursor.
 _CURSOR_FREE_SAMPLING_MODES: frozenset[str] = frozenset({"poisson"})
 
@@ -233,6 +262,26 @@ _MECH_DEFAULTS: dict[str, dict[str, Any]] = {
     "mf_lambda_cgd": {"lambda_": 0.5},
     "mf_identity": {},
 }
+
+
+def _validate_privacy_kwargs(
+    field_name: str,
+    kwargs: dict[str, Any],
+    allowed: frozenset[str],
+    *,
+    selector: str | None = None,
+    value: str | None = None,
+) -> None:
+    extra = set(kwargs) - allowed
+    if extra:
+        context = f" for {selector}={value!r}" if selector is not None else ""
+        raise ConfigurationError(
+            *(
+                f"{field_name} contains unsupported keys{context}: {sorted(extra)}. "
+                f"Allowed: {sorted(allowed) or '<none>'}.",
+            )
+        )
+
 
 if TYPE_CHECKING:
     from opaque.scheduling.types import Schedule
@@ -502,6 +551,8 @@ class TrainingArguments:
 
     # ---- Clipping (mode + JSON-style args, HF ``optim_args`` pattern) ---
     clipping_mode: str = "fixed"
+    #: Mode-specific clipping factory kwargs. Adaptive clipping accepts
+    #: ``target_quantile`` / ``clipping_norm_max``; AUTO-S accepts ``gamma``.
     clipping_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Noise mechanism / fixed multiplier -------------------------------
@@ -1269,16 +1320,12 @@ class TrainingArguments:
                     )
             if (
                 self.sampling_mode == "k_out_of_t"
-                and {
-                    "truncated_batch_size",
-                    "max_batch_size",
-                }
-                & self.sampling_kwargs.keys()
+                and "truncated_batch_size" in self.sampling_kwargs
             ):
                 raise ConfigurationError(
                     *(
-                        "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                        "supported with sampling_mode='poisson'.",
+                        "sampling_kwargs['truncated_batch_size'] is only supported "
+                        "with sampling_mode='poisson'.",
                     )
                 )
         elif self.sampling_mode == "k_out_of_t":
@@ -1288,6 +1335,33 @@ class TrainingArguments:
                     "'k' and 'allocation'.",
                 )
             )
+
+        _validate_privacy_kwargs(
+            "clipping_kwargs",
+            self.clipping_kwargs,
+            _CLIPPING_KWARGS[self.clipping_mode],
+            selector="clipping_mode",
+            value=self.clipping_mode,
+        )
+        _validate_privacy_kwargs(
+            "sampling_kwargs",
+            self.sampling_kwargs,
+            _SAMPLING_KWARGS[self.sampling_mode],
+            selector="sampling_mode",
+            value=self.sampling_mode,
+        )
+        _validate_privacy_kwargs(
+            "privacy_noise_mechanism_kwargs",
+            self.privacy_noise_mechanism_kwargs,
+            _MECHANISM_KWARGS[self.privacy_noise_mechanism],
+            selector="privacy_noise_mechanism",
+            value=self.privacy_noise_mechanism,
+        )
+        _validate_privacy_kwargs(
+            "noise_calibration_kwargs",
+            self.noise_calibration_kwargs,
+            _NOISE_CALIBRATION_KWARGS,
+        )
 
     # =================================================================
     # Distributed property contract (replaces HF `distributed_state`-driven
