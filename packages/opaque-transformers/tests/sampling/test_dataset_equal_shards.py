@@ -98,12 +98,13 @@ def test_divisible_dataset_shards_equally():
     assert sizes == {0: 4, 1: 4, 2: 4}
 
 
-def test_non_divisible_dataset_trimmed():
-    """N=10, W=3 trims to 9 (3/rank)."""
+def test_non_divisible_dataset_trimmed(caplog):
+    """N=10, W=3 trims to 9 (3/rank) and reports the dropped example."""
     sizes = {
         r: len(_shard_for(dataset_size=10, world_size=3, rank=r)) for r in range(3)
     }
     assert sizes == {0: 3, 1: 3, 2: 3}
+    assert "dropping 1 tail example(s) to 9" in caplog.text
 
 
 def test_smaller_than_world_size_rejected():

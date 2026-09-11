@@ -3793,6 +3793,16 @@ class DPTrainer:
             if effective_n < len(dataset):
                 from torch.utils.data import Subset
 
+                log.warning(
+                    "Train dataset has %d example(s), not evenly divisible by "
+                    "world_size=%d; dropping %d tail example(s) to %d. The "
+                    "accounting sample-rate denominator is the trimmed "
+                    "length, not len(train_dataset).",
+                    len(dataset),
+                    world_size,
+                    len(dataset) - effective_n,
+                    effective_n,
+                )
                 dataset = Subset(dataset, range(effective_n))
             dataset = local_shard(
                 dataset,
@@ -4567,9 +4577,8 @@ class DPTrainer:
         an identical-length shard (fixed-order samplers need this to keep
         batch counts in sync across ranks), so when ``len(train_dataset)``
         is not an exact multiple of ``world_size`` the
-        ``len(train_dataset) % world_size`` tail example(s) are dropped, a
-        warning is logged, and the trimmed length becomes the accounting
-        sample-rate denominator.
+        ``len(train_dataset) % world_size`` tail example(s) are dropped and
+        the trimmed length becomes the accounting sample-rate denominator.
 
         Raises:
             ConfigurationError: If the (possibly trimmed) train dataset is
@@ -4582,18 +4591,7 @@ class DPTrainer:
         if world_size <= 1:
             return n
         if n % world_size != 0:
-            trimmed = n - (n % world_size)
-            log.warning(
-                "Train dataset has %d example(s), not evenly divisible by "
-                "world_size=%d; dropping %d tail example(s) to %d. The "
-                "accounting sample-rate denominator is the trimmed "
-                "length, not len(train_dataset).",
-                n,
-                world_size,
-                n - trimmed,
-                trimmed,
-            )
-            n = trimmed
+            n -= n % world_size
         if n == 0:
             raise ConfigurationError(
                 *(
