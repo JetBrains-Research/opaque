@@ -184,10 +184,12 @@ def clipped_grad(
             the same as the dtypes of the gradient function. Can be useful to avoid
             overflow issues when using low-precision dtypes as the returned function
             computes a sum over a potentially large batch.
-        compute_dtype: Internal accumulation dtype for reductions (per-example
-            clip-norm and the across-batch sum). ``None`` (default) auto-promotes
-            bf16/fp16 to float32 for numerical stability. Independent of
-            ``dtype`` (which controls the *output* dtype).
+        compute_dtype: Internal reduction and accumulation dtype. ``None``
+            (default) auto-promotes bf16/fp16 to float32 for numerical stability;
+            an explicit dtype selects the reduction precision. Leaf scaling and
+            microbatch accumulation use the wider of this dtype and the leaf or
+            output storage dtype, so explicit lower precision never narrows a wider
+            value. Independent of ``dtype`` (which controls the *output* dtype).
         second_moment: Whether to accumulate the clipped-gradient second
             moment required by DP-FTRL noise mechanisms.
     Returns:

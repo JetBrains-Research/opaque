@@ -153,6 +153,36 @@ def test_low_precision_leaf_does_not_zero_its_neighbours(low):
         assert clipped[name].abs().sum() > 0, f"{name} was zeroed by the {low} leaf"
 
 
+def test_final_cast_rounds_outward_subnormals_toward_zero():
+    """An fp16 final cast cannot increase a subnormal clipped value past C."""
+    quantum = (
+        torch.finfo(torch.float16).smallest_normal * torch.finfo(torch.float16).eps
+    )
+    clipped, _ = clip_pytree(
+        {"w": torch.tensor([2.0**-10], dtype=torch.float16)},
+        clipping_norm=0.5015 * quantum,
+        compute_dtype=torch.float32,
+    )
+
+    assert torch.equal(clipped["w"], torch.zeros(1, dtype=torch.float16))
+
+
+@pytest.mark.parametrize("dtype", LOW_PRECISION_DTYPES)
+def test_low_precision_scaling_uses_compute_dtype(dtype):
+    """A wider compute dtype pays only for the final storage rounding."""
+    ratio = torch.ones((), dtype=torch.float64)
+    native = _pytree._finalize_scale(ratio, dtype, dtype, 0.0, clamp_to_one=False)
+    widened = _pytree._finalize_scale(
+        ratio, dtype, torch.float32, 0.0, clamp_to_one=False
+    )
+    assert widened > native
+
+    leaf = torch.tensor([1.0, 0.5, -0.75], dtype=dtype)
+    scaled = _pytree._scale_tensor(leaf, ratio, torch.float32, 0.0, clamp_to_one=False)
+    expected = (leaf.float() * widened.float()).to(dtype)
+    assert torch.equal(scaled, expected)
+
+
 # ----------------------------------------------------------------------------
 # Documented edge cases stay exact
 # ----------------------------------------------------------------------------

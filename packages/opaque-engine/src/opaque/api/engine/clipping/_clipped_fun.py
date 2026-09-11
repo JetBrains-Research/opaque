@@ -476,17 +476,21 @@ def clipped_fun(
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
             Set this to reduce peak memory usage at the cost of slightly slower computation.
-            The running sum is held in ``compute_dtype``, so a bf16/fp16 run keeps
-            one float32 copy of the summed output.  Pass ``compute_dtype=torch.bfloat16``
-            to give that memory back, at the cost of the accumulation precision.
+            The running sum is held in the wider of ``compute_dtype`` and the
+            output dtype, so a bf16/fp16 run keeps one float32 copy of the summed
+            output. Pass ``compute_dtype=torch.bfloat16`` to give that memory back,
+            at the cost of accumulation precision when the output dtype is also low
+            precision.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
-        compute_dtype: Internal accumulation dtype for reductions (per-example
-            clip-norm and the across-batch sum).  ``None`` (default) auto-promotes
-            bf16/fp16 to float32 for numerical stability; explicit dtype forces
-            that precision regardless of input.  Independent of ``dtype`` (which
-            controls the *output* dtype).  Applies across microbatches too, so
-            microbatched and non-microbatched runs agree to float32 precision.
+        compute_dtype: Internal reduction and accumulation dtype. ``None``
+            (default) auto-promotes bf16/fp16 to float32 for numerical stability;
+            an explicit dtype selects the reduction precision. Leaf scaling and
+            microbatch accumulation use the wider of this dtype and the leaf or
+            output storage dtype, so explicit lower precision never narrows a wider
+            value. Independent of ``dtype`` (which controls the *output* dtype).
+            Applies across microbatches too, so microbatched and non-microbatched
+            runs agree at their resolved accumulation precision.
     Returns:
         A tuple ``(clip_fn, FixedClipState)`` where ``clip_fn(*args, state=...)``
         clips the output of ``fun`` and sums across the batch.  The exact

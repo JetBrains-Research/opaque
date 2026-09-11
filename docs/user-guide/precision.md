@@ -61,19 +61,21 @@ that region and produce the sensitivity bound and noise scale the privacy
 accountant relies on.
 
 - **Use the safe defaults.** Clipping defaults to `compute_dtype=None`, which
-  promotes `bfloat16` and `float16` inputs to `float32` for L2 reductions while
-  leaving `float32` and `float64` inputs unchanged. Both `gaussian_noise(...)`
-  and `mf_gaussian_noise(...)` default to
+  promotes `bfloat16` and `float16` inputs to `float32` for L2 reductions and
+  leaf scaling while leaving `float32` and `float64` inputs unchanged. Both
+  `gaussian_noise(...)` and `mf_gaussian_noise(...)` default to
   `compute_dtype=torch.float32`.
 - **Do not lower precision without a separate numerical argument.** Setting
   `compute_dtype=torch.bfloat16` or `torch.float16` can make the realized
   sensitivity and noise scale diverge from the accountant's model.
 - **You can raise it.** Pass `compute_dtype=torch.float64` explicitly to both
   clipping and noise when higher-precision reductions and sampling are needed.
-- **Output dtype is separate.** A scale computed at higher precision must still
-  be stored in each output leaf's dtype. Clipping conservatively shrinks the
-  scale by a few ULPs of that leaf's dtype so the stored value continues to
-  satisfy `norm(output) <= clipping_norm`.
+- **The final output cast still matters.** Clipping multiplies in the wider of
+  `compute_dtype` and the leaf's storage precision, then casts the result once
+  to the leaf dtype. That final cast can round up past the bound,
+  so clipping conservatively shrinks each leaf's scale and rounds outward
+  subnormal casts toward zero to preserve `norm(output) <= clipping_norm` on
+  the values as stored.
 
 Under microbatching, the running sum is held at the accumulation precision and
 cast once at the end. A `bfloat16` run therefore uses one model-sized float32
