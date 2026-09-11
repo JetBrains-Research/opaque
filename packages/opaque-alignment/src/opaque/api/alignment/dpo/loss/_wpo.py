@@ -81,4 +81,5 @@ def wpo_weights(
             aligned_logps = aligned_logps - log_denom
         masked_logps = torch.where(mask, aligned_logps, 0.0)
         mean_logps = masked_logps.sum(dim=-1) / token_count.to(acc_dtype)
-        return mean_logps.exp()
+        weights = mean_logps.exp()
+    return weights
