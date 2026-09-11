@@ -1710,6 +1710,56 @@ class TestDPTrainerCheckpointing:
         out2 = trainer2.train(resume_from_checkpoint=str(tmp_path / "checkpoint-2"))
         assert out2.global_step == 6
 
+    def test_resume_normalizes_prefetched_legacy_sampler_cursor(
+        self, gpt2_with_lora, tiny_lm_dataset, tmp_path, caplog
+    ):
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
+        batches: list[torch.Tensor] = []
+
+        class _CaptureBatches(DPTrainer):
+            def training_step(self, model, inputs):
+                batches.append(inputs["input_ids"].detach().clone())
+                return super().training_step(model, inputs)
+
+        model, tokenizer = gpt2_with_lora
+        trainer = _CaptureBatches(
+            model=model,
+            args=self._common_args(tmp_path, max_steps=6),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        trainer.train()
+        expected_batches = batches[2:]
+        batches.clear()
+
+        checkpoint = tmp_path / "checkpoint-2"
+        runtime_path = checkpoint / ckpt.DP_STATE_NAME
+        payload = ckpt.load_dp_runtime_state(str(runtime_path))
+        assert payload.version == 7
+        # Simulate a legacy snapshot taken after workers prefetched all draws.
+        payload.sampler_state["consumed"] = 6
+        torch.save(payload, runtime_path)
+
+        resumed = _CaptureBatches(
+            model=model,
+            args=self._common_args(tmp_path / "resumed", max_steps=6),
+            processing_class=tokenizer,
+            train_dataset=tiny_lm_dataset,
+        )
+        result = resumed.train(resume_from_checkpoint=str(checkpoint))
+
+        assert result.global_step == 6
+        assert len(batches) == len(expected_batches) == 4
+        for actual, expected in zip(batches, expected_batches, strict=True):
+            assert torch.equal(actual, expected)
+        assert "Clamping checkpoint sampler consumed=6 to global_step=2" in caplog.text
+        for step in (4, 6):
+            saved = ckpt.load_dp_runtime_state(
+                str(tmp_path / "resumed" / f"checkpoint-{step}" / ckpt.DP_STATE_NAME)
+            )
+            assert saved.sampler_state["consumed"] == step
+
     def test_chained_resume_after_ignore_data_skip_keeps_cursor_aligned(
         self, gpt2_with_lora, tiny_lm_dataset, tmp_path
     ):

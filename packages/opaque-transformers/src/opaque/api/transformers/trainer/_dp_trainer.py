@@ -1251,15 +1251,33 @@ class DPTrainer:
                     ctx.target_delta,
                 )
 
+        saved_sampler_state = (
+            runtime_payload.sampler_state if runtime_payload is not None else None
+        )
+        # Older snapshots may include prefetched, untrained draws.
+        # Normalize before deserialization replays the saved RNG stream.
+        if (
+            not a.ignore_data_skip
+            and saved_sampler_state is not None
+            and "consumed" in saved_sampler_state
+            and int(saved_sampler_state["consumed"]) > self.state.global_step
+        ):
+            log.warning(
+                "Clamping checkpoint sampler consumed=%s to global_step=%d "
+                "before restoring the sampler.",
+                saved_sampler_state["consumed"],
+                self.state.global_step,
+            )
+            saved_sampler_state = {
+                **saved_sampler_state,
+                "consumed": self.state.global_step,
+            }
+
         try:
             return self._inner_training_loop(
                 ctx,
                 resume_path=resume_path,
-                saved_sampler_state=(
-                    runtime_payload.sampler_state
-                    if runtime_payload is not None
-                    else None
-                ),
+                saved_sampler_state=saved_sampler_state,
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
         finally:

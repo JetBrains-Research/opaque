@@ -80,6 +80,11 @@ queries and privacy-based early stopping are unsupported, so combining a fixed
 the latest `checkpoint-*/` under `output_dir`, or `None` for a fresh
 run.
 
+Sampler checkpoints track trainer-consumed batches, excluding worker prefetch.
+On restore, a saved cursor greater than `global_step` is clamped to
+`global_step` with a warning before replaying the sampler stream. Smaller
+cursors are preserved, including those from an `ignore_data_skip` restart.
+
 ## Per-example eval losses
 
 Setting `args.include_for_metrics=["loss"]` switches the eval path to
