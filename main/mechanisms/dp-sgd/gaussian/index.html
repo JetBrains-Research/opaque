@@ -1751,17 +1751,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#bounded-noise-variant" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bounded noise variant
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3426,17 +3415,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#bounded-noise-variant" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bounded noise variant
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3471,7 +3449,7 @@
 <p>The standard noise mechanism for differential privacy. Adds independent
 Gaussian noise <span class="arithmatex">\(\mathcal{N}(0, \sigma^2)\)</span> with unbounded support to
 sensitivity-1 queries. This is the default mechanism for DP-SGD and the
-building block on which the bounded variants improve.</p>
+building block for per-group and paired-stream noise allocation.</p>
 <h2 id="idea">Idea<a class="headerlink" href="#idea" title="Permanent link">&para;</a></h2>
 <p>Given a function <span class="arithmatex">\(f\)</span> with sensitivity <span class="arithmatex">\(\Delta\)</span> (the maximum change in
 <span class="arithmatex">\(f\)</span> when one training example is added or removed), adding noise from
@@ -3481,10 +3459,9 @@ private. The ratio <span class="arithmatex">\(\sigma / \Delta\)</span> is the <s
 values mean more privacy (lower <span class="arithmatex">\(\varepsilon\)</span>) but more gradient corruption.</p>
 <p><strong>Advantages</strong>: Simple, well-understood, no extra parameters beyond the
 noise multiplier.</p>
-<p><strong>Limitation</strong>: Unbounded support means the worst-case privacy loss is
-technically infinite; the <span class="arithmatex">\(\delta\)</span> parameter bounds the probability of
-extreme privacy loss. The bounded variant (<code>gaussian_noise(bound=...)</code>)
-eliminates this tail risk.</p>
+<p><strong>Limitation</strong>: Unbounded support means private outputs can have extreme
+values; the <span class="arithmatex">\(\delta\)</span> parameter bounds the probability of extreme privacy
+loss.</p>
 <h2 id="mathematics">Mathematics<a class="headerlink" href="#mathematics" title="Permanent link">&para;</a></h2>
 <h3 id="noise-distribution">Noise distribution<a class="headerlink" href="#noise-distribution" title="Permanent link">&para;</a></h3>
 <div class="arithmatex">\[f(x; \mu) = \frac{1}{\sigma\sqrt{2\pi}} \exp\!\left(-\frac{(x - \mu)^2}{2\sigma^2}\right)\]</div>
@@ -3602,42 +3579,12 @@ sample. A given example may appear on multiple workers.</p>
 <li>If <span class="arithmatex">\(\varepsilon &gt; 10\)</span> after calibration, the privacy guarantee is weak.
   Consider more noise, fewer steps, or a larger dataset.</li>
 </ul>
-<h2 id="bounded-noise-variant">Bounded noise variant<a class="headerlink" href="#bounded-noise-variant" title="Permanent link">&para;</a></h2>
-<p>Pass <code>bound=B</code> (or <code>bound=(low, high)</code>) to <code>gaussian_noise()</code> to sample
-from a Gaussian renormalized over <span class="arithmatex">\([-B, B]\)</span> (or <span class="arithmatex">\([\text{low}, \text{high}]\)</span>)
-per coordinate — the <em>bounded Gaussian mechanism</em> of
-<a href="https://arxiv.org/abs/2211.17230">Chen and Hale (2024)</a>.
-Bounds are absolute (same scale as the gradient / clip norm), not multiples
-of <span class="arithmatex">\(\sigma\)</span>. Treat <code>bound=</code> as experimental: <code>dpsgd_acc.gaussian()</code> does not
-cover this variant.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Noise injection: bounded support, symmetric absolute bound</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="p">)</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1"># Asymmetric bound:</span>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">noise_multiplier</span><span class="o">=</span><span class="n">noise_multiplier</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="p">)</span>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1"># Accounting (unchanged from the unbounded mechanism)</span>
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-</code></pre></div>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Abadi et al. (2016)</strong> — <a href="https://arxiv.org/abs/1607.00133">Deep Learning with Differential Privacy</a>.
   Introduced DP-SGD with the Gaussian mechanism.</li>
 <li><strong>Balle, Barthe, Gaboardi (2018)</strong> — <a href="https://arxiv.org/abs/1807.01647">Privacy Amplification by Subsampling: Tight Analyses via Couplings and Divergences</a>.
   Poisson subsampling amplification analysis.</li>
-<li><strong>Chen and Hale (2024)</strong> — <a href="https://arxiv.org/abs/2211.17230">The Bounded Gaussian Mechanism for Differential Privacy</a>.
-  Introduces the bounded Gaussian mechanism.</li>
 </ul>
 
 

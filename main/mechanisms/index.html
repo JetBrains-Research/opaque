@@ -3219,9 +3219,6 @@ gradient sum. Simple and broadly applicable.</p>
 </tr>
 </tbody>
 </table>
-<p>For bounded noise support, pass <code>bound=B</code> (or <code>bound=(low, high)</code>) to
-<code>gaussian_noise()</code> while accounting with <code>opaque.dpsgd.accounting.gaussian()</code>.
-See <a href="dp-sgd/gaussian/#bounded-noise-variant">Gaussian — Bounded noise variant</a>.</p>
 <h2 id="correlated-noise-dp-ftrl">Correlated noise (DP-FTRL)<a class="headerlink" href="#correlated-noise-dp-ftrl" title="Permanent link">&para;</a></h2>
 <p>Instead of independent noise at each step, matrix-factorization (MF)
 mechanisms add <em>correlated</em> noise designed to partially cancel over
@@ -3282,15 +3279,13 @@ second-moment caveats), see the <a href="../user-guide/dp-ftrl/">DP-FTRL user gu
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Need correlated noise across steps (DP-FTRL)?
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├─ No ─── Gaussian (standard DP-SGD)
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│         Pass bound=... to gaussian_noise() for bounded support if desired;
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│         accounting always uses opaque.dpsgd.accounting.gaussian().
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└─ Yes ── Constraints?
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├─ Zero extra memory → DP-λCGD (PRNG replay)
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├─ Asymptotically optimal → BISR (generalizes λCGD)
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          ├─ Closed-form workload (α&gt;β) → BSR (NeurIPS 2024)
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>          ├─ n &lt; 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>          └─ n &gt; 5000, multi-epoch → BLT (memory-efficient)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>└─ Yes ── Constraints?
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>          ├─ Zero extra memory → DP-λCGD (PRNG replay)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>          ├─ Asymptotically optimal → BISR (generalizes λCGD)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├─ Closed-form workload (α&gt;β) → BSR (NeurIPS 2024)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>          ├─ n &lt; 5000 → BandMF + opaque.dpftrl.accounting.poisson (good default)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          └─ n &gt; 5000, multi-epoch → BLT (memory-efficient)
 </code></pre></div>
 <p>For most DP-SGD workloads, <strong>Gaussian</strong> is the right starting point.
 Use an MF mechanism only when you need the privacy-utility improvement

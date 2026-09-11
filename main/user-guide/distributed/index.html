@@ -3717,9 +3717,6 @@ following types are registered:</p>
 </tr>
 </tbody>
 </table>
-<p>The bounded Gaussian path (<code>gaussian_noise(..., bound=...)</code>) also returns
-<code>GaussianNoiseState</code>, so <code>sync()</code> handles it automatically — no extra
-helpers needed.</p>
 <h3 id="noise-scaling-depends-on-the-key-not-on-the-reduction">Noise scaling depends on the key, not on the reduction<a class="headerlink" href="#noise-scaling-depends-on-the-key-not-on-the-reduction" title="Permanent link">&para;</a></h3>
 <p>Summing noised local queries scales <code>noise_stddev</code> by <code>sqrt(world_size)</code> — but
 only when the summands are <strong>independent</strong>. <code>NoisedPytree</code> carries no record of

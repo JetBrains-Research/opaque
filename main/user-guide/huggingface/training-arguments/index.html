@@ -3552,7 +3552,7 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 </tr>
 <tr>
 <td><code>privacy_noise_mechanism_kwargs</code></td>
-<td>Mechanism extras. For <code>"gaussian"</code>: for example, <code>bound=...</code> for the bounded Gaussian variant. For <code>mf_*</code>: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below).</td>
+<td>Mechanism extras. For <code>"gaussian"</code>: <code>compute_dtype</code> as a native <code>torch.dtype</code> or the string names <code>float16</code>, <code>bfloat16</code>, <code>float32</code>, <code>float64</code>. For <code>mf_*</code>: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below).</td>
 </tr>
 <tr>
 <td><code>noise_calibration_kwargs</code></td>
