@@ -52,11 +52,9 @@ args = TrainingArguments(
   `parallel_poisson` accounting.
 
 `per_rank` requires the public, fixed training population length to be evenly
-divisible by `WORLD_SIZE`. By default (`ddp_drop_uneven_population=True`),
-`DPTrainer` drops the remaining tail examples and logs a warning; the dropped
-tail changes both the sharding and the accounting sample-rate denominator.
-Set `ddp_drop_uneven_population=False` to instead raise a configuration
-error on a non-divisible population.
+divisible by `WORLD_SIZE`. When it isn't, `DPTrainer` drops the remaining
+tail examples and logs a warning; the dropped tail changes both the
+sharding and the accounting sample-rate denominator.
 
 ## Metrics and eval gather
 

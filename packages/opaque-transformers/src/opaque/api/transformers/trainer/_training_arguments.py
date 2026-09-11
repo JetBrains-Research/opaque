@@ -363,15 +363,6 @@ class TrainingArguments:
     # Timeout (seconds) for the auto ``init_process_group`` call made by
     # ``resolve_ddp_state`` when ``WORLD_SIZE > 1``. Matches HF default.
     ddp_timeout: int = 1800
-    # ``DPTrainer`` requires ``len(train_dataset)`` to be an exact multiple
-    # of ``world_size`` under DDP so every rank gets an identical-length
-    # shard and the accounting sample-rate denominator equals
-    # ``len(train_dataset)``. When ``len(train_dataset)`` is not evenly
-    # divisible, this drops the ``len(train_dataset) % world_size`` tail
-    # example(s), logs a warning, and uses the trimmed length as the
-    # denominator. Set this to ``False`` to instead raise
-    # ``ConfigurationError`` on a non-divisible population.
-    ddp_drop_uneven_population: bool = True
 
     # =================================================================
     # Evaluation
