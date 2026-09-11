@@ -120,6 +120,31 @@ def test_evaluate_uses_schedule_free_published_params_and_restores_training_para
     assert trainer._ctx.trainable_params is training
 
 
+def test_predict_uses_schedule_free_published_params_and_restores_training_params(
+    tmp_path, monkeypatch
+):
+    trainer = _trainer(tmp_path)
+    ctx = _schedule_free_context(trainer)
+    trainer._ctx = ctx
+    training = ctx.trainable_params
+    expected = EvaluationResult(
+        predictions=torch.tensor([[1.0]]),
+        label_ids=None,
+        metrics={"test_loss": 0.0},
+        num_samples=1,
+    )
+
+    def run_evaluation_loop(*args, **kwargs):
+        del args, kwargs
+        assert trainer._ctx.trainable_params is ctx.opt_state.x
+        return expected
+
+    monkeypatch.setattr(trainer, "_run_evaluation_loop", run_evaluation_loop)
+
+    assert trainer.predict([{"x": torch.zeros(4)}]) is expected
+    assert trainer._ctx.trainable_params is training
+
+
 def test_schedule_free_checkpoint_saves_published_params_and_restores_module(tmp_path):
     trainer = _trainer(tmp_path, save_only_model=True)
     ctx = _schedule_free_context(trainer)

@@ -3131,13 +3131,14 @@ class DPTrainer:
         metric_key_prefix: str = "test",
     ) -> EvaluationResult:
         """Run prediction loop and return predictions + labels + metrics."""
-        result = self._run_evaluation_loop(
-            test_dataset,
-            prediction_loss_only=None,
-            ignore_keys=ignore_keys,
-            metric_key_prefix=metric_key_prefix,
-            description="Prediction",
-        )
+        with self._use_published_functional_params():
+            result = self._run_evaluation_loop(
+                test_dataset,
+                prediction_loss_only=None,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+                description="Prediction",
+            )
         self._control = self._callback_handler.on_predict(
             self.args,
             self.state,
