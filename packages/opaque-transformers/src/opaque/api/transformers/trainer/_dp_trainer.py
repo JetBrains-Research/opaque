@@ -4874,9 +4874,9 @@ class DPTrainer:
 
         Args:
             output_dir: Directory to save to.  Defaults to ``args.output_dir``.
-            _internal_call: Set by :meth:`push_to_hub` to avoid push recursion
-                (a direct user ``save_model`` with ``push_to_hub=True`` also
-                publishes; the push path saves with this flag to skip that).
+            _internal_call: Set by :meth:`push_to_hub`'s already rank-gated
+                internal save, to skip both push recursion and the barrier
+                below (no other rank calls ``save_model`` on that path).
         """
         a = self.args
         target = output_dir or self._effective_output_dir()
@@ -4892,8 +4892,9 @@ class DPTrainer:
             self._save_training_args(target)
             # Privacy provenance travels with every saved model.
             self.save_accountant(target)
-        # Barrier so non-saving ranks don't proceed before the save lands.
-        _distributed.barrier(self._ddp)
+        if not _internal_call:
+            # Barrier so non-saving ranks don't proceed before the save lands.
+            _distributed.barrier(self._ddp)
         # A direct user save with push_to_hub=True also publishes (HF parity).
         # ``_internal_call`` short-circuits the push triggered from within
         # ``push_to_hub`` itself.
