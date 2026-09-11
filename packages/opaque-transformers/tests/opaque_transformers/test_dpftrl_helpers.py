@@ -177,11 +177,12 @@ class TestBuildAmplifierFactory:
         assert isinstance(proc, DpHorizonProcess)
         assert proc.n_steps == 100
 
-    def test_band_rejects_poisson_strategy_mismatch(self):
+    @pytest.mark.parametrize("bands", [1, 4])
+    def test_band_rejects_poisson_strategy_mismatch(self, bands):
         """A whole-dataset Poisson accountant does not realise BandMF's
         grouped, rotating-active-group participation pattern — reject it
         rather than silently mis-accounting (issue #776)."""
-        strategy = _dpftrl.build_strategy("mf_band", {"bands": 4})
+        strategy = _dpftrl.build_strategy("mf_band", {"bands": bands})
         with pytest.raises(ValueError, match="cyclic_poisson"):
             _dpftrl.build_amplifier_factory(
                 sampling_mode="poisson",
@@ -384,12 +385,13 @@ class TestBuildSampler:
         )
         assert isinstance(sampler, PoissonSampler)
 
-    def test_poisson_rejects_band_mf_context(self):
+    @pytest.mark.parametrize("bands", [1, 4])
+    def test_poisson_rejects_band_mf_context(self, bands):
         """A whole-dataset Poisson sampler does not realise BandMF's grouped
         participation pattern — reject it rather than silently
         mis-accounting (issue #776)."""
         dataset = _ListDataset(64)
-        mf = _mf_band_context(bands=4, sample_rate=0.1, n_steps=8)
+        mf = _mf_band_context(bands=bands, sample_rate=0.1, n_steps=8)
         with pytest.raises(ValueError, match="cyclic_poisson"):
             _dpftrl.build_sampler(
                 sampling_mode="poisson",
