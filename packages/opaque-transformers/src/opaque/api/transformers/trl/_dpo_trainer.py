@@ -1285,7 +1285,7 @@ class DPOTrainer(DPTrainer):
             .gather(-1, shifted_ids.unsqueeze(-1))
             .squeeze(-1)
         )
-        return wpo_weights(per_token_logps, shifted_mask)
+        return wpo_weights(per_token_logps, shifted_mask, shifted_logits)
 
     # ------------------------------------------------------------------
     # Evaluation: plug into the inherited eval harness via prediction_step

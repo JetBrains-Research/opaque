@@ -515,14 +515,6 @@ def test_ld_dpo_split_matches_trl_ld_alpha() -> None:
     torch.testing.assert_close(ours.mean(), theirs)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "wpo_weights omits the WPO weight-alignment term log(sum_v p_v^2) that "
-        "both TRL and the authors' reference implementation apply; the fix needs "
-        "the logits, so it changes the public signature"
-    ),
-)
 def test_wpo_weights_match_trl_use_weighting() -> None:
     """The WPO pair weight must equal TRL's ``use_weighting`` factor.
 
@@ -532,9 +524,10 @@ def test_wpo_weights_match_trl_use_weighting() -> None:
     logits, input_ids, completion_mask = _preference_batch((3, 2))
     per_token_logps = _shifted_per_token_logps(logits, input_ids)
     chosen_logps, rejected_logps = per_token_logps.chunk(2)
+    chosen_logits, rejected_logits = logits[..., :-1, :].chunk(2)
     chosen_mask, rejected_mask = completion_mask[..., 1:].chunk(2)
-    ours = wpo_weights(chosen_logps, chosen_mask) * wpo_weights(
-        rejected_logps, rejected_mask
+    ours = wpo_weights(chosen_logps, chosen_mask, chosen_logits) * wpo_weights(
+        rejected_logps, rejected_mask, rejected_logits
     )
 
     zeros = torch.zeros(1)
