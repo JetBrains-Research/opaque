@@ -2940,7 +2940,11 @@ class DPTrainer:
                     # of token weighting (``_eval_token_weighted_loss=False``),
                     # fall back to the plain per-example mean.
                     if loss is not None:
-                        if labels is not None and self._eval_token_weighted_loss:
+                        if (
+                            labels is not None
+                            and self._eval_token_weighted_loss
+                            and self._is_causal_lm
+                        ):
                             # HF's ForCausalLMLoss scores ``labels[..., 1:]`` (drops
                             # position 0 via the internal shift); the per-token-mean
                             # weighting denominator must match that count.
@@ -2961,8 +2965,8 @@ class DPTrainer:
                                 total_loss += float(loss.item()) * real_tokens
                                 loss_samples += real_tokens
                         else:
-                            # labels not exposed, or token weighting opted out:
-                            # plain per-example mean
+                            # Non-causal objectives and trainers that opt out of
+                            # token weighting use the plain per-example mean.
                             total_loss += (
                                 float(loss.sum().item())
                                 if loss.ndim > 0

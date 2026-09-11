@@ -137,14 +137,9 @@ clip-noise-step over one Poisson sample.
 
 `compute_loss_func` on the constructor accepts a callable
 `(outputs, labels) -> scalar` for one-off losses without subclassing.
-The callable is invoked **per example under vmap** (one example's
-outputs, one example's labels) during training and per-example-loss
-evaluation.  The default reduced evaluation path invokes the same callable
-once on the batched outputs and labels, matching Hugging Face's evaluation
-semantics.  There is no `num_items_in_batch` argument.  When a custom loss is
-configured it takes precedence over `label_smoothing_factor`, as in Hugging
-Face Trainer.  Subclassing for full SFT / DPO / KTO trainers is supported but
-is a more advanced extension point; reach out if you need to wire one up.
+Training invokes it per example under `vmap`; default evaluation invokes it
+once per batch. There is no `num_items_in_batch` argument, and a custom loss
+takes precedence over `label_smoothing_factor`.
 
 ## PEFT and LoRA
 

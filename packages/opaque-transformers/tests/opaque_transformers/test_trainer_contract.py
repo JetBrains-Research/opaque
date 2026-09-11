@@ -338,7 +338,7 @@ def test_default_eval_uses_same_custom_objective_as_training(tmp_path):
 
     trainer = DPTrainer(
         model=model,
-        args=_args(tmp_path, per_device_eval_batch_size=3),
+        args=_args(tmp_path, per_device_eval_batch_size=2),
         eval_dataset=dataset,
         compute_loss_func=custom_loss,
     )
@@ -355,7 +355,7 @@ def test_default_eval_uses_same_custom_objective_as_training(tmp_path):
         )
 
     assert eval_loss == pytest.approx(torch.stack(per_example_losses).mean().item())
-    assert model.fused_requests == [False, False, False, False]
+    assert model.fused_requests == [False, False, False, False, False]
 
 
 def test_default_eval_applies_label_smoothing(tmp_path):
