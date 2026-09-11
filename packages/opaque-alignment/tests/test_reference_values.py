@@ -265,9 +265,10 @@ _CASES: list[tuple[str, Callable[[], torch.Tensor], float]] = [
 ]
 
 
-def _wpo(*token_logps: float) -> torch.Tensor:
-    logps = torch.tensor([list(token_logps)], dtype=torch.float32)
-    return wpo_weights(logps, torch.ones_like(logps, dtype=torch.long))[0]
+def _wpo(*token_distributions: tuple[float, ...]) -> torch.Tensor:
+    logits = torch.tensor([token_distributions], dtype=torch.float32).log()
+    logps = logits[..., 0]
+    return wpo_weights(logps, torch.ones_like(logps, dtype=torch.long), logits)[0]
 
 
 def _ld_split(alpha: float) -> torch.Tensor:
@@ -283,20 +284,17 @@ def _uniform_logits(seq_len: int, vocab: int) -> torch.Tensor:
 
 
 _CASES += [
-    # WPO: opaque's weight is the plain geometric mean of the per-token
-    # probabilities, so a uniform log-prob passes straight through the
-    # exponential. This pins the shipped contract, not the paper's — the WPO
-    # weight-alignment term is missing, per the strict xfail in
-    # test_trl_parity.py.
+    # WPO: each realised class-0 probability is divided by the distribution's
+    # collision probability before taking the geometric mean.
     (
-        "wpo/geometric-mean-of-half",
-        lambda: _wpo(math.log(0.5), math.log(0.5), math.log(0.5)),
-        0.5,
+        "wpo/uniform-tokens-align-to-one",
+        lambda: _wpo((0.5, 0.5), (0.5, 0.5), (0.5, 0.5)),
+        1.0,
     ),
     (
-        "wpo/geometric-mean-of-half-and-eighth",
-        lambda: _wpo(math.log(0.5), math.log(0.125)),
-        0.25,
+        "wpo/geometric-mean-of-aligned-token-weights",
+        lambda: _wpo((0.5, 0.5), (0.125, 0.875)),
+        0.4,
     ),
     # LD-DPO: prefix tokens keep weight 1, tail tokens are damped by alpha, so
     # four unit log-probs split 2 + 2 interpolate between -2 and -4.
