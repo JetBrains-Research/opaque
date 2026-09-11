@@ -95,7 +95,6 @@ _STRICT_FORWARD_PARITY_SKIP_FAMILIES = {
 # functions in the patches that change the backward Jacobian path even
 # when the forward is bit-identical.
 _GRAD_PARITY_SKIP_FAMILIES = {
-    "gpt2",  # kv_cache/batchify patches alter backward graph
     "qwen3_next",  # masking_utils uses .item()-like ops under vmap
     "deepseek_v4",  # runtime compatibility shims change sink gradients
     "gpt_oss",  # runtime compatibility shims change sink gradients
@@ -158,12 +157,17 @@ def _base_config_kwargs(family: str) -> dict:
     """Return tiny config kwargs, filtered for family compatibility.
 
     GPT2 lacks ``num_key_value_heads`` and ``rope_theta``; the base
-    ``get_tiny_config_kwargs()`` includes those.
+    ``get_tiny_config_kwargs()`` includes those. GPT2 also defaults its
+    ``attn_pdrop`` / ``resid_pdrop`` / ``embd_pdrop`` to ``0.1``; the
+    compatibility patches disable model dropout for DP/vmap safety, so the
+    dropout config is normalized to zero here to give the patched and upstream
+    reference models identical deterministic semantics for parity testing.
     """
     kwargs = get_tiny_config_kwargs()
     if family == "gpt2":
         kwargs.pop("num_key_value_heads", None)
         kwargs.pop("rope_theta", None)
+        kwargs.update(attn_pdrop=0.0, resid_pdrop=0.0, embd_pdrop=0.0)
     return kwargs
 
 
