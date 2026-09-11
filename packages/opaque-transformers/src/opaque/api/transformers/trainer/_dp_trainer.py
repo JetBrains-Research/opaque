@@ -4321,8 +4321,10 @@ class DPTrainer:
         per-example ``aux_dict`` is forwarded into ``ClippedGradAux.loss_aux``.
         """
         ca = a.clipping_kwargs
-        target_clip_rate = float(ca.get("target_clipping_rate", 0.5))
-        clip_norm_max = float(ca.get("norm_max", 10.0))
+        target_clip_rate = float(
+            ca.get("target_quantile", ca.get("target_clipping_rate", 0.5))
+        )
+        clip_norm_max = float(ca.get("clipping_norm_max", ca.get("norm_max", 10.0)))
         auto_gamma = float(ca.get("gamma", 0.01))
         compiler = self._grad_compiler()
 

@@ -131,9 +131,9 @@ noise would yield infinite noise and `NaN` gradients.
 | Field | Use |
 |---|---|
 | `sampling_mode` | `"auto"` (default) pairs the sampler with `privacy_noise_mechanism`; explicit values `{"poisson", "k_out_of_t", "b_min_sep", "balls_in_bins", "cyclic_poisson", "sequential"}` are validated against the mechanism's allow-list. |
-| `sampling_kwargs` | Forwarded to the sampler. `truncated_batch_size=N` caps Poisson draws at `N` and is unavailable for k-out-of-t allocation. |
+| `sampling_kwargs` | Mode-specific sampler kwargs. `truncated_batch_size=N` (alias `max_batch_size`) caps Poisson draws at `N`; k-out-of-t accepts `k` and `allocation`; other modes accept no keys. |
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
-| `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
+| `clipping_kwargs` | Mode-specific clipping kwargs. Adaptive accepts the public factory names `target_quantile` and `clipping_norm_max`; `target_clipping_rate` and `norm_max` remain aliases. AUTO-S accepts `gamma`; fixed accepts no keys. |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
 | `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: for example, `bound=...` for the bounded Gaussian variant. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
 | `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |

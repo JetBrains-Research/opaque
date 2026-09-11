@@ -1103,11 +1103,16 @@ def main() -> int:
             if args.per_group_clipping
             else args.clipping_norm
         ),
-        clipping_kwargs={
-            "target_clipping_rate": args.target_clipping_rate,
-            "norm_max": args.clipping_norm_max,
-            "gamma": args.auto_clipping_gamma,
-        },
+        clipping_kwargs=(
+            {
+                "target_quantile": args.target_clipping_rate,
+                "clipping_norm_max": args.clipping_norm_max,
+            }
+            if args.clipping_mode == "adaptive"
+            else {"gamma": args.auto_clipping_gamma}
+            if args.clipping_mode == "auto"
+            else {}
+        ),
         sampling_mode=args.sampler,
         sampling_kwargs=_sampling_kwargs_for_trainer(args),
         privacy_noise_mechanism=args.noise_mechanism,
