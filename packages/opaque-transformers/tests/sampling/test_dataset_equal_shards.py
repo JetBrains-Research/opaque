@@ -16,6 +16,7 @@ import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.exceptions import ConfigurationError
 from opaque.transformers.trainer import DPTrainer, TrainingArguments
 
 pytest.importorskip("transformers")
@@ -103,6 +104,12 @@ def test_non_divisible_dataset_trimmed():
         r: len(_shard_for(dataset_size=10, world_size=3, rank=r)) for r in range(3)
     }
     assert sizes == {0: 3, 1: 3, 2: 3}
+
+
+def test_smaller_than_world_size_rejected():
+    """N=2, W=3 trims to 0 — raises instead of silently emptying every shard."""
+    with pytest.raises(ConfigurationError, match="empty"):
+        _shard_for(dataset_size=2, world_size=3, rank=0)
 
 
 def test_sampler_rate_matches_accountant_rate():

@@ -1454,12 +1454,12 @@ class DPTrainer:
         # the *local* rate equals the *global* rate by construction.  The
         # accountant uses regular ``acc.poisson`` over the global rate.
         #
-        # ``dataset_size`` is ``len(train_dataset)``, validated by
-        # :meth:`_effective_train_dataset_size` to be an exact multiple of
-        # ``world_size`` under DDP. Computing ``sample_rate`` from this
-        # denominator means the accountant calibrates noise for exactly the
-        # ``q`` the sampler will use — there is no "actual q vs accounted q"
-        # drift.
+        # ``dataset_size`` is ``len(train_dataset)`` (or the trimmed
+        # multiple of ``world_size`` under DDP; see
+        # :meth:`_effective_train_dataset_size`). Computing ``sample_rate``
+        # from this denominator means the accountant calibrates noise for
+        # exactly the ``q`` the sampler will use — there is no "actual q vs
+        # accounted q" drift.
         sample_rate = expected_batch_size / dataset_size
         if sample_rate > 1.0:
             raise ConfigurationError(
@@ -3772,9 +3772,8 @@ class DPTrainer:
         # same values ``_setup_training`` calibrated the accountant with
         # (``ctx.sample_rate`` for plain Poisson; the built amplifier's
         # per-band rate for ``cyclic_poisson``), computed from the same
-        # validated denominator used here (see
-        # :meth:`_effective_train_dataset_size`), so runtime and accountant
-        # cannot drift apart.
+        # denominator used here (see :meth:`_effective_train_dataset_size`),
+        # so runtime and accountant cannot drift apart.
         #
         # Resume caveat (multi-GPU only): the sampler snapshot is
         # self-contained (carries its own key) and is written once on rank
@@ -4561,7 +4560,7 @@ class DPTrainer:
     # ------------------------------------------------------------------
 
     def _effective_train_dataset_size(self) -> int:
-        """Length of ``self._train_dataset``, validated for DDP sharding.
+        """Length of ``self._train_dataset`` for DDP sharding and accounting.
 
         Single source of truth for the training-time dataset size, and for
         the accounting sample-rate denominator. Under DDP, every rank needs
@@ -4639,8 +4638,8 @@ class DPTrainer:
 
         Returns the same value as the ``total_steps`` field of
         ``_steps_breakdown(self._effective_train_dataset_size())`` — the
-        validated denominator the actual training run will see, so
-        ``state.max_steps`` matches the cadence ``_setup_training`` produces.
+        denominator the actual training run will see, so ``state.max_steps``
+        matches the cadence ``_setup_training`` produces.
         Override in subclasses where the dataset isn't sized at construction
         time (e.g. streaming datasets) — return ``0`` to signal "unknown" and
         ``state.compute_steps`` will leave ``state.{logging,eval,save}_steps``
@@ -5612,9 +5611,8 @@ class DPTrainer:
         # mirror ``_setup_training``'s computation — same numerator
         # (``expected_batch_size``, which is ``world_size *
         # per_device_train_batch_size``) and same denominator (the
-        # validated dataset size from ``_effective_train_dataset_size``,
-        # which raises ``ConfigurationError`` rather than silently
-        # trimming if the dataset can't be evenly sharded).  Returns
+        # dataset size from ``_effective_train_dataset_size``, trimmed to
+        # a multiple of ``world_size`` under DDP when needed).  Returns
         # ``None`` (skips the check) when the dataset isn't available.
         if ctx is not None:
             fallback_rate: float | None = ctx.sample_rate
