@@ -32,7 +32,7 @@ import os
 import shutil
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,6 +63,7 @@ from opaque.exceptions import (
     OperationError,
 )
 from opaque.functional import make_functional
+from opaque.optimizers.types import ScheduleFreeState
 from opaque.profiling import PerfTracker, perf_tracker
 from opaque.random import key, split
 from opaque.serialization import (
@@ -1293,7 +1294,7 @@ class DPTrainer:
                 ignore_keys_for_eval=ignore_keys_for_eval,
             )
         finally:
-            self._restore_params(ctx.trainable_params)
+            self._restore_params(self._published_params(ctx))
             # Promote accountant to trainer-level so save_model() can write
             # ``accountant.json`` after train() returns.
             self._accountant = ctx.accounting
@@ -3175,12 +3176,13 @@ class DPTrainer:
             )
             self._warned_eval_on_train = True
 
-        result = self._run_evaluation_loop(
-            dataset,
-            prediction_loss_only=True if self._compute_metrics is None else None,
-            ignore_keys=ignore_keys,
-            metric_key_prefix=metric_key_prefix,
-        )
+        with self._use_published_functional_params():
+            result = self._run_evaluation_loop(
+                dataset,
+                prediction_loss_only=True if self._compute_metrics is None else None,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
         self._after_evaluate(result.metrics)
         return result.metrics
 
@@ -3191,13 +3193,14 @@ class DPTrainer:
         metric_key_prefix: str = "test",
     ) -> EvaluationResult:
         """Run prediction loop and return predictions + labels + metrics."""
-        result = self._run_evaluation_loop(
-            test_dataset,
-            prediction_loss_only=None,
-            ignore_keys=ignore_keys,
-            metric_key_prefix=metric_key_prefix,
-            description="Prediction",
-        )
+        with self._use_published_functional_params():
+            result = self._run_evaluation_loop(
+                test_dataset,
+                prediction_loss_only=None,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+                description="Prediction",
+            )
         self._control = self._callback_handler.on_predict(
             self.args,
             self.state,
@@ -4659,6 +4662,40 @@ class DPTrainer:
             state_dict[name] = tensor.detach()
         self._model.load_state_dict(state_dict, strict=True)
 
+    @staticmethod
+    def _published_params(ctx: _TrainingContext) -> dict[str, Tensor]:
+        """Return the parameters users should evaluate and export."""
+        if isinstance(ctx.opt_state, ScheduleFreeState):
+            return ctx.opt_state.x
+        return ctx.trainable_params
+
+    @contextlib.contextmanager
+    def _use_published_functional_params(self) -> Iterator[None]:
+        """Temporarily expose published parameters to the functional eval path."""
+        ctx = self._ctx
+        if ctx is None or not isinstance(ctx.opt_state, ScheduleFreeState):
+            yield
+            return
+        training_params = ctx.trainable_params
+        ctx.trainable_params = ctx.opt_state.x
+        try:
+            yield
+        finally:
+            ctx.trainable_params = training_params
+
+    @contextlib.contextmanager
+    def _use_published_model_params(self) -> Iterator[None]:
+        """Temporarily expose published parameters on the live module."""
+        ctx = self._ctx
+        if ctx is None or not isinstance(ctx.opt_state, ScheduleFreeState):
+            yield
+            return
+        self._restore_params(ctx.opt_state.x)
+        try:
+            yield
+        finally:
+            self._restore_params(ctx.trainable_params)
+
     # ------------------------------------------------------------------
     # Save / checkpoint
     # ------------------------------------------------------------------
@@ -4875,6 +4912,14 @@ class DPTrainer:
         for name, param in self._model.named_parameters():
             if name in ctx.trainable_params:
                 ctx.trainable_params[name] = param.detach().to(self._device)
+        if isinstance(ctx.opt_state, ScheduleFreeState):
+            ctx.opt_state = dataclasses.replace(
+                ctx.opt_state,
+                x={
+                    name: tensor.detach().clone()
+                    for name, tensor in ctx.trainable_params.items()
+                },
+            )
 
     def _read_weights_file(
         self,
@@ -4978,14 +5023,17 @@ class DPTrainer:
             raise ConfigurationError(
                 *("save_model requires output_dir (arg or args.output_dir)",)
             )
-        if self._ctx is not None:
-            self._restore_params(self._ctx.trainable_params)
-        if _distributed.should_save(a, self._ddp):
-            Path(target).mkdir(parents=True, exist_ok=True)
-            self._save_model_artifacts(target)
-            self._save_training_args(target)
-            # Privacy provenance travels with every saved model.
-            self.save_accountant(target)
+        with self._use_published_model_params():
+            if self._ctx is not None and not isinstance(
+                self._ctx.opt_state, ScheduleFreeState
+            ):
+                self._restore_params(self._ctx.trainable_params)
+            if _distributed.should_save(a, self._ddp):
+                Path(target).mkdir(parents=True, exist_ok=True)
+                self._save_model_artifacts(target)
+                self._save_training_args(target)
+                # Privacy provenance travels with every saved model.
+                self.save_accountant(target)
         if not _internal_call:
             # Barrier so non-saving ranks don't proceed before the save lands.
             _distributed.barrier(self._ddp)
@@ -5090,10 +5138,9 @@ class DPTrainer:
         # ``dp_state.pt``, would otherwise route into the save_only_model
         # noise-reuse path).  Same-directory rename ⇒ atomic on POSIX.
         staging_dir = ckpt_dir + ".tmp"
-        # Rank-0 owns the directory creation + bulk artefacts; every rank
-        # restores params (needed for either RNG snapshot writers reading
-        # `self._model.state_dict()` shapes consistently in future, and for
-        # callbacks below that may inspect params).
+        # Keep every rank's live module synchronized with the functional
+        # training iterate; the saving rank swaps to published weights only
+        # while serializing the model artifact below.
         self._restore_params(ctx.trainable_params)
         stage_error: Exception | None = None
         if _distributed.should_save(a, self._ddp):
@@ -5101,7 +5148,10 @@ class DPTrainer:
                 if Path(staging_dir).is_dir():
                     shutil.rmtree(staging_dir)  # stale leftover from a prior crash
                 Path(staging_dir).mkdir(parents=True, exist_ok=True)
-                self._save_model_artifacts(staging_dir)
+                with self._use_published_model_params():
+                    if not isinstance(ctx.opt_state, ScheduleFreeState):
+                        self._restore_params(ctx.trainable_params)
+                    self._save_model_artifacts(staging_dir)
 
                 # Register ``best_model_checkpoint`` by *looking up* the folder
                 # named ``checkpoint-{best_global_step}``, rather than only when
@@ -5510,6 +5560,12 @@ class DPTrainer:
                 weights_only=False,
             )
             ctx.opt_state = opaque_from_state_dict(ctx.opt_state, opt_sd)
+            if isinstance(ctx.opt_state, ScheduleFreeState):
+                ctx.trainable_params = {
+                    name: (1.0 - ctx.opt_state.beta) * ctx.opt_state.z[name]
+                    + ctx.opt_state.beta * ctx.opt_state.x[name]
+                    for name in ctx.trainable_params
+                }
 
         if accountant is not None:
             ctx.accounting = accountant

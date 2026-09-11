@@ -249,6 +249,10 @@ Dataclass surface.  Every field listed here exists on
 names without a DP-aware mapping (8-bit, paged, GaLore, fused-CUDA,
 NPU, XLA) are rejected with a redirect message.
 
+For `schedule_free`, evaluation, checkpoints, and `save_model()` use the
+published averaged weights. Resumable checkpoints retain the complete optimizer
+state and reconstruct the training iterate when loaded.
+
 ### Training duration
 
 | Field | Type | Default | Purpose |
