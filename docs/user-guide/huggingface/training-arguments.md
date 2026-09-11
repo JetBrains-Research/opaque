@@ -135,7 +135,7 @@ noise would yield infinite noise and `NaN` gradients.
 | `clipping_mode` | `"fixed"` (default), `"adaptive"`, or `"auto"`. `adaptive` is rejected under any `mf_*` mechanism (MF noise requires constant per-step sensitivity). |
 | `clipping_kwargs` | Adaptive / AUTO-S kwargs (`target_clipping_rate`, `norm_max`, `gamma`). |
 | `privacy_noise_mechanism` | `"gaussian"` (default, DP-SGD), or one of the DP-FTRL matrix-factorization mechanisms: `"mf_band"`, `"mf_blt"`, `"mf_bisr"`, `"mf_bsr"`, `"mf_lambda_cgd"`, `"mf_identity"`. |
-| `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: for example, `bound=...` for the bounded Gaussian variant. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
+| `privacy_noise_mechanism_kwargs` | Mechanism extras. For `"gaussian"`: `compute_dtype` as a native `torch.dtype` or the string names `float16`, `bfloat16`, `float32`, `float64`. For `mf_*`: per-strategy kwargs (auto-filled from Mellum-shaped defaults — see below). |
 | `noise_calibration_kwargs` | Calibration search bounds; defaults `{"min": 0.01, "max": 10.0, "tolerance": 1e-3}`. |
 
 All dict-shaped fields accept a `Mapping`, a JSON object string, or

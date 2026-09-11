@@ -80,6 +80,10 @@ class TestGaussian:
         ):
             gaussian_noise(noise_multiplier=-1.0, key=key(0))
 
+    def test_bound_is_not_supported(self):
+        with pytest.raises(TypeError, match="bound"):
+            gaussian_noise(noise_multiplier=1.0, key=key(0), bound=3.0)  # type: ignore[call-arg]
+
     def test_negative_bound_raises_at_call(self):
         noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         with pytest.raises(ValueError, match="non-negative"):

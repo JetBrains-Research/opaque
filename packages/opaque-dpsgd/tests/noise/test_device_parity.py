@@ -2,10 +2,11 @@
 
 The privacy guarantee on Apple Silicon (MPS) and CUDA rests on the noise being
 drawn from the *same* key-determined random stream regardless of device.
-opaque samples the underlying uniforms on a CPU generator and moves them to the
-compute device (see ``_gaussian._sample``: ``torch.rand(..., generator=cpu_gen)
-.to(device)``), so the stream is device-independent; only the on-device
-``erfinv`` / ``erf`` transform rounds differently between backends.
+opaque samples the underlying standard-normal values on a CPU generator and
+moves them to the compute device (see ``_gaussian._sample``:
+``torch.randn(..., generator=cpu_gen).to(device)``), so the stream is
+device-independent; only the on-device addition rounds differently between
+backends.
 
 These tests lock that in: for a fixed key, CPU and accelerator noise must agree
 to floating-point-rounding tolerance (proving the same draws), and a *different*
@@ -26,9 +27,8 @@ from opaque.types import clipped
 
 _N = 50_000
 _SIGMA = 1.0
-# Observed CPU-vs-MPS divergence is ~1e-6 (fp32 ``erfinv`` rounding on Metal);
-# 1e-4 is a comfortable ceiling that still rejects a different random stream,
-# which would differ by O(_SIGMA) ~ 1.0.
+# 1e-4 is a comfortable ceiling for CPU-vs-MPS addition rounding while still
+# rejecting a different random stream, which would differ by O(_SIGMA) ~ 1.0.
 _ROUNDING_ATOL = 1e-4
 
 
@@ -58,7 +58,7 @@ def _assert_same_stream(cpu: torch.Tensor, other: torch.Tensor) -> None:
 
 @pytest.mark.mps
 def test_gaussian_noise_cpu_mps_parity() -> None:
-    """Same key → same noise on CPU and MPS (up to erfinv fp rounding)."""
+    """Same key → same noise on CPU and MPS (up to addition rounding)."""
     _assert_same_stream(_noise("cpu", seed=123), _noise("mps", seed=123))
 
 
@@ -72,5 +72,5 @@ def test_gaussian_noise_mps_different_key_diverges() -> None:
 
 @pytest.mark.cuda
 def test_gaussian_noise_cpu_cuda_parity() -> None:
-    """Same key → same noise on CPU and CUDA (up to erfinv fp rounding)."""
+    """Same key → same noise on CPU and CUDA (up to addition rounding)."""
     _assert_same_stream(_noise("cpu", seed=123), _noise("cuda", seed=123))

@@ -1,4 +1,4 @@
-"""DP-SGD noise mechanisms façade — Gaussian (optionally bounded).
+"""DP-SGD Gaussian noise façade.
 
 State (``GaussianNoiseState``) lives in :mod:`opaque.dpsgd.noise.types`.
 """

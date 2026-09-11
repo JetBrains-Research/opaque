@@ -182,8 +182,8 @@ class ClipState(ABC):  # noqa: B024 — intentional empty marker base
 class NoiseState(ABC):
     """Base class for noise state.
 
-    All noise functions (Gaussian, optionally bounded; MF) return a
-    state object that inherits from this class, providing a unified
+    All noise functions (Gaussian and MF) return a state object that
+    inherits from this class, providing a unified
     interface for step tracking and RNG key management.
 
     Attributes:
