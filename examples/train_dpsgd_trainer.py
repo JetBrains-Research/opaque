@@ -845,7 +845,7 @@ def _validate_sampler_cli(
 def _sampling_kwargs_for_trainer(args: argparse.Namespace) -> dict[str, Any]:
     sk: dict[str, Any] = {}
     if args.max_batch_size is not None:
-        sk["max_batch_size"] = args.max_batch_size
+        sk["truncated_batch_size"] = args.max_batch_size
     if args.sampler == "k_out_of_t":
         sk["k"] = int(args.k)
         sk["allocation"] = args.allocation

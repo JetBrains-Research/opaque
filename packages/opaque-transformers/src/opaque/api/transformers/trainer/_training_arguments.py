@@ -204,20 +204,12 @@ _ALLOWED_SAMPLERS: dict[str, frozenset[str]] = {
 
 _CLIPPING_KWARGS: dict[str, frozenset[str]] = {
     "fixed": frozenset(),
-    "adaptive": frozenset(
-        {
-            "target_quantile",
-            "clipping_norm_max",
-            # Backward-compatible trainer-local aliases.
-            "target_clipping_rate",
-            "norm_max",
-        }
-    ),
+    "adaptive": frozenset({"target_quantile", "clipping_norm_max"}),
     "auto": frozenset({"gamma"}),
 }
 
 _SAMPLING_KWARGS: dict[str, frozenset[str]] = {
-    "poisson": frozenset({"truncated_batch_size", "max_batch_size"}),
+    "poisson": frozenset({"truncated_batch_size"}),
     "k_out_of_t": frozenset({"k", "allocation"}),
     "b_min_sep": frozenset(),
     "balls_in_bins": frozenset(),
@@ -551,10 +543,8 @@ class TrainingArguments:
 
     # ---- Clipping (mode + JSON-style args, HF ``optim_args`` pattern) ---
     clipping_mode: str = "fixed"
-    #: Mode-specific clipping factory kwargs. Adaptive clipping accepts the
-    #: public names ``target_quantile`` / ``clipping_norm_max`` and the legacy
-    #: trainer aliases ``target_clipping_rate`` / ``norm_max``; AUTO-S accepts
-    #: ``gamma``.
+    #: Mode-specific clipping factory kwargs. Adaptive clipping accepts
+    #: ``target_quantile`` / ``clipping_norm_max``; AUTO-S accepts ``gamma``.
     clipping_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Noise mechanism / fixed multiplier -------------------------------
@@ -1314,16 +1304,12 @@ class TrainingArguments:
                     )
             if (
                 self.sampling_mode == "k_out_of_t"
-                and {
-                    "truncated_batch_size",
-                    "max_batch_size",
-                }
-                & self.sampling_kwargs.keys()
+                and "truncated_batch_size" in self.sampling_kwargs
             ):
                 raise ConfigurationError(
                     *(
-                        "sampling_kwargs truncated_batch_size/max_batch_size is only "
-                        "supported with sampling_mode='poisson'.",
+                        "sampling_kwargs['truncated_batch_size'] is only supported "
+                        "with sampling_mode='poisson'.",
                     )
                 )
         elif self.sampling_mode == "k_out_of_t":

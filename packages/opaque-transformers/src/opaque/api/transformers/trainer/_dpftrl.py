@@ -303,7 +303,7 @@ def build_sampler(
                     "privacy_noise_mechanism='mf_band' instead.",
                 )
             )
-        tb_raw = sk.get("truncated_batch_size", sk.get("max_batch_size"))
+        tb_raw = sk.get("truncated_batch_size")
         truncated_batch_size = int(tb_raw) if tb_raw is not None else None
         return PoissonSampler(
             dataset,
