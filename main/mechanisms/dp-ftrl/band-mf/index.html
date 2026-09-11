@@ -3509,16 +3509,34 @@ equal 1, giving single-participation sensitivity = 1.0.</p>
 <p>Only the last <span class="arithmatex">\(b\)</span> noise vectors need to be stored — memory is <span class="arithmatex">\(O(b \cdot d)\)</span> where
 <span class="arithmatex">\(d\)</span> is the parameter dimension.</p>
 <h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
-<p>Under single participation (each example appears at most once), the
-sensitivity is the maximum column <span class="arithmatex">\(\ell_2\)</span> norm of <span class="arithmatex">\(C\)</span>:</p>
-<div class="arithmatex">\[S = \max_j \|C_{\cdot, j}\|_2 = 1\]</div>
-<p>This equals 1.0 by construction for the standard Toeplitz optimization.</p>
+<p>Sensitivity is a property of the <em>participation schema</em>, not of <span class="arithmatex">\(C\)</span> alone.
+Under single participation (each example appears at most once) it is the
+maximum column <span class="arithmatex">\(\ell_2\)</span> norm, which the Toeplitz optimization normalizes
+to 1 by construction:</p>
+<div class="arithmatex">\[\kappa = \max_j \|C_{\cdot, j}\|_2 = 1\]</div>
+<p>Under <span class="arithmatex">\(b\)</span>-min-separation participation an example may contribute to up to
+<span class="arithmatex">\(k' = \lceil n / \texttt{min\_sep} \rceil\)</span> columns.  Because <span class="arithmatex">\(C\)</span> is
+<span class="arithmatex">\(b\)</span>-banded, columns at least <span class="arithmatex">\(b\)</span> apart are orthogonal, so the schema
+sensitivity is</p>
+<div class="arithmatex">\[S = \max_{\pi \in \Pi_{b}} \Big\| \sum_{j \in \pi} C_{\cdot, j} \Big\|_2
+\;\le\; \kappa \sqrt{k'}\]</div>
+<p>with equality when every participating column is untruncated
+(<a href="https://arxiv.org/abs/2306.08153">Choquette-Choo et al. 2023</a>, Theorem 2).
+<code>band_mf_strategy(...).sensitivity(n_steps=..., min_sep=..., max_participations=...)</code>
+returns this value; pass <code>min_sep=n_steps, max_participations=1</code> to ask for
+<span class="arithmatex">\(\kappa\)</span> instead.</p>
 <h3 id="privacy-analysis">Privacy analysis<a class="headerlink" href="#privacy-analysis" title="Permanent link">&para;</a></h3>
-<p>The entire training run reduces to a single Gaussian mechanism with
-effective noise multiplier:</p>
-<div class="arithmatex">\[\sigma_{\text{eff}} = \frac{\sigma}{S} = \sigma\]</div>
-<p>The PLD is computed once for this effective Gaussian (not per-step),
-then optionally composed with subsampling amplification.</p>
+<p>An <strong>un-amplified</strong> run reduces to a single Gaussian mechanism over the whole
+horizon with effective noise multiplier</p>
+<div class="arithmatex">\[\sigma_{\text{eff}} = \frac{\sigma}{S}\]</div>
+<p>evaluated at the <code>min_sep</code> / <code>max_participations</code> passed to
+<code>mf_gaussian(...)</code>.  The PLD is computed once for this effective Gaussian
+(not per-step).</p>
+<p>The amplified routes below do <strong>not</strong> use <span class="arithmatex">\(S\)</span>.  Each prices repeat
+participations itself — cyclic Poisson by composing <span class="arithmatex">\(k\)</span> per-group PLDs,
+b-min-sep by its warm-start recursion — so both normalize by the
+single-participation <span class="arithmatex">\(\kappa\)</span>.  Folding <span class="arithmatex">\(\sqrt{k'}\)</span> in there as well would
+double-count.</p>
 <h2 id="supported-amplifications">Supported amplifications<a class="headerlink" href="#supported-amplifications" title="Permanent link">&para;</a></h2>
 <h3 id="poisson-subsampling-opaquedpftrlaccountingpoisson">Poisson subsampling (<code>opaque.dpftrl.accounting.poisson</code>)<a class="headerlink" href="#poisson-subsampling-opaquedpftrlaccountingpoisson" title="Permanent link">&para;</a></h3>
 <p>The primary amplification method for BandMF. The training run is decomposed
@@ -3531,7 +3549,10 @@ separate <code>cyclic_poisson</code> factory).</p>
 mechanism, we analyze <span class="arithmatex">\(k\)</span> independent Poisson-subsampled Gaussian mechanisms
 and compose them. Each group has:</p>
 <ul>
-<li>Effective noise multiplier: <span class="arithmatex">\(\sigma_{\text{eff}} = \sigma / S\)</span></li>
+<li>Effective noise multiplier: <span class="arithmatex">\(\sigma_{\text{eff}} = \sigma / \kappa\)</span>, the
+  single-participation column norm — <strong>not</strong> <span class="arithmatex">\(S\)</span>.  Repeat participation is
+  priced by the <span class="arithmatex">\(k\)</span>-fold composition below, so normalizing by <span class="arithmatex">\(S\)</span> here
+  would count it twice.</li>
 <li>Sample rate: <span class="arithmatex">\(q\)</span></li>
 </ul>
 <p>The total privacy is the <span class="arithmatex">\(k\)</span>-fold self-composition of the per-group PLD:</p>
@@ -3621,15 +3642,11 @@ use <code>0</code> to disable transcript reuse and fall back to one-shot MC per 
 <div class="admonition note">
 <p class="admonition-title">Without amplification</p>
 <p>You can also use BandMF without subsampling by omitting the
-<code>opaque.dpftrl.accounting.poisson</code> wrapper (compose the Gaussian
-mechanism directly if your accounting path supports it). Useful for
-comparison when subsampling is not applicable.</p>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The <code>dpftrl_acc.band_mf()</code> API takes pre-computed sensitivity and group count
-from the noise strategy. For end-to-end usage, <code>mf_gaussian_noise()</code> +
-<code>band_mf_strategy()</code> computes these automatically.</p>
+<code>opaque.dpftrl.accounting.poisson</code> wrapper. Pass the participation schema
+you actually run under — <code>mf_gaussian(sigma, strategy, n_steps=n,
+min_sep=b, max_participations=k)</code> — because the bare PLD is calibrated to
+the schema sensitivity <span class="arithmatex">\(S\)</span>, and the default <code>min_sep=1</code> means "an example
+may participate on every step".</p>
 </div>
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
