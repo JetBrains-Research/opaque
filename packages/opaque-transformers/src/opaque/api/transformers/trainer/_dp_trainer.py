@@ -81,6 +81,7 @@ from transformers import (
     set_seed,
 )
 from transformers.data.data_collator import default_data_collator
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from transformers.trainer_callback import TrainerCallback, TrainerControl
 from transformers.trainer_utils import (
     RemoveColumnsCollator,
@@ -147,6 +148,16 @@ def _is_peft_model(model: Any) -> bool:
     except ImportError:
         return False
     return isinstance(model, (PeftModel, PeftMixedModel))
+
+
+def _is_causal_lm_model(model: Any) -> bool:
+    """Match Transformers' label-smoothing dispatch for causal language models."""
+    if _is_peft_model(model):
+        model = model.base_model.model
+    model_name = (
+        model._get_name() if hasattr(model, "_get_name") else type(model).__name__
+    )
+    return model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values()
 
 
 def _disable_tokenizers_parallelism_before_fork() -> None:
@@ -453,6 +464,7 @@ class DPTrainer:
         # restore sites and the result depends only on the model class,
         # which doesn't change after construction.
         self._is_peft: bool = _is_peft_model(model)
+        self._is_causal_lm: bool = _is_causal_lm_model(model)
         self.args = args
         if args.torch_compile and bool(
             getattr(model, "is_gradient_checkpointing", False)
@@ -2418,7 +2430,7 @@ class DPTrainer:
         # batched tensor.  HF model forwards have ``**kwargs`` that
         # propagate to ``loss_function``; HF's native CE silently drops
         # the kwarg but the trainer-side rebuild below corrects that.
-        if smoothing > 0.0:
+        if smoothing > 0.0 and self._compute_loss_func is None:
             inputs = {**inputs, "label_smoothing": smoothing}
         if (
             not return_logits
@@ -2456,14 +2468,19 @@ class DPTrainer:
         # no-patches case (HF's native CE drops the kwarg) is also
         # honored.  Idempotent w.r.t. the kernel's smoothed loss: both
         # paths converge to the same math when ``label_smoothing > 0``.
-        if smoothing > 0.0 and output_logits is not None:
+        if (
+            self._compute_loss_func is None
+            and smoothing > 0.0
+            and output_logits is not None
+        ):
             label_key = next((k for k in self._label_names if k in inputs), None)
             labels_tensor = (
                 inputs.get(label_key) if label_key is not None else inputs.get("labels")
             )
             if labels_tensor is not None:
                 if (
-                    output_logits.ndim >= 2  # noqa: PLR2004 - shifted logits are sequence-shaped
+                    self._is_causal_lm
+                    and output_logits.ndim >= 2  # noqa: PLR2004
                     and output_logits.shape[:-1] == labels_tensor.shape
                     and output_logits.shape[-2] > 1
                 ):
@@ -2668,13 +2685,22 @@ class DPTrainer:
             )
             return loss, preds, labs
 
-        # Batched forward: reduced eval path reads ``output["loss"]``
-        # directly (no per-example vmap).  This is the HF-equivalent fast
-        # path; users who want ``compute_loss_func`` honoured at eval set
-        # ``include_for_metrics=["loss"]`` to take the per-example path
-        # above.
+        # Batched forward: the default reduced eval path avoids the per-example
+        # vmap while still using the configured training objective below.
         forward_inputs = {**model_inputs, **labels_kwargs}
-        if prediction_loss_only and has_labels and self._fused_forward_uses_marker:
+        smoothing = float(self.args.label_smoothing_factor)
+        if (
+            smoothing > 0.0
+            and self._compute_loss_func is None
+            and self._fused_forward_uses_marker
+        ):
+            forward_inputs["label_smoothing"] = smoothing
+        if (
+            prediction_loss_only
+            and has_labels
+            and self._compute_loss_func is None
+            and self._fused_forward_uses_marker
+        ):
             forward_inputs["loss_only"] = True
         with torch.no_grad():
             was_training = self._model.training
@@ -2690,7 +2716,43 @@ class DPTrainer:
                 if was_training:
                     self._model.train()
             if has_labels and isinstance(output, Mapping):
-                loss = output.get("loss")
+                if self._compute_loss_func is not None:
+                    custom_labels = next(
+                        (labels_kwargs[k] for k in label_keys if k in labels_kwargs),
+                        None,
+                    )
+                    loss = self._compute_loss_func(output, custom_labels)
+                else:
+                    loss = output.get("loss")
+                    output_logits = output.get("logits")
+                    if smoothing > 0.0 and output_logits is not None:
+                        label_key = next(
+                            (k for k in label_keys if k in labels_kwargs),
+                            None,
+                        )
+                        labels_tensor = (
+                            labels_kwargs.get(label_key)
+                            if label_key is not None
+                            else labels_kwargs.get("labels")
+                        )
+                        if labels_tensor is not None:
+                            if (
+                                self._is_causal_lm
+                                and output_logits.ndim >= 3  # noqa: PLR2004
+                                and output_logits.shape[:-1] == labels_tensor.shape
+                                and output_logits.shape[-2] > 1
+                            ):
+                                smooth_logits = output_logits[..., :-1, :].contiguous()
+                                smooth_labels = labels_tensor[..., 1:].contiguous()
+                            else:
+                                smooth_logits = output_logits
+                                smooth_labels = labels_tensor
+                            loss = torch.nn.functional.cross_entropy(
+                                smooth_logits.view(-1, smooth_logits.size(-1)),
+                                smooth_labels.view(-1),
+                                ignore_index=_IGNORE_INDEX,
+                                label_smoothing=smoothing,
+                            )
                 if loss is not None:
                     loss = loss.detach().mean()
             else:
