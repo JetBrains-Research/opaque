@@ -3536,7 +3536,7 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 </tr>
 <tr>
 <td><code>sampling_kwargs</code></td>
-<td>Forwarded to the sampler. <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code> and is unavailable for k-out-of-t allocation.</td>
+<td>Mode-specific sampler kwargs. <code>truncated_batch_size=N</code> caps Poisson draws at <code>N</code>; k-out-of-t accepts <code>k</code> and <code>allocation</code>; other modes accept no keys.</td>
 </tr>
 <tr>
 <td><code>clipping_mode</code></td>
@@ -3544,7 +3544,7 @@ noise would yield infinite noise and <code>NaN</code> gradients.</p>
 </tr>
 <tr>
 <td><code>clipping_kwargs</code></td>
-<td>Adaptive / AUTO-S kwargs (<code>target_clipping_rate</code>, <code>norm_max</code>, <code>gamma</code>).</td>
+<td>Mode-specific clipping kwargs. Adaptive accepts the public factory names <code>target_quantile</code> and <code>clipping_norm_max</code>. AUTO-S accepts <code>gamma</code>; fixed accepts no keys.</td>
 </tr>
 <tr>
 <td><code>privacy_noise_mechanism</code></td>
