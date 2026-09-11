@@ -3345,6 +3345,10 @@ queries and privacy-based early stopping are unsupported, so combining a fixed
 <p><code>resume_from_checkpoint</code> accepts a path string, <code>True</code> to auto-find
 the latest <code>checkpoint-*/</code> under <code>output_dir</code>, or <code>None</code> for a fresh
 run.</p>
+<p>Sampler checkpoints track trainer-consumed batches, excluding worker prefetch.
+On restore, a saved cursor greater than <code>global_step</code> is clamped to
+<code>global_step</code> with a warning before replaying the sampler stream. Smaller
+cursors are preserved, including those from an <code>ignore_data_skip</code> restart.</p>
 <h2 id="per-example-eval-losses">Per-example eval losses<a class="headerlink" href="#per-example-eval-losses" title="Permanent link">&para;</a></h2>
 <p>Setting <code>args.include_for_metrics=["loss"]</code> switches the eval path to
 the <code>vmap</code>-based per-example closure: <code>EvalPrediction.losses</code> carries real
