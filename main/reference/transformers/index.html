@@ -13521,10 +13521,7 @@ HF primitives without <code>DPTrainer</code> should call
 <span class="normal"><a href="#__codelineno-0-5669">5669</a></span>
 <span class="normal"><a href="#__codelineno-0-5670">5670</a></span>
 <span class="normal"><a href="#__codelineno-0-5671">5671</a></span>
-<span class="normal"><a href="#__codelineno-0-5672">5672</a></span>
-<span class="normal"><a href="#__codelineno-0-5673">5673</a></span>
-<span class="normal"><a href="#__codelineno-0-5674">5674</a></span>
-<span class="normal"><a href="#__codelineno-0-5675">5675</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="k">class</span><span class="w"> </span><span class="nc">DPTrainer</span><span class="p">:</span>
+<span class="normal"><a href="#__codelineno-0-5672">5672</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="k">class</span><span class="w"> </span><span class="nc">DPTrainer</span><span class="p">:</span>
 <a id="__codelineno-0-364" name="__codelineno-0-364"></a><span class="w">    </span><span class="sd">"""Differentially private trainer for HuggingFace models.</span>
 <a id="__codelineno-0-365" name="__codelineno-0-365"></a>
 <a id="__codelineno-0-366" name="__codelineno-0-366"></a><span class="sd">    Method decomposition mirrors HF Trainer:</span>
@@ -18668,175 +18665,172 @@ HF primitives without <code>DPTrainer</code> should call
 <a id="__codelineno-0-5504" name="__codelineno-0-5504"></a><span class="sd">        :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`</span>
 <a id="__codelineno-0-5505" name="__codelineno-0-5505"></a><span class="sd">        for the vocabulary):</span>
 <a id="__codelineno-0-5506" name="__codelineno-0-5506"></a>
-<a id="__codelineno-0-5507" name="__codelineno-0-5507"></a><span class="sd">        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` — RDP composition</span>
-<a id="__codelineno-0-5508" name="__codelineno-0-5508"></a><span class="sd">          still yields a correct ε.</span>
-<a id="__codelineno-0-5509" name="__codelineno-0-5509"></a><span class="sd">        - ``"dp_relevant"`` + DP-FTRL: ``raise ValueError`` — the MF</span>
-<a id="__codelineno-0-5510" name="__codelineno-0-5510"></a><span class="sd">          strategy is computed for a specific composition; drift would</span>
-<a id="__codelineno-0-5511" name="__codelineno-0-5511"></a><span class="sd">          silently produce a different ε.</span>
-<a id="__codelineno-0-5512" name="__codelineno-0-5512"></a><span class="sd">        - ``"shape"``: warn — trajectory differs but privacy is intact.</span>
-<a id="__codelineno-0-5513" name="__codelineno-0-5513"></a><span class="sd">        - ``"intentional_extend"``: silent — normal user action (e.g.,</span>
-<a id="__codelineno-0-5514" name="__codelineno-0-5514"></a><span class="sd">          extending ``total_steps`` under DP-SGD).</span>
-<a id="__codelineno-0-5515" name="__codelineno-0-5515"></a>
-<a id="__codelineno-0-5516" name="__codelineno-0-5516"></a><span class="sd">        Dict-valued dispositions resolve via the saved ``mechanism_kind``:</span>
-<a id="__codelineno-0-5517" name="__codelineno-0-5517"></a><span class="sd">        the matching key wins; ``"default"`` is the fallback.</span>
-<a id="__codelineno-0-5518" name="__codelineno-0-5518"></a><span class="sd">        """</span>
-<a id="__codelineno-0-5519" name="__codelineno-0-5519"></a>        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span>
-<a id="__codelineno-0-5520" name="__codelineno-0-5520"></a>        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span>
-<a id="__codelineno-0-5521" name="__codelineno-0-5521"></a>        <span class="n">current_by_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_values_for_drift</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
-<a id="__codelineno-0-5522" name="__codelineno-0-5522"></a>        <span class="n">saved_mechanism</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">mechanism_kind</span>
-<a id="__codelineno-0-5523" name="__codelineno-0-5523"></a>        <span class="n">horizon_resume</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="ow">or</span> <span class="p">(</span>
-<a id="__codelineno-0-5524" name="__codelineno-0-5524"></a>            <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span>
-<a id="__codelineno-0-5525" name="__codelineno-0-5525"></a>        <span class="p">)</span>
-<a id="__codelineno-0-5526" name="__codelineno-0-5526"></a>
-<a id="__codelineno-0-5527" name="__codelineno-0-5527"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">runtime</span><span class="p">):</span>
-<a id="__codelineno-0-5528" name="__codelineno-0-5528"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compare_on_resume"</span><span class="p">):</span>
-<a id="__codelineno-0-5529" name="__codelineno-0-5529"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5530" name="__codelineno-0-5530"></a>            <span class="n">saved</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-<a id="__codelineno-0-5531" name="__codelineno-0-5531"></a>            <span class="n">current</span> <span class="o">=</span> <span class="n">current_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-<a id="__codelineno-0-5532" name="__codelineno-0-5532"></a>            <span class="k">if</span> <span class="n">saved</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5533" name="__codelineno-0-5533"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5534" name="__codelineno-0-5534"></a>            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"horizon_process_state"</span><span class="p">:</span>
-<a id="__codelineno-0-5535" name="__codelineno-0-5535"></a>                <span class="n">saved</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">saved</span><span class="p">)</span>
-<a id="__codelineno-0-5536" name="__codelineno-0-5536"></a>                <span class="n">current</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
-<a id="__codelineno-0-5537" name="__codelineno-0-5537"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">_drift_differs</span><span class="p">(</span><span class="n">saved</span><span class="p">,</span> <span class="n">current</span><span class="p">):</span>
-<a id="__codelineno-0-5538" name="__codelineno-0-5538"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5539" name="__codelineno-0-5539"></a>
-<a id="__codelineno-0-5540" name="__codelineno-0-5540"></a>            <span class="n">disposition</span> <span class="o">=</span> <span class="n">_resolve_drift_disposition</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">saved_mechanism</span><span class="p">)</span>
-<a id="__codelineno-0-5541" name="__codelineno-0-5541"></a>            <span class="k">if</span> <span class="p">(</span>
-<a id="__codelineno-0-5542" name="__codelineno-0-5542"></a>                <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"total_steps"</span>
-<a id="__codelineno-0-5543" name="__codelineno-0-5543"></a>                <span class="ow">and</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span>
-<a id="__codelineno-0-5544" name="__codelineno-0-5544"></a>                <span class="ow">and</span> <span class="n">horizon_resume</span>
-<a id="__codelineno-0-5545" name="__codelineno-0-5545"></a>            <span class="p">):</span>
-<a id="__codelineno-0-5546" name="__codelineno-0-5546"></a>                <span class="c1"># Gaussian k-out-of-t shares the "gaussian" mechanism label but</span>
-<a id="__codelineno-0-5547" name="__codelineno-0-5547"></a>                <span class="c1"># is still defined for one fixed horizon, unlike Poisson DP-SGD.</span>
-<a id="__codelineno-0-5548" name="__codelineno-0-5548"></a>                <span class="n">disposition</span> <span class="o">=</span> <span class="s2">"dp_relevant"</span>
-<a id="__codelineno-0-5549" name="__codelineno-0-5549"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span><span class="p">:</span>
-<a id="__codelineno-0-5550" name="__codelineno-0-5550"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5551" name="__codelineno-0-5551"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"dp_relevant"</span><span class="p">:</span>
-<a id="__codelineno-0-5552" name="__codelineno-0-5552"></a>                <span class="k">if</span> <span class="n">saved_mechanism</span> <span class="o">!=</span> <span class="s2">"gaussian"</span> <span class="ow">or</span> <span class="n">horizon_resume</span><span class="p">:</span>
-<a id="__codelineno-0-5553" name="__codelineno-0-5553"></a>                    <span class="k">raise</span> <span class="n">CheckpointError</span><span class="p">(</span>
-<a id="__codelineno-0-5554" name="__codelineno-0-5554"></a>                        <span class="o">*</span><span class="p">(</span>
-<a id="__codelineno-0-5555" name="__codelineno-0-5555"></a>                            <span class="sa">f</span><span class="s2">"Whole-horizon resume forbids drift on </span><span class="si">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: "</span>
-<a id="__codelineno-0-5556" name="__codelineno-0-5556"></a>                            <span class="sa">f</span><span class="s2">"saved=</span><span class="si">{</span><span class="n">saved</span><span class="si">!r}</span><span class="s2">, current=</span><span class="si">{</span><span class="n">current</span><span class="si">!r}</span><span class="s2">. The "</span>
-<a id="__codelineno-0-5557" name="__codelineno-0-5557"></a>                            <span class="s2">"accounting process is defined for the original "</span>
-<a id="__codelineno-0-5558" name="__codelineno-0-5558"></a>                            <span class="s2">"declared horizon; restart from scratch with the new arg."</span><span class="p">,</span>
-<a id="__codelineno-0-5559" name="__codelineno-0-5559"></a>                        <span class="p">)</span>
-<a id="__codelineno-0-5560" name="__codelineno-0-5560"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-5561" name="__codelineno-0-5561"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5562" name="__codelineno-0-5562"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (dp_relevant, DP-SGD): "</span>
-<a id="__codelineno-0-5563" name="__codelineno-0-5563"></a>                    <span class="s2">"saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — heterogeneous RDP composition "</span>
-<a id="__codelineno-0-5564" name="__codelineno-0-5564"></a>                    <span class="s2">"still yields a correct ε."</span><span class="p">,</span>
-<a id="__codelineno-0-5565" name="__codelineno-0-5565"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5566" name="__codelineno-0-5566"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5567" name="__codelineno-0-5567"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5568" name="__codelineno-0-5568"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5569" name="__codelineno-0-5569"></a>            <span class="k">elif</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"shape"</span><span class="p">:</span>
-<a id="__codelineno-0-5570" name="__codelineno-0-5570"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5571" name="__codelineno-0-5571"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (shape): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — "</span>
-<a id="__codelineno-0-5572" name="__codelineno-0-5572"></a>                    <span class="s2">"trajectory will differ from phase-1; using current args."</span><span class="p">,</span>
-<a id="__codelineno-0-5573" name="__codelineno-0-5573"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5574" name="__codelineno-0-5574"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5575" name="__codelineno-0-5575"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5576" name="__codelineno-0-5576"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5577" name="__codelineno-0-5577"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-5578" name="__codelineno-0-5578"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5579" name="__codelineno-0-5579"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span>
-<a id="__codelineno-0-5580" name="__codelineno-0-5580"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5581" name="__codelineno-0-5581"></a>                    <span class="n">disposition</span><span class="p">,</span>
-<a id="__codelineno-0-5582" name="__codelineno-0-5582"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5583" name="__codelineno-0-5583"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5584" name="__codelineno-0-5584"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5585" name="__codelineno-0-5585"></a>
-<a id="__codelineno-0-5586" name="__codelineno-0-5586"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_current_values_for_drift</span><span class="p">(</span>
-<a id="__codelineno-0-5587" name="__codelineno-0-5587"></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">_TrainingContext</span> <span class="o">|</span> <span class="kc">None</span>
-<a id="__codelineno-0-5588" name="__codelineno-0-5588"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-5589" name="__codelineno-0-5589"></a><span class="w">        </span><span class="sd">"""Resolve current (post-setup) values for the drift-checked fields.</span>
-<a id="__codelineno-0-5590" name="__codelineno-0-5590"></a>
-<a id="__codelineno-0-5591" name="__codelineno-0-5591"></a><span class="sd">        Splits the lookup off so :meth:`_warn_on_arg_drift` stays a pure</span>
-<a id="__codelineno-0-5592" name="__codelineno-0-5592"></a><span class="sd">        iteration over field metadata — no per-field if/else.  Returns</span>
-<a id="__codelineno-0-5593" name="__codelineno-0-5593"></a><span class="sd">        ``None`` for any field whose live value can't be determined yet</span>
-<a id="__codelineno-0-5594" name="__codelineno-0-5594"></a><span class="sd">        (e.g. ``sample_rate`` before ``ctx`` exists).</span>
-<a id="__codelineno-0-5595" name="__codelineno-0-5595"></a><span class="sd">        """</span>
-<a id="__codelineno-0-5596" name="__codelineno-0-5596"></a>        <span class="c1"># ``sample_rate`` fallback (when ``ctx`` isn't built yet) must</span>
-<a id="__codelineno-0-5597" name="__codelineno-0-5597"></a>        <span class="c1"># mirror ``_setup_training``'s computation — same numerator</span>
-<a id="__codelineno-0-5598" name="__codelineno-0-5598"></a>        <span class="c1"># (``expected_batch_size``, which is ``world_size *</span>
-<a id="__codelineno-0-5599" name="__codelineno-0-5599"></a>        <span class="c1"># per_device_train_batch_size``) and same denominator (the</span>
-<a id="__codelineno-0-5600" name="__codelineno-0-5600"></a>        <span class="c1"># post-DDP-trim dataset size).  Using ``len(self._train_dataset)``</span>
-<a id="__codelineno-0-5601" name="__codelineno-0-5601"></a>        <span class="c1"># raw would falsely report drift on every DDP resume because</span>
-<a id="__codelineno-0-5602" name="__codelineno-0-5602"></a>        <span class="c1"># the trim hasn't been applied at compare time.  Returns</span>
-<a id="__codelineno-0-5603" name="__codelineno-0-5603"></a>        <span class="c1"># ``None`` (skips the check) when the dataset isn't available.</span>
-<a id="__codelineno-0-5604" name="__codelineno-0-5604"></a>        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5605" name="__codelineno-0-5605"></a>            <span class="n">fallback_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">sample_rate</span>
-<a id="__codelineno-0-5606" name="__codelineno-0-5606"></a>        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5607" name="__codelineno-0-5607"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-5608" name="__codelineno-0-5608"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-5609" name="__codelineno-0-5609"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span>
-<a id="__codelineno-0-5610" name="__codelineno-0-5610"></a>                <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_effective_train_dataset_size</span><span class="p">()</span>
-<a id="__codelineno-0-5611" name="__codelineno-0-5611"></a>            <span class="p">)</span>
-<a id="__codelineno-0-5612" name="__codelineno-0-5612"></a>        <span class="k">return</span> <span class="p">{</span>
-<a id="__codelineno-0-5613" name="__codelineno-0-5613"></a>            <span class="s2">"sample_rate"</span><span class="p">:</span> <span class="n">fallback_rate</span><span class="p">,</span>
-<a id="__codelineno-0-5614" name="__codelineno-0-5614"></a>            <span class="s2">"target_delta"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5615" name="__codelineno-0-5615"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">target_delta</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_target_delta</span>
-<a id="__codelineno-0-5616" name="__codelineno-0-5616"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5617" name="__codelineno-0-5617"></a>            <span class="c1"># In *calibrated* mode the noise multiplier is recomputed over the</span>
-<a id="__codelineno-0-5618" name="__codelineno-0-5618"></a>            <span class="c1"># remaining steps and so legitimately differs from the saved one;</span>
-<a id="__codelineno-0-5619" name="__codelineno-0-5619"></a>            <span class="c1"># comparing them would fire a spurious "drift" warning on every</span>
-<a id="__codelineno-0-5620" name="__codelineno-0-5620"></a>            <span class="c1"># resume and erode trust in the genuinely-meaningful drift signals.</span>
-<a id="__codelineno-0-5621" name="__codelineno-0-5621"></a>            <span class="c1"># Return ``None`` (the drift loop skips ``None``) unless the user</span>
-<a id="__codelineno-0-5622" name="__codelineno-0-5622"></a>            <span class="c1"># pinned a fixed multiplier, where a mismatch is real drift.</span>
-<a id="__codelineno-0-5623" name="__codelineno-0-5623"></a>            <span class="s2">"noise_multiplier"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5624" name="__codelineno-0-5624"></a>                <span class="kc">None</span>
-<a id="__codelineno-0-5625" name="__codelineno-0-5625"></a>                <span class="k">if</span> <span class="p">(</span><span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">calibration_source</span> <span class="o">==</span> <span class="s2">"calibrated"</span><span class="p">)</span>
-<a id="__codelineno-0-5626" name="__codelineno-0-5626"></a>                <span class="k">else</span> <span class="p">(</span>
-<a id="__codelineno-0-5627" name="__codelineno-0-5627"></a>                    <span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span>
-<a id="__codelineno-0-5628" name="__codelineno-0-5628"></a>                    <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5629" name="__codelineno-0-5629"></a>                    <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_multiplier</span>
-<a id="__codelineno-0-5630" name="__codelineno-0-5630"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5507" name="__codelineno-0-5507"></a><span class="sd">        - ``"dp_relevant"`` + independent-step DP-SGD: ``log.warning``.</span>
+<a id="__codelineno-0-5508" name="__codelineno-0-5508"></a><span class="sd">        - ``"dp_relevant"`` + a whole-horizon process or DP-FTRL:</span>
+<a id="__codelineno-0-5509" name="__codelineno-0-5509"></a><span class="sd">          ``raise ValueError`` — accounting uses the original schedule.</span>
+<a id="__codelineno-0-5510" name="__codelineno-0-5510"></a><span class="sd">        - ``"shape"``: warn — trajectory differs but privacy is intact.</span>
+<a id="__codelineno-0-5511" name="__codelineno-0-5511"></a><span class="sd">        - ``"intentional_extend"``: silent — normal user action (e.g.,</span>
+<a id="__codelineno-0-5512" name="__codelineno-0-5512"></a><span class="sd">          extending ``total_steps`` under independent-step DP-SGD).</span>
+<a id="__codelineno-0-5513" name="__codelineno-0-5513"></a>
+<a id="__codelineno-0-5514" name="__codelineno-0-5514"></a><span class="sd">        Dict-valued dispositions resolve via the saved ``mechanism_kind``:</span>
+<a id="__codelineno-0-5515" name="__codelineno-0-5515"></a><span class="sd">        the matching key wins; ``"default"`` is the fallback.</span>
+<a id="__codelineno-0-5516" name="__codelineno-0-5516"></a><span class="sd">        """</span>
+<a id="__codelineno-0-5517" name="__codelineno-0-5517"></a>        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span>
+<a id="__codelineno-0-5518" name="__codelineno-0-5518"></a>        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span>
+<a id="__codelineno-0-5519" name="__codelineno-0-5519"></a>        <span class="n">current_by_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_values_for_drift</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+<a id="__codelineno-0-5520" name="__codelineno-0-5520"></a>        <span class="n">saved_mechanism</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">mechanism_kind</span>
+<a id="__codelineno-0-5521" name="__codelineno-0-5521"></a>        <span class="n">horizon_resume</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="ow">or</span> <span class="p">(</span>
+<a id="__codelineno-0-5522" name="__codelineno-0-5522"></a>            <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span>
+<a id="__codelineno-0-5523" name="__codelineno-0-5523"></a>        <span class="p">)</span>
+<a id="__codelineno-0-5524" name="__codelineno-0-5524"></a>
+<a id="__codelineno-0-5525" name="__codelineno-0-5525"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">runtime</span><span class="p">):</span>
+<a id="__codelineno-0-5526" name="__codelineno-0-5526"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compare_on_resume"</span><span class="p">):</span>
+<a id="__codelineno-0-5527" name="__codelineno-0-5527"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5528" name="__codelineno-0-5528"></a>            <span class="n">saved</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+<a id="__codelineno-0-5529" name="__codelineno-0-5529"></a>            <span class="n">current</span> <span class="o">=</span> <span class="n">current_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+<a id="__codelineno-0-5530" name="__codelineno-0-5530"></a>            <span class="k">if</span> <span class="n">saved</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5531" name="__codelineno-0-5531"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5532" name="__codelineno-0-5532"></a>            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"horizon_process_state"</span><span class="p">:</span>
+<a id="__codelineno-0-5533" name="__codelineno-0-5533"></a>                <span class="n">saved</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">saved</span><span class="p">)</span>
+<a id="__codelineno-0-5534" name="__codelineno-0-5534"></a>                <span class="n">current</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+<a id="__codelineno-0-5535" name="__codelineno-0-5535"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">_drift_differs</span><span class="p">(</span><span class="n">saved</span><span class="p">,</span> <span class="n">current</span><span class="p">):</span>
+<a id="__codelineno-0-5536" name="__codelineno-0-5536"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5537" name="__codelineno-0-5537"></a>
+<a id="__codelineno-0-5538" name="__codelineno-0-5538"></a>            <span class="n">disposition</span> <span class="o">=</span> <span class="n">_resolve_drift_disposition</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">saved_mechanism</span><span class="p">)</span>
+<a id="__codelineno-0-5539" name="__codelineno-0-5539"></a>            <span class="k">if</span> <span class="p">(</span>
+<a id="__codelineno-0-5540" name="__codelineno-0-5540"></a>                <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"total_steps"</span>
+<a id="__codelineno-0-5541" name="__codelineno-0-5541"></a>                <span class="ow">and</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span>
+<a id="__codelineno-0-5542" name="__codelineno-0-5542"></a>                <span class="ow">and</span> <span class="n">horizon_resume</span>
+<a id="__codelineno-0-5543" name="__codelineno-0-5543"></a>            <span class="p">):</span>
+<a id="__codelineno-0-5544" name="__codelineno-0-5544"></a>                <span class="c1"># Gaussian k-out-of-t shares the "gaussian" mechanism label but</span>
+<a id="__codelineno-0-5545" name="__codelineno-0-5545"></a>                <span class="c1"># is still defined for one fixed horizon, unlike Poisson DP-SGD.</span>
+<a id="__codelineno-0-5546" name="__codelineno-0-5546"></a>                <span class="n">disposition</span> <span class="o">=</span> <span class="s2">"dp_relevant"</span>
+<a id="__codelineno-0-5547" name="__codelineno-0-5547"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span><span class="p">:</span>
+<a id="__codelineno-0-5548" name="__codelineno-0-5548"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5549" name="__codelineno-0-5549"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"dp_relevant"</span><span class="p">:</span>
+<a id="__codelineno-0-5550" name="__codelineno-0-5550"></a>                <span class="k">if</span> <span class="n">saved_mechanism</span> <span class="o">!=</span> <span class="s2">"gaussian"</span> <span class="ow">or</span> <span class="n">horizon_resume</span><span class="p">:</span>
+<a id="__codelineno-0-5551" name="__codelineno-0-5551"></a>                    <span class="k">raise</span> <span class="n">CheckpointError</span><span class="p">(</span>
+<a id="__codelineno-0-5552" name="__codelineno-0-5552"></a>                        <span class="o">*</span><span class="p">(</span>
+<a id="__codelineno-0-5553" name="__codelineno-0-5553"></a>                            <span class="sa">f</span><span class="s2">"Whole-horizon resume forbids drift on </span><span class="si">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: "</span>
+<a id="__codelineno-0-5554" name="__codelineno-0-5554"></a>                            <span class="sa">f</span><span class="s2">"saved=</span><span class="si">{</span><span class="n">saved</span><span class="si">!r}</span><span class="s2">, current=</span><span class="si">{</span><span class="n">current</span><span class="si">!r}</span><span class="s2">. The "</span>
+<a id="__codelineno-0-5555" name="__codelineno-0-5555"></a>                            <span class="s2">"accounting process is defined for the original "</span>
+<a id="__codelineno-0-5556" name="__codelineno-0-5556"></a>                            <span class="s2">"declared horizon; restart from scratch with the new arg."</span><span class="p">,</span>
+<a id="__codelineno-0-5557" name="__codelineno-0-5557"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-5558" name="__codelineno-0-5558"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-5559" name="__codelineno-0-5559"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5560" name="__codelineno-0-5560"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (dp_relevant, DP-SGD): "</span>
+<a id="__codelineno-0-5561" name="__codelineno-0-5561"></a>                    <span class="s2">"saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">."</span><span class="p">,</span>
+<a id="__codelineno-0-5562" name="__codelineno-0-5562"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5563" name="__codelineno-0-5563"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5564" name="__codelineno-0-5564"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5565" name="__codelineno-0-5565"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5566" name="__codelineno-0-5566"></a>            <span class="k">elif</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"shape"</span><span class="p">:</span>
+<a id="__codelineno-0-5567" name="__codelineno-0-5567"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5568" name="__codelineno-0-5568"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (shape): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — "</span>
+<a id="__codelineno-0-5569" name="__codelineno-0-5569"></a>                    <span class="s2">"trajectory will differ from phase-1; using current args."</span><span class="p">,</span>
+<a id="__codelineno-0-5570" name="__codelineno-0-5570"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5571" name="__codelineno-0-5571"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5572" name="__codelineno-0-5572"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5573" name="__codelineno-0-5573"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5574" name="__codelineno-0-5574"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-5575" name="__codelineno-0-5575"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5576" name="__codelineno-0-5576"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-5577" name="__codelineno-0-5577"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5578" name="__codelineno-0-5578"></a>                    <span class="n">disposition</span><span class="p">,</span>
+<a id="__codelineno-0-5579" name="__codelineno-0-5579"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5580" name="__codelineno-0-5580"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5581" name="__codelineno-0-5581"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5582" name="__codelineno-0-5582"></a>
+<a id="__codelineno-0-5583" name="__codelineno-0-5583"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_current_values_for_drift</span><span class="p">(</span>
+<a id="__codelineno-0-5584" name="__codelineno-0-5584"></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">_TrainingContext</span> <span class="o">|</span> <span class="kc">None</span>
+<a id="__codelineno-0-5585" name="__codelineno-0-5585"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<a id="__codelineno-0-5586" name="__codelineno-0-5586"></a><span class="w">        </span><span class="sd">"""Resolve current (post-setup) values for the drift-checked fields.</span>
+<a id="__codelineno-0-5587" name="__codelineno-0-5587"></a>
+<a id="__codelineno-0-5588" name="__codelineno-0-5588"></a><span class="sd">        Splits the lookup off so :meth:`_warn_on_arg_drift` stays a pure</span>
+<a id="__codelineno-0-5589" name="__codelineno-0-5589"></a><span class="sd">        iteration over field metadata — no per-field if/else.  Returns</span>
+<a id="__codelineno-0-5590" name="__codelineno-0-5590"></a><span class="sd">        ``None`` for any field whose live value can't be determined yet</span>
+<a id="__codelineno-0-5591" name="__codelineno-0-5591"></a><span class="sd">        (e.g. ``sample_rate`` before ``ctx`` exists).</span>
+<a id="__codelineno-0-5592" name="__codelineno-0-5592"></a><span class="sd">        """</span>
+<a id="__codelineno-0-5593" name="__codelineno-0-5593"></a>        <span class="c1"># ``sample_rate`` fallback (when ``ctx`` isn't built yet) must</span>
+<a id="__codelineno-0-5594" name="__codelineno-0-5594"></a>        <span class="c1"># mirror ``_setup_training``'s computation — same numerator</span>
+<a id="__codelineno-0-5595" name="__codelineno-0-5595"></a>        <span class="c1"># (``expected_batch_size``, which is ``world_size *</span>
+<a id="__codelineno-0-5596" name="__codelineno-0-5596"></a>        <span class="c1"># per_device_train_batch_size``) and same denominator (the</span>
+<a id="__codelineno-0-5597" name="__codelineno-0-5597"></a>        <span class="c1"># post-DDP-trim dataset size).  Using ``len(self._train_dataset)``</span>
+<a id="__codelineno-0-5598" name="__codelineno-0-5598"></a>        <span class="c1"># raw would falsely report drift on every DDP resume because</span>
+<a id="__codelineno-0-5599" name="__codelineno-0-5599"></a>        <span class="c1"># the trim hasn't been applied at compare time.  Returns</span>
+<a id="__codelineno-0-5600" name="__codelineno-0-5600"></a>        <span class="c1"># ``None`` (skips the check) when the dataset isn't available.</span>
+<a id="__codelineno-0-5601" name="__codelineno-0-5601"></a>        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5602" name="__codelineno-0-5602"></a>            <span class="n">fallback_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">sample_rate</span>
+<a id="__codelineno-0-5603" name="__codelineno-0-5603"></a>        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5604" name="__codelineno-0-5604"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-5605" name="__codelineno-0-5605"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-5606" name="__codelineno-0-5606"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span>
+<a id="__codelineno-0-5607" name="__codelineno-0-5607"></a>                <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_effective_train_dataset_size</span><span class="p">()</span>
+<a id="__codelineno-0-5608" name="__codelineno-0-5608"></a>            <span class="p">)</span>
+<a id="__codelineno-0-5609" name="__codelineno-0-5609"></a>        <span class="k">return</span> <span class="p">{</span>
+<a id="__codelineno-0-5610" name="__codelineno-0-5610"></a>            <span class="s2">"sample_rate"</span><span class="p">:</span> <span class="n">fallback_rate</span><span class="p">,</span>
+<a id="__codelineno-0-5611" name="__codelineno-0-5611"></a>            <span class="s2">"target_delta"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5612" name="__codelineno-0-5612"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">target_delta</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_target_delta</span>
+<a id="__codelineno-0-5613" name="__codelineno-0-5613"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5614" name="__codelineno-0-5614"></a>            <span class="c1"># In *calibrated* mode the noise multiplier is recomputed over the</span>
+<a id="__codelineno-0-5615" name="__codelineno-0-5615"></a>            <span class="c1"># remaining steps and so legitimately differs from the saved one;</span>
+<a id="__codelineno-0-5616" name="__codelineno-0-5616"></a>            <span class="c1"># comparing them would fire a spurious "drift" warning on every</span>
+<a id="__codelineno-0-5617" name="__codelineno-0-5617"></a>            <span class="c1"># resume and erode trust in the genuinely-meaningful drift signals.</span>
+<a id="__codelineno-0-5618" name="__codelineno-0-5618"></a>            <span class="c1"># Return ``None`` (the drift loop skips ``None``) unless the user</span>
+<a id="__codelineno-0-5619" name="__codelineno-0-5619"></a>            <span class="c1"># pinned a fixed multiplier, where a mismatch is real drift.</span>
+<a id="__codelineno-0-5620" name="__codelineno-0-5620"></a>            <span class="s2">"noise_multiplier"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5621" name="__codelineno-0-5621"></a>                <span class="kc">None</span>
+<a id="__codelineno-0-5622" name="__codelineno-0-5622"></a>                <span class="k">if</span> <span class="p">(</span><span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">calibration_source</span> <span class="o">==</span> <span class="s2">"calibrated"</span><span class="p">)</span>
+<a id="__codelineno-0-5623" name="__codelineno-0-5623"></a>                <span class="k">else</span> <span class="p">(</span>
+<a id="__codelineno-0-5624" name="__codelineno-0-5624"></a>                    <span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span>
+<a id="__codelineno-0-5625" name="__codelineno-0-5625"></a>                    <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5626" name="__codelineno-0-5626"></a>                    <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_multiplier</span>
+<a id="__codelineno-0-5627" name="__codelineno-0-5627"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5628" name="__codelineno-0-5628"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5629" name="__codelineno-0-5629"></a>            <span class="s2">"total_steps"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5630" name="__codelineno-0-5630"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">total_steps</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_predict_total_steps</span><span class="p">()</span>
 <a id="__codelineno-0-5631" name="__codelineno-0-5631"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5632" name="__codelineno-0-5632"></a>            <span class="s2">"total_steps"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5633" name="__codelineno-0-5633"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">total_steps</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_predict_total_steps</span><span class="p">()</span>
-<a id="__codelineno-0-5634" name="__codelineno-0-5634"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5635" name="__codelineno-0-5635"></a>            <span class="s2">"expected_batch_size"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span><span class="p">),</span>
-<a id="__codelineno-0-5636" name="__codelineno-0-5636"></a>            <span class="s2">"expected_steps_per_epoch"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5637" name="__codelineno-0-5637"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">expected_steps_per_epoch</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5632" name="__codelineno-0-5632"></a>            <span class="s2">"expected_batch_size"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span><span class="p">),</span>
+<a id="__codelineno-0-5633" name="__codelineno-0-5633"></a>            <span class="s2">"expected_steps_per_epoch"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5634" name="__codelineno-0-5634"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">expected_steps_per_epoch</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5635" name="__codelineno-0-5635"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5636" name="__codelineno-0-5636"></a>            <span class="s2">"mechanism_kind"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5637" name="__codelineno-0-5637"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">mechanism_kind</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_mechanism</span>
 <a id="__codelineno-0-5638" name="__codelineno-0-5638"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5639" name="__codelineno-0-5639"></a>            <span class="s2">"mechanism_kind"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5640" name="__codelineno-0-5640"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">mechanism_kind</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_mechanism</span>
-<a id="__codelineno-0-5641" name="__codelineno-0-5641"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5642" name="__codelineno-0-5642"></a>            <span class="s2">"is_horizon_process"</span><span class="p">:</span> <span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-5643" name="__codelineno-0-5643"></a>            <span class="s2">"horizon_process_state"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5644" name="__codelineno-0-5644"></a>                <span class="n">opaque_state_dict</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span><span class="p">)</span>
-<a id="__codelineno-0-5645" name="__codelineno-0-5645"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5646" name="__codelineno-0-5646"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5647" name="__codelineno-0-5647"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5648" name="__codelineno-0-5648"></a>            <span class="c1"># MF strategy params: live values are derived inside MFContext</span>
-<a id="__codelineno-0-5649" name="__codelineno-0-5649"></a>            <span class="c1"># construction and surfaced via ctx.mf; before ctx exists we</span>
-<a id="__codelineno-0-5650" name="__codelineno-0-5650"></a>            <span class="c1"># can't compare, so return None to skip the check.</span>
-<a id="__codelineno-0-5651" name="__codelineno-0-5651"></a>            <span class="s2">"mf_n_steps"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5652" name="__codelineno-0-5652"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">n_steps</span><span class="p">)</span>
-<a id="__codelineno-0-5653" name="__codelineno-0-5653"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5654" name="__codelineno-0-5654"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5655" name="__codelineno-0-5655"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5656" name="__codelineno-0-5656"></a>            <span class="s2">"mf_min_sep"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5657" name="__codelineno-0-5657"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">min_sep</span><span class="p">)</span>
-<a id="__codelineno-0-5658" name="__codelineno-0-5658"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5659" name="__codelineno-0-5659"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5660" name="__codelineno-0-5660"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5661" name="__codelineno-0-5661"></a>            <span class="s2">"mf_max_participations"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5662" name="__codelineno-0-5662"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">max_participations</span><span class="p">)</span>
-<a id="__codelineno-0-5663" name="__codelineno-0-5663"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5664" name="__codelineno-0-5664"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5665" name="__codelineno-0-5665"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5666" name="__codelineno-0-5666"></a>            <span class="c1"># LR-schedule shape (privacy-neutral; warn-only drift).</span>
-<a id="__codelineno-0-5667" name="__codelineno-0-5667"></a>            <span class="s2">"lr_scheduler"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="p">,</span>
-<a id="__codelineno-0-5668" name="__codelineno-0-5668"></a>            <span class="s2">"learning_rate"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">learning_rate</span><span class="p">,</span>
-<a id="__codelineno-0-5669" name="__codelineno-0-5669"></a>            <span class="s2">"warmup_steps"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">warmup_steps</span><span class="p">,</span>
-<a id="__codelineno-0-5670" name="__codelineno-0-5670"></a>            <span class="s2">"lr_scheduler_kwargs"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5671" name="__codelineno-0-5671"></a>                <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span>
-<a id="__codelineno-0-5672" name="__codelineno-0-5672"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
-<a id="__codelineno-0-5673" name="__codelineno-0-5673"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5674" name="__codelineno-0-5674"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5675" name="__codelineno-0-5675"></a>        <span class="p">}</span>
+<a id="__codelineno-0-5639" name="__codelineno-0-5639"></a>            <span class="s2">"is_horizon_process"</span><span class="p">:</span> <span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-5640" name="__codelineno-0-5640"></a>            <span class="s2">"horizon_process_state"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5641" name="__codelineno-0-5641"></a>                <span class="n">opaque_state_dict</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span><span class="p">)</span>
+<a id="__codelineno-0-5642" name="__codelineno-0-5642"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5643" name="__codelineno-0-5643"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5644" name="__codelineno-0-5644"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5645" name="__codelineno-0-5645"></a>            <span class="c1"># MF strategy params: live values are derived inside MFContext</span>
+<a id="__codelineno-0-5646" name="__codelineno-0-5646"></a>            <span class="c1"># construction and surfaced via ctx.mf; before ctx exists we</span>
+<a id="__codelineno-0-5647" name="__codelineno-0-5647"></a>            <span class="c1"># can't compare, so return None to skip the check.</span>
+<a id="__codelineno-0-5648" name="__codelineno-0-5648"></a>            <span class="s2">"mf_n_steps"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5649" name="__codelineno-0-5649"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">n_steps</span><span class="p">)</span>
+<a id="__codelineno-0-5650" name="__codelineno-0-5650"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5651" name="__codelineno-0-5651"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5652" name="__codelineno-0-5652"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5653" name="__codelineno-0-5653"></a>            <span class="s2">"mf_min_sep"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5654" name="__codelineno-0-5654"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">min_sep</span><span class="p">)</span>
+<a id="__codelineno-0-5655" name="__codelineno-0-5655"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5656" name="__codelineno-0-5656"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5657" name="__codelineno-0-5657"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5658" name="__codelineno-0-5658"></a>            <span class="s2">"mf_max_participations"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5659" name="__codelineno-0-5659"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">max_participations</span><span class="p">)</span>
+<a id="__codelineno-0-5660" name="__codelineno-0-5660"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5661" name="__codelineno-0-5661"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5662" name="__codelineno-0-5662"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5663" name="__codelineno-0-5663"></a>            <span class="c1"># LR-schedule shape (privacy-neutral; warn-only drift).</span>
+<a id="__codelineno-0-5664" name="__codelineno-0-5664"></a>            <span class="s2">"lr_scheduler"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="p">,</span>
+<a id="__codelineno-0-5665" name="__codelineno-0-5665"></a>            <span class="s2">"learning_rate"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">learning_rate</span><span class="p">,</span>
+<a id="__codelineno-0-5666" name="__codelineno-0-5666"></a>            <span class="s2">"warmup_steps"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">warmup_steps</span><span class="p">,</span>
+<a id="__codelineno-0-5667" name="__codelineno-0-5667"></a>            <span class="s2">"lr_scheduler_kwargs"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5668" name="__codelineno-0-5668"></a>                <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span>
+<a id="__codelineno-0-5669" name="__codelineno-0-5669"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+<a id="__codelineno-0-5670" name="__codelineno-0-5670"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5671" name="__codelineno-0-5671"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5672" name="__codelineno-0-5672"></a>        <span class="p">}</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
@@ -32640,10 +32634,7 @@ ValueError
 <span class="normal"><a href="#__codelineno-0-5669">5669</a></span>
 <span class="normal"><a href="#__codelineno-0-5670">5670</a></span>
 <span class="normal"><a href="#__codelineno-0-5671">5671</a></span>
-<span class="normal"><a href="#__codelineno-0-5672">5672</a></span>
-<span class="normal"><a href="#__codelineno-0-5673">5673</a></span>
-<span class="normal"><a href="#__codelineno-0-5674">5674</a></span>
-<span class="normal"><a href="#__codelineno-0-5675">5675</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="k">class</span><span class="w"> </span><span class="nc">DPTrainer</span><span class="p">:</span>
+<span class="normal"><a href="#__codelineno-0-5672">5672</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-363" name="__codelineno-0-363"></a><span class="k">class</span><span class="w"> </span><span class="nc">DPTrainer</span><span class="p">:</span>
 <a id="__codelineno-0-364" name="__codelineno-0-364"></a><span class="w">    </span><span class="sd">"""Differentially private trainer for HuggingFace models.</span>
 <a id="__codelineno-0-365" name="__codelineno-0-365"></a>
 <a id="__codelineno-0-366" name="__codelineno-0-366"></a><span class="sd">    Method decomposition mirrors HF Trainer:</span>
@@ -37787,175 +37778,172 @@ ValueError
 <a id="__codelineno-0-5504" name="__codelineno-0-5504"></a><span class="sd">        :class:`~opaque.api.transformers.trainer._checkpoint.RuntimeCheckpoint`</span>
 <a id="__codelineno-0-5505" name="__codelineno-0-5505"></a><span class="sd">        for the vocabulary):</span>
 <a id="__codelineno-0-5506" name="__codelineno-0-5506"></a>
-<a id="__codelineno-0-5507" name="__codelineno-0-5507"></a><span class="sd">        - ``"dp_relevant"`` + DP-SGD: ``log.warning`` — RDP composition</span>
-<a id="__codelineno-0-5508" name="__codelineno-0-5508"></a><span class="sd">          still yields a correct ε.</span>
-<a id="__codelineno-0-5509" name="__codelineno-0-5509"></a><span class="sd">        - ``"dp_relevant"`` + DP-FTRL: ``raise ValueError`` — the MF</span>
-<a id="__codelineno-0-5510" name="__codelineno-0-5510"></a><span class="sd">          strategy is computed for a specific composition; drift would</span>
-<a id="__codelineno-0-5511" name="__codelineno-0-5511"></a><span class="sd">          silently produce a different ε.</span>
-<a id="__codelineno-0-5512" name="__codelineno-0-5512"></a><span class="sd">        - ``"shape"``: warn — trajectory differs but privacy is intact.</span>
-<a id="__codelineno-0-5513" name="__codelineno-0-5513"></a><span class="sd">        - ``"intentional_extend"``: silent — normal user action (e.g.,</span>
-<a id="__codelineno-0-5514" name="__codelineno-0-5514"></a><span class="sd">          extending ``total_steps`` under DP-SGD).</span>
-<a id="__codelineno-0-5515" name="__codelineno-0-5515"></a>
-<a id="__codelineno-0-5516" name="__codelineno-0-5516"></a><span class="sd">        Dict-valued dispositions resolve via the saved ``mechanism_kind``:</span>
-<a id="__codelineno-0-5517" name="__codelineno-0-5517"></a><span class="sd">        the matching key wins; ``"default"`` is the fallback.</span>
-<a id="__codelineno-0-5518" name="__codelineno-0-5518"></a><span class="sd">        """</span>
-<a id="__codelineno-0-5519" name="__codelineno-0-5519"></a>        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span>
-<a id="__codelineno-0-5520" name="__codelineno-0-5520"></a>        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span>
-<a id="__codelineno-0-5521" name="__codelineno-0-5521"></a>        <span class="n">current_by_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_values_for_drift</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
-<a id="__codelineno-0-5522" name="__codelineno-0-5522"></a>        <span class="n">saved_mechanism</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">mechanism_kind</span>
-<a id="__codelineno-0-5523" name="__codelineno-0-5523"></a>        <span class="n">horizon_resume</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="ow">or</span> <span class="p">(</span>
-<a id="__codelineno-0-5524" name="__codelineno-0-5524"></a>            <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span>
-<a id="__codelineno-0-5525" name="__codelineno-0-5525"></a>        <span class="p">)</span>
-<a id="__codelineno-0-5526" name="__codelineno-0-5526"></a>
-<a id="__codelineno-0-5527" name="__codelineno-0-5527"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">runtime</span><span class="p">):</span>
-<a id="__codelineno-0-5528" name="__codelineno-0-5528"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compare_on_resume"</span><span class="p">):</span>
-<a id="__codelineno-0-5529" name="__codelineno-0-5529"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5530" name="__codelineno-0-5530"></a>            <span class="n">saved</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-<a id="__codelineno-0-5531" name="__codelineno-0-5531"></a>            <span class="n">current</span> <span class="o">=</span> <span class="n">current_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-<a id="__codelineno-0-5532" name="__codelineno-0-5532"></a>            <span class="k">if</span> <span class="n">saved</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5533" name="__codelineno-0-5533"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5534" name="__codelineno-0-5534"></a>            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"horizon_process_state"</span><span class="p">:</span>
-<a id="__codelineno-0-5535" name="__codelineno-0-5535"></a>                <span class="n">saved</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">saved</span><span class="p">)</span>
-<a id="__codelineno-0-5536" name="__codelineno-0-5536"></a>                <span class="n">current</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
-<a id="__codelineno-0-5537" name="__codelineno-0-5537"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">_drift_differs</span><span class="p">(</span><span class="n">saved</span><span class="p">,</span> <span class="n">current</span><span class="p">):</span>
-<a id="__codelineno-0-5538" name="__codelineno-0-5538"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5539" name="__codelineno-0-5539"></a>
-<a id="__codelineno-0-5540" name="__codelineno-0-5540"></a>            <span class="n">disposition</span> <span class="o">=</span> <span class="n">_resolve_drift_disposition</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">saved_mechanism</span><span class="p">)</span>
-<a id="__codelineno-0-5541" name="__codelineno-0-5541"></a>            <span class="k">if</span> <span class="p">(</span>
-<a id="__codelineno-0-5542" name="__codelineno-0-5542"></a>                <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"total_steps"</span>
-<a id="__codelineno-0-5543" name="__codelineno-0-5543"></a>                <span class="ow">and</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span>
-<a id="__codelineno-0-5544" name="__codelineno-0-5544"></a>                <span class="ow">and</span> <span class="n">horizon_resume</span>
-<a id="__codelineno-0-5545" name="__codelineno-0-5545"></a>            <span class="p">):</span>
-<a id="__codelineno-0-5546" name="__codelineno-0-5546"></a>                <span class="c1"># Gaussian k-out-of-t shares the "gaussian" mechanism label but</span>
-<a id="__codelineno-0-5547" name="__codelineno-0-5547"></a>                <span class="c1"># is still defined for one fixed horizon, unlike Poisson DP-SGD.</span>
-<a id="__codelineno-0-5548" name="__codelineno-0-5548"></a>                <span class="n">disposition</span> <span class="o">=</span> <span class="s2">"dp_relevant"</span>
-<a id="__codelineno-0-5549" name="__codelineno-0-5549"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span><span class="p">:</span>
-<a id="__codelineno-0-5550" name="__codelineno-0-5550"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-5551" name="__codelineno-0-5551"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"dp_relevant"</span><span class="p">:</span>
-<a id="__codelineno-0-5552" name="__codelineno-0-5552"></a>                <span class="k">if</span> <span class="n">saved_mechanism</span> <span class="o">!=</span> <span class="s2">"gaussian"</span> <span class="ow">or</span> <span class="n">horizon_resume</span><span class="p">:</span>
-<a id="__codelineno-0-5553" name="__codelineno-0-5553"></a>                    <span class="k">raise</span> <span class="n">CheckpointError</span><span class="p">(</span>
-<a id="__codelineno-0-5554" name="__codelineno-0-5554"></a>                        <span class="o">*</span><span class="p">(</span>
-<a id="__codelineno-0-5555" name="__codelineno-0-5555"></a>                            <span class="sa">f</span><span class="s2">"Whole-horizon resume forbids drift on </span><span class="si">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: "</span>
-<a id="__codelineno-0-5556" name="__codelineno-0-5556"></a>                            <span class="sa">f</span><span class="s2">"saved=</span><span class="si">{</span><span class="n">saved</span><span class="si">!r}</span><span class="s2">, current=</span><span class="si">{</span><span class="n">current</span><span class="si">!r}</span><span class="s2">. The "</span>
-<a id="__codelineno-0-5557" name="__codelineno-0-5557"></a>                            <span class="s2">"accounting process is defined for the original "</span>
-<a id="__codelineno-0-5558" name="__codelineno-0-5558"></a>                            <span class="s2">"declared horizon; restart from scratch with the new arg."</span><span class="p">,</span>
-<a id="__codelineno-0-5559" name="__codelineno-0-5559"></a>                        <span class="p">)</span>
-<a id="__codelineno-0-5560" name="__codelineno-0-5560"></a>                    <span class="p">)</span>
-<a id="__codelineno-0-5561" name="__codelineno-0-5561"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5562" name="__codelineno-0-5562"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (dp_relevant, DP-SGD): "</span>
-<a id="__codelineno-0-5563" name="__codelineno-0-5563"></a>                    <span class="s2">"saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — heterogeneous RDP composition "</span>
-<a id="__codelineno-0-5564" name="__codelineno-0-5564"></a>                    <span class="s2">"still yields a correct ε."</span><span class="p">,</span>
-<a id="__codelineno-0-5565" name="__codelineno-0-5565"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5566" name="__codelineno-0-5566"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5567" name="__codelineno-0-5567"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5568" name="__codelineno-0-5568"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5569" name="__codelineno-0-5569"></a>            <span class="k">elif</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"shape"</span><span class="p">:</span>
-<a id="__codelineno-0-5570" name="__codelineno-0-5570"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5571" name="__codelineno-0-5571"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (shape): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — "</span>
-<a id="__codelineno-0-5572" name="__codelineno-0-5572"></a>                    <span class="s2">"trajectory will differ from phase-1; using current args."</span><span class="p">,</span>
-<a id="__codelineno-0-5573" name="__codelineno-0-5573"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5574" name="__codelineno-0-5574"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5575" name="__codelineno-0-5575"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5576" name="__codelineno-0-5576"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5577" name="__codelineno-0-5577"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-5578" name="__codelineno-0-5578"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-<a id="__codelineno-0-5579" name="__codelineno-0-5579"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span>
-<a id="__codelineno-0-5580" name="__codelineno-0-5580"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-<a id="__codelineno-0-5581" name="__codelineno-0-5581"></a>                    <span class="n">disposition</span><span class="p">,</span>
-<a id="__codelineno-0-5582" name="__codelineno-0-5582"></a>                    <span class="n">saved</span><span class="p">,</span>
-<a id="__codelineno-0-5583" name="__codelineno-0-5583"></a>                    <span class="n">current</span><span class="p">,</span>
-<a id="__codelineno-0-5584" name="__codelineno-0-5584"></a>                <span class="p">)</span>
-<a id="__codelineno-0-5585" name="__codelineno-0-5585"></a>
-<a id="__codelineno-0-5586" name="__codelineno-0-5586"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_current_values_for_drift</span><span class="p">(</span>
-<a id="__codelineno-0-5587" name="__codelineno-0-5587"></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">_TrainingContext</span> <span class="o">|</span> <span class="kc">None</span>
-<a id="__codelineno-0-5588" name="__codelineno-0-5588"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<a id="__codelineno-0-5589" name="__codelineno-0-5589"></a><span class="w">        </span><span class="sd">"""Resolve current (post-setup) values for the drift-checked fields.</span>
-<a id="__codelineno-0-5590" name="__codelineno-0-5590"></a>
-<a id="__codelineno-0-5591" name="__codelineno-0-5591"></a><span class="sd">        Splits the lookup off so :meth:`_warn_on_arg_drift` stays a pure</span>
-<a id="__codelineno-0-5592" name="__codelineno-0-5592"></a><span class="sd">        iteration over field metadata — no per-field if/else.  Returns</span>
-<a id="__codelineno-0-5593" name="__codelineno-0-5593"></a><span class="sd">        ``None`` for any field whose live value can't be determined yet</span>
-<a id="__codelineno-0-5594" name="__codelineno-0-5594"></a><span class="sd">        (e.g. ``sample_rate`` before ``ctx`` exists).</span>
-<a id="__codelineno-0-5595" name="__codelineno-0-5595"></a><span class="sd">        """</span>
-<a id="__codelineno-0-5596" name="__codelineno-0-5596"></a>        <span class="c1"># ``sample_rate`` fallback (when ``ctx`` isn't built yet) must</span>
-<a id="__codelineno-0-5597" name="__codelineno-0-5597"></a>        <span class="c1"># mirror ``_setup_training``'s computation — same numerator</span>
-<a id="__codelineno-0-5598" name="__codelineno-0-5598"></a>        <span class="c1"># (``expected_batch_size``, which is ``world_size *</span>
-<a id="__codelineno-0-5599" name="__codelineno-0-5599"></a>        <span class="c1"># per_device_train_batch_size``) and same denominator (the</span>
-<a id="__codelineno-0-5600" name="__codelineno-0-5600"></a>        <span class="c1"># post-DDP-trim dataset size).  Using ``len(self._train_dataset)``</span>
-<a id="__codelineno-0-5601" name="__codelineno-0-5601"></a>        <span class="c1"># raw would falsely report drift on every DDP resume because</span>
-<a id="__codelineno-0-5602" name="__codelineno-0-5602"></a>        <span class="c1"># the trim hasn't been applied at compare time.  Returns</span>
-<a id="__codelineno-0-5603" name="__codelineno-0-5603"></a>        <span class="c1"># ``None`` (skips the check) when the dataset isn't available.</span>
-<a id="__codelineno-0-5604" name="__codelineno-0-5604"></a>        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5605" name="__codelineno-0-5605"></a>            <span class="n">fallback_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">sample_rate</span>
-<a id="__codelineno-0-5606" name="__codelineno-0-5606"></a>        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-5607" name="__codelineno-0-5607"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="__codelineno-0-5608" name="__codelineno-0-5608"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-5609" name="__codelineno-0-5609"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span>
-<a id="__codelineno-0-5610" name="__codelineno-0-5610"></a>                <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_effective_train_dataset_size</span><span class="p">()</span>
-<a id="__codelineno-0-5611" name="__codelineno-0-5611"></a>            <span class="p">)</span>
-<a id="__codelineno-0-5612" name="__codelineno-0-5612"></a>        <span class="k">return</span> <span class="p">{</span>
-<a id="__codelineno-0-5613" name="__codelineno-0-5613"></a>            <span class="s2">"sample_rate"</span><span class="p">:</span> <span class="n">fallback_rate</span><span class="p">,</span>
-<a id="__codelineno-0-5614" name="__codelineno-0-5614"></a>            <span class="s2">"target_delta"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5615" name="__codelineno-0-5615"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">target_delta</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_target_delta</span>
-<a id="__codelineno-0-5616" name="__codelineno-0-5616"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5617" name="__codelineno-0-5617"></a>            <span class="c1"># In *calibrated* mode the noise multiplier is recomputed over the</span>
-<a id="__codelineno-0-5618" name="__codelineno-0-5618"></a>            <span class="c1"># remaining steps and so legitimately differs from the saved one;</span>
-<a id="__codelineno-0-5619" name="__codelineno-0-5619"></a>            <span class="c1"># comparing them would fire a spurious "drift" warning on every</span>
-<a id="__codelineno-0-5620" name="__codelineno-0-5620"></a>            <span class="c1"># resume and erode trust in the genuinely-meaningful drift signals.</span>
-<a id="__codelineno-0-5621" name="__codelineno-0-5621"></a>            <span class="c1"># Return ``None`` (the drift loop skips ``None``) unless the user</span>
-<a id="__codelineno-0-5622" name="__codelineno-0-5622"></a>            <span class="c1"># pinned a fixed multiplier, where a mismatch is real drift.</span>
-<a id="__codelineno-0-5623" name="__codelineno-0-5623"></a>            <span class="s2">"noise_multiplier"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5624" name="__codelineno-0-5624"></a>                <span class="kc">None</span>
-<a id="__codelineno-0-5625" name="__codelineno-0-5625"></a>                <span class="k">if</span> <span class="p">(</span><span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">calibration_source</span> <span class="o">==</span> <span class="s2">"calibrated"</span><span class="p">)</span>
-<a id="__codelineno-0-5626" name="__codelineno-0-5626"></a>                <span class="k">else</span> <span class="p">(</span>
-<a id="__codelineno-0-5627" name="__codelineno-0-5627"></a>                    <span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span>
-<a id="__codelineno-0-5628" name="__codelineno-0-5628"></a>                    <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5629" name="__codelineno-0-5629"></a>                    <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_multiplier</span>
-<a id="__codelineno-0-5630" name="__codelineno-0-5630"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5507" name="__codelineno-0-5507"></a><span class="sd">        - ``"dp_relevant"`` + independent-step DP-SGD: ``log.warning``.</span>
+<a id="__codelineno-0-5508" name="__codelineno-0-5508"></a><span class="sd">        - ``"dp_relevant"`` + a whole-horizon process or DP-FTRL:</span>
+<a id="__codelineno-0-5509" name="__codelineno-0-5509"></a><span class="sd">          ``raise ValueError`` — accounting uses the original schedule.</span>
+<a id="__codelineno-0-5510" name="__codelineno-0-5510"></a><span class="sd">        - ``"shape"``: warn — trajectory differs but privacy is intact.</span>
+<a id="__codelineno-0-5511" name="__codelineno-0-5511"></a><span class="sd">        - ``"intentional_extend"``: silent — normal user action (e.g.,</span>
+<a id="__codelineno-0-5512" name="__codelineno-0-5512"></a><span class="sd">          extending ``total_steps`` under independent-step DP-SGD).</span>
+<a id="__codelineno-0-5513" name="__codelineno-0-5513"></a>
+<a id="__codelineno-0-5514" name="__codelineno-0-5514"></a><span class="sd">        Dict-valued dispositions resolve via the saved ``mechanism_kind``:</span>
+<a id="__codelineno-0-5515" name="__codelineno-0-5515"></a><span class="sd">        the matching key wins; ``"default"`` is the fallback.</span>
+<a id="__codelineno-0-5516" name="__codelineno-0-5516"></a><span class="sd">        """</span>
+<a id="__codelineno-0-5517" name="__codelineno-0-5517"></a>        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span>
+<a id="__codelineno-0-5518" name="__codelineno-0-5518"></a>        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ctx</span>
+<a id="__codelineno-0-5519" name="__codelineno-0-5519"></a>        <span class="n">current_by_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_values_for_drift</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+<a id="__codelineno-0-5520" name="__codelineno-0-5520"></a>        <span class="n">saved_mechanism</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">mechanism_kind</span>
+<a id="__codelineno-0-5521" name="__codelineno-0-5521"></a>        <span class="n">horizon_resume</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="ow">or</span> <span class="p">(</span>
+<a id="__codelineno-0-5522" name="__codelineno-0-5522"></a>            <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span>
+<a id="__codelineno-0-5523" name="__codelineno-0-5523"></a>        <span class="p">)</span>
+<a id="__codelineno-0-5524" name="__codelineno-0-5524"></a>
+<a id="__codelineno-0-5525" name="__codelineno-0-5525"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="n">runtime</span><span class="p">):</span>
+<a id="__codelineno-0-5526" name="__codelineno-0-5526"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compare_on_resume"</span><span class="p">):</span>
+<a id="__codelineno-0-5527" name="__codelineno-0-5527"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5528" name="__codelineno-0-5528"></a>            <span class="n">saved</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">runtime</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+<a id="__codelineno-0-5529" name="__codelineno-0-5529"></a>            <span class="n">current</span> <span class="o">=</span> <span class="n">current_by_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+<a id="__codelineno-0-5530" name="__codelineno-0-5530"></a>            <span class="k">if</span> <span class="n">saved</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5531" name="__codelineno-0-5531"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5532" name="__codelineno-0-5532"></a>            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"horizon_process_state"</span><span class="p">:</span>
+<a id="__codelineno-0-5533" name="__codelineno-0-5533"></a>                <span class="n">saved</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">saved</span><span class="p">)</span>
+<a id="__codelineno-0-5534" name="__codelineno-0-5534"></a>                <span class="n">current</span> <span class="o">=</span> <span class="n">_dpftrl</span><span class="o">.</span><span class="n">resume_process_state</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+<a id="__codelineno-0-5535" name="__codelineno-0-5535"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">_drift_differs</span><span class="p">(</span><span class="n">saved</span><span class="p">,</span> <span class="n">current</span><span class="p">):</span>
+<a id="__codelineno-0-5536" name="__codelineno-0-5536"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5537" name="__codelineno-0-5537"></a>
+<a id="__codelineno-0-5538" name="__codelineno-0-5538"></a>            <span class="n">disposition</span> <span class="o">=</span> <span class="n">_resolve_drift_disposition</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">saved_mechanism</span><span class="p">)</span>
+<a id="__codelineno-0-5539" name="__codelineno-0-5539"></a>            <span class="k">if</span> <span class="p">(</span>
+<a id="__codelineno-0-5540" name="__codelineno-0-5540"></a>                <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"total_steps"</span>
+<a id="__codelineno-0-5541" name="__codelineno-0-5541"></a>                <span class="ow">and</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span>
+<a id="__codelineno-0-5542" name="__codelineno-0-5542"></a>                <span class="ow">and</span> <span class="n">horizon_resume</span>
+<a id="__codelineno-0-5543" name="__codelineno-0-5543"></a>            <span class="p">):</span>
+<a id="__codelineno-0-5544" name="__codelineno-0-5544"></a>                <span class="c1"># Gaussian k-out-of-t shares the "gaussian" mechanism label but</span>
+<a id="__codelineno-0-5545" name="__codelineno-0-5545"></a>                <span class="c1"># is still defined for one fixed horizon, unlike Poisson DP-SGD.</span>
+<a id="__codelineno-0-5546" name="__codelineno-0-5546"></a>                <span class="n">disposition</span> <span class="o">=</span> <span class="s2">"dp_relevant"</span>
+<a id="__codelineno-0-5547" name="__codelineno-0-5547"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"intentional_extend"</span><span class="p">:</span>
+<a id="__codelineno-0-5548" name="__codelineno-0-5548"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-5549" name="__codelineno-0-5549"></a>            <span class="k">if</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"dp_relevant"</span><span class="p">:</span>
+<a id="__codelineno-0-5550" name="__codelineno-0-5550"></a>                <span class="k">if</span> <span class="n">saved_mechanism</span> <span class="o">!=</span> <span class="s2">"gaussian"</span> <span class="ow">or</span> <span class="n">horizon_resume</span><span class="p">:</span>
+<a id="__codelineno-0-5551" name="__codelineno-0-5551"></a>                    <span class="k">raise</span> <span class="n">CheckpointError</span><span class="p">(</span>
+<a id="__codelineno-0-5552" name="__codelineno-0-5552"></a>                        <span class="o">*</span><span class="p">(</span>
+<a id="__codelineno-0-5553" name="__codelineno-0-5553"></a>                            <span class="sa">f</span><span class="s2">"Whole-horizon resume forbids drift on </span><span class="si">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="si">!r}</span><span class="s2">: "</span>
+<a id="__codelineno-0-5554" name="__codelineno-0-5554"></a>                            <span class="sa">f</span><span class="s2">"saved=</span><span class="si">{</span><span class="n">saved</span><span class="si">!r}</span><span class="s2">, current=</span><span class="si">{</span><span class="n">current</span><span class="si">!r}</span><span class="s2">. The "</span>
+<a id="__codelineno-0-5555" name="__codelineno-0-5555"></a>                            <span class="s2">"accounting process is defined for the original "</span>
+<a id="__codelineno-0-5556" name="__codelineno-0-5556"></a>                            <span class="s2">"declared horizon; restart from scratch with the new arg."</span><span class="p">,</span>
+<a id="__codelineno-0-5557" name="__codelineno-0-5557"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-5558" name="__codelineno-0-5558"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-5559" name="__codelineno-0-5559"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5560" name="__codelineno-0-5560"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (dp_relevant, DP-SGD): "</span>
+<a id="__codelineno-0-5561" name="__codelineno-0-5561"></a>                    <span class="s2">"saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">."</span><span class="p">,</span>
+<a id="__codelineno-0-5562" name="__codelineno-0-5562"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5563" name="__codelineno-0-5563"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5564" name="__codelineno-0-5564"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5565" name="__codelineno-0-5565"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5566" name="__codelineno-0-5566"></a>            <span class="k">elif</span> <span class="n">disposition</span> <span class="o">==</span> <span class="s2">"shape"</span><span class="p">:</span>
+<a id="__codelineno-0-5567" name="__codelineno-0-5567"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5568" name="__codelineno-0-5568"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (shape): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2"> — "</span>
+<a id="__codelineno-0-5569" name="__codelineno-0-5569"></a>                    <span class="s2">"trajectory will differ from phase-1; using current args."</span><span class="p">,</span>
+<a id="__codelineno-0-5570" name="__codelineno-0-5570"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5571" name="__codelineno-0-5571"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5572" name="__codelineno-0-5572"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5573" name="__codelineno-0-5573"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5574" name="__codelineno-0-5574"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-5575" name="__codelineno-0-5575"></a>                <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-5576" name="__codelineno-0-5576"></a>                    <span class="s2">"Resume arg drift on </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">): saved=</span><span class="si">%r</span><span class="s2">, current=</span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-5577" name="__codelineno-0-5577"></a>                    <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-5578" name="__codelineno-0-5578"></a>                    <span class="n">disposition</span><span class="p">,</span>
+<a id="__codelineno-0-5579" name="__codelineno-0-5579"></a>                    <span class="n">saved</span><span class="p">,</span>
+<a id="__codelineno-0-5580" name="__codelineno-0-5580"></a>                    <span class="n">current</span><span class="p">,</span>
+<a id="__codelineno-0-5581" name="__codelineno-0-5581"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5582" name="__codelineno-0-5582"></a>
+<a id="__codelineno-0-5583" name="__codelineno-0-5583"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_current_values_for_drift</span><span class="p">(</span>
+<a id="__codelineno-0-5584" name="__codelineno-0-5584"></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">_TrainingContext</span> <span class="o">|</span> <span class="kc">None</span>
+<a id="__codelineno-0-5585" name="__codelineno-0-5585"></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<a id="__codelineno-0-5586" name="__codelineno-0-5586"></a><span class="w">        </span><span class="sd">"""Resolve current (post-setup) values for the drift-checked fields.</span>
+<a id="__codelineno-0-5587" name="__codelineno-0-5587"></a>
+<a id="__codelineno-0-5588" name="__codelineno-0-5588"></a><span class="sd">        Splits the lookup off so :meth:`_warn_on_arg_drift` stays a pure</span>
+<a id="__codelineno-0-5589" name="__codelineno-0-5589"></a><span class="sd">        iteration over field metadata — no per-field if/else.  Returns</span>
+<a id="__codelineno-0-5590" name="__codelineno-0-5590"></a><span class="sd">        ``None`` for any field whose live value can't be determined yet</span>
+<a id="__codelineno-0-5591" name="__codelineno-0-5591"></a><span class="sd">        (e.g. ``sample_rate`` before ``ctx`` exists).</span>
+<a id="__codelineno-0-5592" name="__codelineno-0-5592"></a><span class="sd">        """</span>
+<a id="__codelineno-0-5593" name="__codelineno-0-5593"></a>        <span class="c1"># ``sample_rate`` fallback (when ``ctx`` isn't built yet) must</span>
+<a id="__codelineno-0-5594" name="__codelineno-0-5594"></a>        <span class="c1"># mirror ``_setup_training``'s computation — same numerator</span>
+<a id="__codelineno-0-5595" name="__codelineno-0-5595"></a>        <span class="c1"># (``expected_batch_size``, which is ``world_size *</span>
+<a id="__codelineno-0-5596" name="__codelineno-0-5596"></a>        <span class="c1"># per_device_train_batch_size``) and same denominator (the</span>
+<a id="__codelineno-0-5597" name="__codelineno-0-5597"></a>        <span class="c1"># post-DDP-trim dataset size).  Using ``len(self._train_dataset)``</span>
+<a id="__codelineno-0-5598" name="__codelineno-0-5598"></a>        <span class="c1"># raw would falsely report drift on every DDP resume because</span>
+<a id="__codelineno-0-5599" name="__codelineno-0-5599"></a>        <span class="c1"># the trim hasn't been applied at compare time.  Returns</span>
+<a id="__codelineno-0-5600" name="__codelineno-0-5600"></a>        <span class="c1"># ``None`` (skips the check) when the dataset isn't available.</span>
+<a id="__codelineno-0-5601" name="__codelineno-0-5601"></a>        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5602" name="__codelineno-0-5602"></a>            <span class="n">fallback_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">sample_rate</span>
+<a id="__codelineno-0-5603" name="__codelineno-0-5603"></a>        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train_dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-5604" name="__codelineno-0-5604"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-5605" name="__codelineno-0-5605"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-5606" name="__codelineno-0-5606"></a>            <span class="n">fallback_rate</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span>
+<a id="__codelineno-0-5607" name="__codelineno-0-5607"></a>                <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_effective_train_dataset_size</span><span class="p">()</span>
+<a id="__codelineno-0-5608" name="__codelineno-0-5608"></a>            <span class="p">)</span>
+<a id="__codelineno-0-5609" name="__codelineno-0-5609"></a>        <span class="k">return</span> <span class="p">{</span>
+<a id="__codelineno-0-5610" name="__codelineno-0-5610"></a>            <span class="s2">"sample_rate"</span><span class="p">:</span> <span class="n">fallback_rate</span><span class="p">,</span>
+<a id="__codelineno-0-5611" name="__codelineno-0-5611"></a>            <span class="s2">"target_delta"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5612" name="__codelineno-0-5612"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">target_delta</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_target_delta</span>
+<a id="__codelineno-0-5613" name="__codelineno-0-5613"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5614" name="__codelineno-0-5614"></a>            <span class="c1"># In *calibrated* mode the noise multiplier is recomputed over the</span>
+<a id="__codelineno-0-5615" name="__codelineno-0-5615"></a>            <span class="c1"># remaining steps and so legitimately differs from the saved one;</span>
+<a id="__codelineno-0-5616" name="__codelineno-0-5616"></a>            <span class="c1"># comparing them would fire a spurious "drift" warning on every</span>
+<a id="__codelineno-0-5617" name="__codelineno-0-5617"></a>            <span class="c1"># resume and erode trust in the genuinely-meaningful drift signals.</span>
+<a id="__codelineno-0-5618" name="__codelineno-0-5618"></a>            <span class="c1"># Return ``None`` (the drift loop skips ``None``) unless the user</span>
+<a id="__codelineno-0-5619" name="__codelineno-0-5619"></a>            <span class="c1"># pinned a fixed multiplier, where a mismatch is real drift.</span>
+<a id="__codelineno-0-5620" name="__codelineno-0-5620"></a>            <span class="s2">"noise_multiplier"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5621" name="__codelineno-0-5621"></a>                <span class="kc">None</span>
+<a id="__codelineno-0-5622" name="__codelineno-0-5622"></a>                <span class="k">if</span> <span class="p">(</span><span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">calibration_source</span> <span class="o">==</span> <span class="s2">"calibrated"</span><span class="p">)</span>
+<a id="__codelineno-0-5623" name="__codelineno-0-5623"></a>                <span class="k">else</span> <span class="p">(</span>
+<a id="__codelineno-0-5624" name="__codelineno-0-5624"></a>                    <span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span>
+<a id="__codelineno-0-5625" name="__codelineno-0-5625"></a>                    <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5626" name="__codelineno-0-5626"></a>                    <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_multiplier</span>
+<a id="__codelineno-0-5627" name="__codelineno-0-5627"></a>                <span class="p">)</span>
+<a id="__codelineno-0-5628" name="__codelineno-0-5628"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5629" name="__codelineno-0-5629"></a>            <span class="s2">"total_steps"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5630" name="__codelineno-0-5630"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">total_steps</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_predict_total_steps</span><span class="p">()</span>
 <a id="__codelineno-0-5631" name="__codelineno-0-5631"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5632" name="__codelineno-0-5632"></a>            <span class="s2">"total_steps"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5633" name="__codelineno-0-5633"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">total_steps</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_predict_total_steps</span><span class="p">()</span>
-<a id="__codelineno-0-5634" name="__codelineno-0-5634"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5635" name="__codelineno-0-5635"></a>            <span class="s2">"expected_batch_size"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span><span class="p">),</span>
-<a id="__codelineno-0-5636" name="__codelineno-0-5636"></a>            <span class="s2">"expected_steps_per_epoch"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5637" name="__codelineno-0-5637"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">expected_steps_per_epoch</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5632" name="__codelineno-0-5632"></a>            <span class="s2">"expected_batch_size"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">train_batch_size</span><span class="p">),</span>
+<a id="__codelineno-0-5633" name="__codelineno-0-5633"></a>            <span class="s2">"expected_steps_per_epoch"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5634" name="__codelineno-0-5634"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">expected_steps_per_epoch</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5635" name="__codelineno-0-5635"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5636" name="__codelineno-0-5636"></a>            <span class="s2">"mechanism_kind"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5637" name="__codelineno-0-5637"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">mechanism_kind</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_mechanism</span>
 <a id="__codelineno-0-5638" name="__codelineno-0-5638"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5639" name="__codelineno-0-5639"></a>            <span class="s2">"mechanism_kind"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5640" name="__codelineno-0-5640"></a>                <span class="n">ctx</span><span class="o">.</span><span class="n">mechanism_kind</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">a</span><span class="o">.</span><span class="n">privacy_noise_mechanism</span>
-<a id="__codelineno-0-5641" name="__codelineno-0-5641"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5642" name="__codelineno-0-5642"></a>            <span class="s2">"is_horizon_process"</span><span class="p">:</span> <span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
-<a id="__codelineno-0-5643" name="__codelineno-0-5643"></a>            <span class="s2">"horizon_process_state"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5644" name="__codelineno-0-5644"></a>                <span class="n">opaque_state_dict</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span><span class="p">)</span>
-<a id="__codelineno-0-5645" name="__codelineno-0-5645"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5646" name="__codelineno-0-5646"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5647" name="__codelineno-0-5647"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5648" name="__codelineno-0-5648"></a>            <span class="c1"># MF strategy params: live values are derived inside MFContext</span>
-<a id="__codelineno-0-5649" name="__codelineno-0-5649"></a>            <span class="c1"># construction and surfaced via ctx.mf; before ctx exists we</span>
-<a id="__codelineno-0-5650" name="__codelineno-0-5650"></a>            <span class="c1"># can't compare, so return None to skip the check.</span>
-<a id="__codelineno-0-5651" name="__codelineno-0-5651"></a>            <span class="s2">"mf_n_steps"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5652" name="__codelineno-0-5652"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">n_steps</span><span class="p">)</span>
-<a id="__codelineno-0-5653" name="__codelineno-0-5653"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5654" name="__codelineno-0-5654"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5655" name="__codelineno-0-5655"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5656" name="__codelineno-0-5656"></a>            <span class="s2">"mf_min_sep"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5657" name="__codelineno-0-5657"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">min_sep</span><span class="p">)</span>
-<a id="__codelineno-0-5658" name="__codelineno-0-5658"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5659" name="__codelineno-0-5659"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5660" name="__codelineno-0-5660"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5661" name="__codelineno-0-5661"></a>            <span class="s2">"mf_max_participations"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5662" name="__codelineno-0-5662"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">max_participations</span><span class="p">)</span>
-<a id="__codelineno-0-5663" name="__codelineno-0-5663"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-<a id="__codelineno-0-5664" name="__codelineno-0-5664"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5665" name="__codelineno-0-5665"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5666" name="__codelineno-0-5666"></a>            <span class="c1"># LR-schedule shape (privacy-neutral; warn-only drift).</span>
-<a id="__codelineno-0-5667" name="__codelineno-0-5667"></a>            <span class="s2">"lr_scheduler"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="p">,</span>
-<a id="__codelineno-0-5668" name="__codelineno-0-5668"></a>            <span class="s2">"learning_rate"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">learning_rate</span><span class="p">,</span>
-<a id="__codelineno-0-5669" name="__codelineno-0-5669"></a>            <span class="s2">"warmup_steps"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">warmup_steps</span><span class="p">,</span>
-<a id="__codelineno-0-5670" name="__codelineno-0-5670"></a>            <span class="s2">"lr_scheduler_kwargs"</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-0-5671" name="__codelineno-0-5671"></a>                <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span>
-<a id="__codelineno-0-5672" name="__codelineno-0-5672"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
-<a id="__codelineno-0-5673" name="__codelineno-0-5673"></a>                <span class="k">else</span> <span class="kc">None</span>
-<a id="__codelineno-0-5674" name="__codelineno-0-5674"></a>            <span class="p">),</span>
-<a id="__codelineno-0-5675" name="__codelineno-0-5675"></a>        <span class="p">}</span>
+<a id="__codelineno-0-5639" name="__codelineno-0-5639"></a>            <span class="s2">"is_horizon_process"</span><span class="p">:</span> <span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">is_horizon_process</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+<a id="__codelineno-0-5640" name="__codelineno-0-5640"></a>            <span class="s2">"horizon_process_state"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5641" name="__codelineno-0-5641"></a>                <span class="n">opaque_state_dict</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span><span class="p">)</span>
+<a id="__codelineno-0-5642" name="__codelineno-0-5642"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">horizon_process</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5643" name="__codelineno-0-5643"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5644" name="__codelineno-0-5644"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5645" name="__codelineno-0-5645"></a>            <span class="c1"># MF strategy params: live values are derived inside MFContext</span>
+<a id="__codelineno-0-5646" name="__codelineno-0-5646"></a>            <span class="c1"># construction and surfaced via ctx.mf; before ctx exists we</span>
+<a id="__codelineno-0-5647" name="__codelineno-0-5647"></a>            <span class="c1"># can't compare, so return None to skip the check.</span>
+<a id="__codelineno-0-5648" name="__codelineno-0-5648"></a>            <span class="s2">"mf_n_steps"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5649" name="__codelineno-0-5649"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">n_steps</span><span class="p">)</span>
+<a id="__codelineno-0-5650" name="__codelineno-0-5650"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5651" name="__codelineno-0-5651"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5652" name="__codelineno-0-5652"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5653" name="__codelineno-0-5653"></a>            <span class="s2">"mf_min_sep"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5654" name="__codelineno-0-5654"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">min_sep</span><span class="p">)</span>
+<a id="__codelineno-0-5655" name="__codelineno-0-5655"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5656" name="__codelineno-0-5656"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5657" name="__codelineno-0-5657"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5658" name="__codelineno-0-5658"></a>            <span class="s2">"mf_max_participations"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5659" name="__codelineno-0-5659"></a>                <span class="nb">int</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">mf</span><span class="o">.</span><span class="n">amplifier_factory</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">noise_multiplier</span><span class="p">)</span><span class="o">.</span><span class="n">max_participations</span><span class="p">)</span>
+<a id="__codelineno-0-5660" name="__codelineno-0-5660"></a>                <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">mf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<a id="__codelineno-0-5661" name="__codelineno-0-5661"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5662" name="__codelineno-0-5662"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5663" name="__codelineno-0-5663"></a>            <span class="c1"># LR-schedule shape (privacy-neutral; warn-only drift).</span>
+<a id="__codelineno-0-5664" name="__codelineno-0-5664"></a>            <span class="s2">"lr_scheduler"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler</span><span class="p">,</span>
+<a id="__codelineno-0-5665" name="__codelineno-0-5665"></a>            <span class="s2">"learning_rate"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">learning_rate</span><span class="p">,</span>
+<a id="__codelineno-0-5666" name="__codelineno-0-5666"></a>            <span class="s2">"warmup_steps"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">warmup_steps</span><span class="p">,</span>
+<a id="__codelineno-0-5667" name="__codelineno-0-5667"></a>            <span class="s2">"lr_scheduler_kwargs"</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-0-5668" name="__codelineno-0-5668"></a>                <span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span>
+<a id="__codelineno-0-5669" name="__codelineno-0-5669"></a>                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">lr_scheduler_kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+<a id="__codelineno-0-5670" name="__codelineno-0-5670"></a>                <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-5671" name="__codelineno-0-5671"></a>            <span class="p">),</span>
+<a id="__codelineno-0-5672" name="__codelineno-0-5672"></a>        <span class="p">}</span>
 </code></pre></div></td></tr></table></div>
               </details>
 

@@ -3873,6 +3873,9 @@ block, independently across blocks.</p>
 <p>Block sizes differ by at most one when <code>t</code> is not divisible by <code>k</code>. Batch sizes
 are Binomial, so <strong>some batches are empty</strong>. They are emitted rather than
 skipped: compacting them away changes the accounted participation schedule.</p>
+<p>Restoring a sampler requires the same dataset size, <code>k</code>, <code>t</code>, and <code>allocation</code>
+as the current template. The checkpoint supplies the RNG stream key and cursor,
+so the template's seed may differ without changing the resumed schedule.</p>
 <p><code>dpsgd_acc.k_out_of_t(..., allocation="block")</code> provides an exact
 whole-horizon process:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">training</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">k_out_of_t</span><span class="p">(</span>
