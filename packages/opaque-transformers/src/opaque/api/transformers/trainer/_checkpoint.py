@@ -211,15 +211,13 @@ class RuntimeCheckpoint:
     disposition that controls what happens when phase-2's value differs
     from phase-1's saved value:
 
-    - ``"dp_relevant"`` — affects privacy accounting.  DP-SGD warns
-      (heterogeneous RDP composition still yields a correct ε); DP-FTRL
-      raises (the matrix-factorization strategy is shape-locked for the
-      original composition, so drift would silently compose a different
-      ε).
+    - ``"dp_relevant"`` — affects privacy accounting. Independent-step
+      DP-SGD warns; whole-horizon processes (including Gaussian k-out-of-t)
+      and DP-FTRL raise because accounting uses the original schedule.
     - ``"shape"`` — affects training trajectory (LR schedule, etc.) but
       not privacy.  Warns.
     - ``"intentional_extend"`` — silently allowed.  Used for ``total_steps``
-      in the DP-SGD path where extending training is a normal user action.
+      in independent-step DP-SGD, where extending training is allowed.
     - dict form, e.g. ``{"gaussian": "intentional_extend", "default":
       "dp_relevant"}`` — per-mechanism override, resolved by looking up
       the saved ``mechanism_kind`` (the ``"default"`` key catches

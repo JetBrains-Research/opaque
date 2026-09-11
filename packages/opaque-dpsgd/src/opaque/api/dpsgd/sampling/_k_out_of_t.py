@@ -192,6 +192,7 @@ def _from_state_dict_k_out_of_t(
     template: KOutOfTSampler,
     state: Mapping[str, Any],
 ) -> KOutOfTSampler:
+    """Restore the saved stream on an unchanged allocation schedule."""
     if len(template.data_source) != int(state["num_samples"]):
         raise ConfigurationError(
             *(
@@ -200,11 +201,20 @@ def _from_state_dict_k_out_of_t(
                 f"num_samples={state['num_samples']}",
             )
         )
+    for name in ("k", "t", "allocation"):
+        saved = state[name]
+        expected = getattr(template, name)
+        if type(saved) is not type(expected) or saved != expected:
+            message = (
+                f"KOutOfTSampler.from_state_dict: {name} mismatch: "
+                f"snapshot={saved!r}, template={expected!r}"
+            )
+            raise ConfigurationError(message)
     restored = KOutOfTSampler._from_stream_key(
         template.data_source,
-        k=int(state["k"]),
-        t=int(state["t"]),
-        allocation=state["allocation"],
+        k=template.k,
+        t=template.t,
+        allocation=template.allocation,
         stream_key=RngKey(seed=int(state["key_seed"]), impl=str(state["key_impl"])),
     )
     restored._consumed = int(state["consumed"])
