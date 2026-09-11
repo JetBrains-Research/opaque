@@ -38,14 +38,11 @@ DP / privacy notes.
   ``updates`` as usual (same as without this wrapper); the public ``update``
   surface does not add DP metadata kwargs.
 
-Trainer-integration caveat (Phase B).  The wrapper's published params
-are ``x_t``, not the ``params`` argument the trainer passes in
-(``y_t``).  Saving / evaluating against ``y_t`` would defeat the
-purpose of schedule-free averaging.  The wrapper exposes the published
-params as the ``x`` field of :class:`ScheduleFreeState`, which trainer
-integrations should consult at save / eval boundaries.  This is the
-dependency that gates schedule-free's usefulness through ``DPTrainer``;
-the wrapper itself is correct end-to-end as a library API.
+The wrapper's published params are ``x_t``, not the ``params`` argument
+the trainer passes in (``y_t``).  Trainer integrations must consult the
+``x`` field of :class:`ScheduleFreeState` at save / eval boundaries and
+reconstruct ``y_t`` from the saved ``z_t`` and ``x_t`` when resuming.
+``DPTrainer`` implements those integration boundaries.
 """
 
 from __future__ import annotations
