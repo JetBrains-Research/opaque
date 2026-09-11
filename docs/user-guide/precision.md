@@ -70,9 +70,9 @@ accountant relies on.
   sensitivity and noise scale diverge from the accountant's model.
 - **You can raise it.** Pass `compute_dtype=torch.float64` explicitly to both
   clipping and noise when higher-precision reductions and sampling are needed.
-- **The final output cast still matters.** Clipping multiplies in
-  `compute_dtype` (never below the leaf's storage precision), then casts the
-  result once to the leaf dtype. That final cast can round up past the bound,
+- **The final output cast still matters.** Clipping multiplies in the wider of
+  `compute_dtype` and the leaf's storage precision, then casts the result once
+  to the leaf dtype. That final cast can round up past the bound,
   so clipping conservatively shrinks each leaf's scale and rounds outward
   subnormal casts toward zero to preserve `norm(output) <= clipping_norm` on
   the values as stored.
