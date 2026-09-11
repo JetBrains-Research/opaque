@@ -1,13 +1,16 @@
 """Tests for DP-lambda-CGD noise generation via PRNG replay."""
 
+import math
+
 import pytest
 import torch
 
 import opaque.dpftrl.accounting as ftrl_acc
 from opaque.api.dpftrl.noise import _lambda_cgd as lambda_cgd_module
+from opaque.api.dpftrl.noise._engine import MF_GAUSSIAN_STREAM_FOLD
 from opaque.api.dpftrl.noise._lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_gaussian_noise
-from opaque.random import key
+from opaque.random import fold_in, generator_from_key, key
 from opaque.serialization import from_state_dict, state_dict
 from opaque.types import NoisedPytree, clipped
 
@@ -135,10 +138,13 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         noise_fn, state = _make_noise(template)
         assert state._step_counter == 0
+        assert state._inner_state is None
         _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 1
+        assert state._inner_state is None
         _, state = _call(noise_fn, {"w": torch.zeros(10)}, state)
         assert state._step_counter == 2
+        assert state._inner_state is None
 
     def test_rejects_invalid_lambda(self):
         for value in (-0.1, 1.0, float("nan"), float("inf")):
@@ -147,26 +153,69 @@ class TestLambdaCgdNoise:
             ):
                 lambda_cgd_strategy(lambda_=value)
 
-    def test_prng_replay_correctness(self):
-        """Verify the PRNG replay: step 1's z_prev should equal step 0's z_current."""
-        template = {"w": torch.zeros(20)}
-
-        # Run with lambda=0, normalized=False to get individual z_0 and z_1
-        noise_fn_ind, state_ind = _make_noise(
-            template, n_steps=100, lambda_=0.0, normalized=False
+    @pytest.mark.parametrize("lambda_", [0.0, 0.5])
+    @pytest.mark.parametrize("normalized", [False, True])
+    def test_prng_replay_uses_namespaced_draws(self, lambda_, normalized):
+        template = (torch.zeros(3), torch.zeros(2, 4))
+        n_steps = 4
+        base = key(42)
+        noise_fn, state = _make_noise(
+            template, n_steps=n_steps, lambda_=lambda_, normalized=normalized
         )
-        z0, state_ind = _call(noise_fn_ind, {"w": torch.zeros(20)}, state_ind)
-        z1, _ = _call(noise_fn_ind, {"w": torch.zeros(20)}, state_ind)
+        previous = tuple(torch.zeros_like(leaf) for leaf in template)
 
-        # Run with lambda>0, normalized=False: step 1 should be z_1 - lambda*z_0
-        noise_fn_corr, state_corr = _make_noise(
-            template, n_steps=100, lambda_=0.5, normalized=False
+        for step in range(n_steps):
+            generator = generator_from_key(
+                fold_in(
+                    base,
+                    MF_GAUSSIAN_STREAM_FOLD,
+                    "mf_gaussian_column",
+                    step,
+                )
+            )
+            current = tuple(
+                torch.randn(leaf.shape, generator=generator) for leaf in template
+            )
+            scale = (
+                math.sqrt(sum(lambda_ ** (2 * j) for j in range(n_steps - step)))
+                if normalized
+                else 1.0
+            )
+            expected = tuple(
+                (now - lambda_ * prev) * scale
+                for now, prev in zip(current, previous, strict=True)
+            )
+            actual, state = noise_fn(clipped(template, max_norm=1.0), state)
+
+            torch.testing.assert_close(actual.pytree, expected, atol=0.0, rtol=0.0)
+            row_norm = scale * math.sqrt(1.0 + (lambda_**2 if step else 0.0))
+            assert actual.noise_stddev == pytest.approx(row_norm)
+            if step == 0:
+                caller_draw = torch.randn(
+                    template[0].shape, generator=generator_from_key(fold_in(base, 0))
+                )
+                assert not torch.equal(actual.pytree[0], caller_draw * scale)
+            previous = current
+
+
+class TestLambdaCgdCheckpoint:
+    @pytest.mark.parametrize("normalized", [False, True])
+    def test_resume_preserves_draws_with_a_fresh_template(self, normalized):
+        template = {"w": torch.zeros(8)}
+        noise_fn, state = _make_noise(template, n_steps=5, normalized=normalized)
+        for _ in range(2):
+            _, state = _call(noise_fn, template, state, max_norm=2.0)
+
+        resumed_fn, fresh = _make_noise(
+            template, n_steps=5, normalized=normalized, seed=73
         )
-        _, state_corr = _call(noise_fn_corr, {"w": torch.zeros(20)}, state_corr)
-        step1_corr, _ = _call(noise_fn_corr, {"w": torch.zeros(20)}, state_corr)
+        restored = from_state_dict(fresh, state_dict(state))
+        assert restored == state
 
-        expected = z1["w"] - 0.5 * z0["w"]
-        torch.testing.assert_close(step1_corr["w"], expected, atol=1e-6, rtol=1e-6)
+        for _ in range(3):
+            expected, state = _call(noise_fn, template, state, max_norm=2.0)
+            actual, restored = _call(resumed_fn, template, restored, max_norm=2.0)
+            torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
 
 
 _PARTICIPATION = {"n_steps": 100, "min_sep": 25, "max_participations": 4}

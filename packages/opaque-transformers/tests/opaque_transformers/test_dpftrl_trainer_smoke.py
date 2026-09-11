@@ -15,14 +15,16 @@ in-package CI signal so regressions surface immediately.
 from __future__ import annotations
 
 import math
+from functools import partial
 from pathlib import Path
 
 import pytest
 import torch
 from torch.utils.data import Dataset
 
+from opaque.api.transformers.trainer import _dpftrl
 from opaque.api.transformers.trainer._dp_trainer import DPTrainer
-from opaque.exceptions import CheckpointError
+from opaque.exceptions import CheckpointError, ConfigurationError
 from opaque.transformers import TrainingArguments
 
 
@@ -172,6 +174,60 @@ class TestDpFtrlTrain:
 
 
 class TestDpFtrlSamplerDispatch:
+    def test_band_poisson_mutation_rejected_before_calibration(
+        self, tmp_path, monkeypatch
+    ):
+        args = _args(
+            output_dir=str(tmp_path),
+            mechanism="mf_band",
+            max_steps=16,
+            noise_multiplier=None,
+            target_epsilon=8.0,
+        )
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+        args.sampling_mode = "poisson"
+
+        def unexpected_calibration(*_args, **_kwargs):
+            pytest.fail("invalid sampling must be rejected before calibration")
+
+        monkeypatch.setattr(trainer, "_calibrate_noise", unexpected_calibration)
+        with pytest.raises(ConfigurationError, match="sampling_mode='poisson'"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
+    def test_band_poisson_callback_mutation_rejected_before_sampling(
+        self, tmp_path, monkeypatch
+    ):
+        from transformers import TrainerCallback
+
+        from opaque.api.transformers.trainer import _dpftrl
+
+        args = _args(output_dir=str(tmp_path), mechanism="mf_band", max_steps=16)
+        trainer = DPTrainer(
+            model=_TinyLM(),
+            args=args,
+            train_dataset=_TinyDS(),
+            data_collator=_collate,
+        )
+
+        class _ChangeSampler(TrainerCallback):
+            def on_train_begin(self, args_, state_, control_, **_kw):
+                args_.sampling_mode = "poisson"
+
+        def unexpected_sampler(*_args, **_kwargs):
+            pytest.fail("invalid sampling must be rejected before sampler construction")
+
+        monkeypatch.setattr(_dpftrl, "PoissonSampler", unexpected_sampler)
+        trainer.add_callback(_ChangeSampler())
+        with pytest.raises(ConfigurationError, match="sampling_mode='poisson'"):
+            trainer.train()
+        assert trainer.state.global_step == 0
+
     @pytest.mark.parametrize(
         ("mechanism", "expected_sampler_module_name"),
         [
@@ -308,7 +364,10 @@ class TestDpFtrlCheckpointRoundTrip:
             ("mf_lambda_cgd", 16),
         ],
     )
-    def test_resume_from_midtrain_checkpoint(self, tmp_path, mechanism, max_steps):
+    @pytest.mark.parametrize("legacy_inner_horizon", [False, True])
+    def test_resume_from_midtrain_checkpoint(
+        self, tmp_path, monkeypatch, mechanism, max_steps, legacy_inner_horizon
+    ):
         outdir = tmp_path / mechanism
         ds = _TinyDS()
 
@@ -325,7 +384,12 @@ class TestDpFtrlCheckpointRoundTrip:
             train_dataset=ds,
             data_collator=_collate,
         )
-        out1 = trainer1.train()
+        with monkeypatch.context() as patch:
+            if legacy_inner_horizon:
+                patch.setattr(
+                    _dpftrl, "mf_gaussian", partial(_dpftrl.mf_gaussian, n_steps=1)
+                )
+            out1 = trainer1.train()
         assert out1.global_step == max_steps
         expected_params = {
             name: value.detach().clone()
@@ -367,7 +431,12 @@ class TestDpFtrlCheckpointRoundTrip:
             out2.metrics["privacy_epsilon"], rel=1e-3
         )
 
-    def test_k_out_of_t_resume_rejects_parameter_drift(self, tmp_path):
+    @pytest.mark.parametrize("drift_target", ["arguments", "sampler_state"])
+    def test_k_out_of_t_resume_rejects_parameter_drift(
+        self, tmp_path, monkeypatch, drift_target
+    ):
+        from opaque.api.transformers.trainer import _checkpoint as ckpt
+
         outdir = tmp_path / "k-out-of-t"
         ds = _TinyDS()
         trainer1 = DPTrainer(
@@ -385,6 +454,15 @@ class TestDpFtrlCheckpointRoundTrip:
         )
         trainer1.train()
 
+        checkpoint = outdir / "checkpoint-2"
+        if drift_target == "sampler_state":
+            # Keep the accountant and training arguments unchanged: restoring a
+            # different sampling law must still fail before another update.
+            runtime_path = checkpoint / ckpt.DP_STATE_NAME
+            runtime = ckpt.load_dp_runtime_state(str(runtime_path))
+            runtime.sampler_state["k"] = 1
+            torch.save(runtime, runtime_path)
+
         trainer2 = DPTrainer(
             model=_TinyLM(),
             args=_args(
@@ -392,14 +470,26 @@ class TestDpFtrlCheckpointRoundTrip:
                 mechanism="gaussian",
                 max_steps=4,
                 sampling_mode="k_out_of_t",
-                sampling_kwargs={"k": 1, "allocation": "block"},
+                sampling_kwargs={
+                    "k": 1 if drift_target == "arguments" else 2,
+                    "allocation": "block",
+                },
             ),
             train_dataset=ds,
             data_collator=_collate,
         )
 
-        with pytest.raises(CheckpointError, match="horizon_process_state"):
-            trainer2.train(resume_from_checkpoint=str(outdir / "checkpoint-2"))
+        def unexpected_step(*_args, **_kwargs):
+            pytest.fail("sampling-law drift must fail before the next training step")
+
+        monkeypatch.setattr(trainer2, "training_step", unexpected_step)
+        error, match = (
+            (CheckpointError, "horizon_process_state")
+            if drift_target == "arguments"
+            else (ConfigurationError, "k mismatch")
+        )
+        with pytest.raises(error, match=match):
+            trainer2.train(resume_from_checkpoint=str(checkpoint))
 
     def test_mf_resume_rejects_same_shape_strategy_drift(self, tmp_path):
         outdir = tmp_path / "mf-strategy-drift"

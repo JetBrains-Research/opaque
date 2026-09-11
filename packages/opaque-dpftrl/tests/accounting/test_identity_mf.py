@@ -43,7 +43,7 @@ class TestIdentityMfMechanism:
 
     def test_pld_matches_unsubsampled_gaussian(self):
         nm = 1.5
-        proc = ftrl_acc.mf_gaussian(nm, identity_strategy())
+        proc = ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1)
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native())
@@ -53,7 +53,7 @@ class TestIdentityMfMechanism:
 
     def test_zero_noise_is_non_private(self):
         assert math.isinf(
-            ftrl_acc.mf_gaussian(0.0, identity_strategy()).epsilon_at(_DELTA)
+            ftrl_acc.mf_gaussian(0.0, identity_strategy(), n_steps=1).epsilon_at(_DELTA)
         )
 
     def test_negative_noise_multiplier_raises(self):
@@ -63,7 +63,7 @@ class TestIdentityMfMechanism:
     def test_self_compose_matches_repeated_gaussian(self):
         nm = 2.0
         T = 50
-        proc = ftrl_acc.mf_gaussian(nm, identity_strategy()) * T
+        proc = ftrl_acc.mf_gaussian(nm, identity_strategy(), n_steps=1) * T
 
         cfg = get_discretization()
         ref = _native.gaussian_pld(nm, cfg.to_native()).self_compose(T)

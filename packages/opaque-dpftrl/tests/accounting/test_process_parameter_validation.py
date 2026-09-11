@@ -73,6 +73,51 @@ class TestStrategyRecipeValidation:
 
 
 class TestMfGaussian:
+    @pytest.mark.parametrize("constructor", [MfGaussian, ftrl_acc.mf_gaussian])
+    @pytest.mark.parametrize("noise_multiplier", [0.0, 1.0])
+    def test_recipe_requires_a_horizon_for_bare_accounting(
+        self, constructor, noise_multiplier
+    ):
+        recipe = constructor(noise_multiplier, blt_strategy(max_buffers=3))
+        assert recipe.n_steps is None
+        for process in (recipe, acc.cached(recipe), recipe * 2):
+            with pytest.raises(ConfigurationError, match="explicit n_steps"):
+                process.pld()
+            with pytest.raises(ConfigurationError, match="explicit n_steps"):
+                process.epsilon_at(1e-5)
+
+    @pytest.mark.parametrize("missing_horizon", [False, True])
+    def test_restoring_a_recipe_does_not_invent_a_horizon(self, missing_horizon):
+        state = state_dict(_identity_mf())
+        if missing_horizon:
+            del state["n_steps"]
+        restored = from_state_dict(acc.identity(), state)
+        assert restored.n_steps is None
+        with pytest.raises(ConfigurationError, match="explicit n_steps"):
+            restored.epsilon_at(1e-5)
+
+        amplified = ftrl_acc.poisson(restored, sample_rate=0.1, n_steps=10)
+        explicit = ftrl_acc.poisson(
+            ftrl_acc.mf_gaussian(1.0, identity_strategy(), n_steps=1),
+            sample_rate=0.1,
+            n_steps=10,
+        )
+        assert amplified.epsilon_at(1e-5) == explicit.epsilon_at(1e-5)
+
+    @pytest.mark.parametrize("n_steps", [1, 32])
+    def test_explicit_horizons_roundtrip_unchanged(self, n_steps):
+        process = ftrl_acc.mf_gaussian(
+            2.0,
+            blt_strategy(max_buffers=3),
+            n_steps=n_steps,
+            min_sep=1,
+            max_participations=1,
+        )
+        state = state_dict(process)
+        restored = from_state_dict(acc.identity(), state)
+        assert state_dict(restored) == state
+        assert restored.epsilon_at(1e-5) == process.epsilon_at(1e-5)
+
     def test_rejects_negative_noise_multiplier(self):
         with pytest.raises(
             ConfigurationError, match="noise_multiplier must be non-negative"

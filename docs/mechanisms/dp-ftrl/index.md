@@ -17,12 +17,17 @@ calibrated against `n_steps` once.
 - **[λ-CGD](lambda-cgd.md)** — DP-λCGD (PRNG-replay noise; zero extra
   memory at inference time).
 
-The simplest case (sensitivity 1, no correlation) is the
-**identity strategy** — exposed via
-`opaque.dpftrl.noise.identity_strategy()` paired with
-`opaque.dpftrl.accounting.mf_gaussian(nm, identity_strategy())`. Useful
-as a sanity check or when comparing against vanilla DP-SGD on equal
-footing.
+For a single release, the **identity strategy** has sensitivity 1 and no
+correlation, providing a baseline for comparison with DP-SGD:
+
+```python
+import opaque.dpftrl.accounting as ftrl_acc
+from opaque.dpftrl.noise import identity_strategy
+
+process = ftrl_acc.mf_gaussian(
+    1.0, identity_strategy(), n_steps=1, min_sep=1, max_participations=1,
+)
+```
 
 ## Pairing with sampling
 

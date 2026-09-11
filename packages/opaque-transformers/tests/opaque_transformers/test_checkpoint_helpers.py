@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -681,3 +683,72 @@ class TestDriftDispositionResolution:
 
         # Missing ``drift`` key falls back to ``dp_relevant`` (safest).
         assert _resolve_drift_disposition({}, "gaussian") == "dp_relevant"
+
+
+class TestResumeDrift:
+    @pytest.fixture
+    def drift_case(self, monkeypatch):
+        from opaque.api.transformers.trainer._dp_trainer import DPTrainer
+
+        runtime = ckpt.RuntimeCheckpoint(
+            version=ckpt.DP_STATE_BUNDLE_VERSION,
+            clip_state={},
+            noise_state={},
+            sampler_state=None,
+            sample_rate=0.125,
+            target_delta=1e-5,
+            noise_multiplier=1.0,
+            expected_steps_per_epoch=8,
+            expected_batch_size=8,
+            total_steps=16,
+        )
+        current = {"expected_steps_per_epoch": 16}
+        trainer = DPTrainer.__new__(DPTrainer)
+        trainer.args = SimpleNamespace()
+        trainer._ctx = SimpleNamespace(is_horizon_process=False)
+        monkeypatch.setattr(trainer, "_current_values_for_drift", lambda *_: current)
+        return trainer, runtime, current
+
+    @pytest.mark.parametrize(
+        ("mechanism", "saved_horizon", "current_horizon"),
+        [
+            ("gaussian", True, True),
+            ("gaussian", True, False),
+            ("gaussian", False, True),
+            ("mf_blt", True, True),
+        ],
+    )
+    def test_epoch_shape_drift_is_fatal_for_horizons(
+        self, drift_case, mechanism, saved_horizon, current_horizon
+    ):
+        trainer, runtime, _ = drift_case
+        runtime.mechanism_kind = mechanism
+        runtime.is_horizon_process = saved_horizon
+        trainer._ctx.is_horizon_process = current_horizon
+
+        with pytest.raises(CheckpointError, match="expected_steps_per_epoch"):
+            trainer._warn_on_arg_drift(runtime)
+
+    def test_independent_drift_warning_reports_values(self, drift_case, caplog):
+        trainer, runtime, _ = drift_case
+
+        with caplog.at_level(logging.WARNING):
+            trainer._warn_on_arg_drift(runtime)
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert len(messages) == 1
+        assert "expected_steps_per_epoch" in messages[0]
+        assert "saved=8" in messages[0]
+        assert "current=16" in messages[0]
+        assert "still yields a correct" not in messages[0]
+        assert "RDP" not in messages[0]
+
+    def test_independent_run_can_extend(self, drift_case, caplog):
+        trainer, runtime, current = drift_case
+        current.clear()
+        current["total_steps"] = 32
+
+        with caplog.at_level(logging.WARNING):
+            trainer._warn_on_arg_drift(runtime)
+
+        assert not caplog.records

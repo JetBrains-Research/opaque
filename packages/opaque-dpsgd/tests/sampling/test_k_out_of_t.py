@@ -8,6 +8,7 @@ from itertools import chain
 import pytest
 
 from opaque.dpsgd.sampling import KOutOfTSampler
+from opaque.exceptions import ConfigurationError
 from opaque.random import key
 from opaque.serialization import from_state_dict, state_dict
 
@@ -65,12 +66,15 @@ def test_allocation_modes_use_distinct_stream_domains():
 
 
 @pytest.mark.parametrize("allocation", ["block", "total"])
-def test_stream_is_reproducible_and_resumable(allocation: str):
+@pytest.mark.parametrize(
+    ("k", "t", "consumed"), [(2, 8, 0), (2, 8, 5), (2, 8, 8), (4, 19, 7)]
+)
+def test_stream_is_reproducible_and_resumable(allocation: str, k, t, consumed):
     def make(seed: int):
         return KOutOfTSampler(
             list(range(40)),
-            k=2,
-            t=8,
+            k=k,
+            t=t,
             allocation=allocation,  # type: ignore[arg-type]
             key=key(seed),
         )
@@ -78,12 +82,12 @@ def test_stream_is_reproducible_and_resumable(allocation: str):
     expected = list(make(3))
     partial = make(3)
     iterator = iter(partial)
-    for _ in range(5):
+    for _ in range(consumed):
         next(iterator)
     restored = from_state_dict(make(99), state_dict(partial))
 
-    assert restored.consumed == 5
-    assert list(restored) == expected[5:]
+    assert restored.consumed == consumed
+    assert list(restored) == expected[consumed:]
 
 
 def test_expected_batch_size_and_block_sizes():
@@ -115,3 +119,40 @@ def test_validation():
         KOutOfTSampler([1], k=1, t=0, allocation="total", key=key(0))
     with pytest.raises(ValueError, match="allocation"):
         KOutOfTSampler([1], k=1, t=1, allocation="bad", key=key(0))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("allocation", ["block", "total"])
+@pytest.mark.parametrize("field", ["k", "t", "allocation", "num_samples"])
+def test_restore_rejects_changed_schedule(allocation, field):
+    original = KOutOfTSampler(range(40), k=2, t=8, allocation=allocation, key=key(3))
+    next(iter(original))
+    snapshot = state_dict(original)
+    changed = {
+        "k": 3 if field == "k" else 2,
+        "t": 9 if field == "t" else 8,
+        "allocation": (
+            {"block": "total", "total": "block"}[allocation]
+            if field == "allocation"
+            else allocation
+        ),
+    }
+    template = KOutOfTSampler(
+        range(41 if field == "num_samples" else 40), key=key(99), **changed
+    )
+
+    with pytest.raises(ConfigurationError, match=field):
+        from_state_dict(template, snapshot)
+
+    assert state_dict(original) == snapshot
+    assert template.consumed == 0
+
+
+@pytest.mark.parametrize("field", ["k", "t"])
+@pytest.mark.parametrize("value", [True, 1.0, 1.9, "1"])
+def test_restore_rejects_noninteger_schedule_fields(field, value):
+    template = KOutOfTSampler(range(4), k=1, t=1, allocation="block", key=key(0))
+    snapshot = state_dict(template)
+    snapshot[field] = value
+
+    with pytest.raises(ConfigurationError, match=field):
+        from_state_dict(template, snapshot)
