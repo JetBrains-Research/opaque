@@ -189,7 +189,7 @@ Dataclass surface.  Every field listed here exists on
 | `clipping_mode` | `str` | `"fixed"` | One of `{"fixed", "adaptive", "auto"}`. |
 | `clipping_norm` | `float \| dict[str, Any] \| str` | `1.0` | Scalar for global clipping; JSON dict with `"fallback"` key for per-group (keys are regex patterns over parameter names). |
 | `clipping_kwargs` | `dict[str, Any] \| str` | `{}` | Mode-specific clipping kwargs. Adaptive accepts `target_quantile` and `clipping_norm_max`; auto accepts `gamma`; fixed accepts no keys. Also accepts JSON or HF-style comma-separated strings. |
-| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism` via a mechanism→sampler lookup table. Explicit overrides: `"poisson"`, `"k_out_of_t"` (gaussian); `"cyclic_poisson"`, `"b_min_sep"` (mf_band); `"balls_in_bins"` (mf_blt/bisr/bsr/lambda_cgd). |
+| `sampling_mode` | `str` | `"auto"` | Resolved from `privacy_noise_mechanism`; see the complete mechanism-to-sampler table in the [TrainingArguments guide](../user-guide/huggingface/training-arguments.md#dp-ftrl-mechanisms). |
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Mode-specific sampler kwargs. `truncated_batch_size` caps Poisson draws; k-out-of-t accepts `k` and `allocation`; other modes accept no keys. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ. When unset (and `privacy_target_epsilon` is set), calibration searches. Horizon mechanisms report the conservative declared full-horizon ε throughout training. |
@@ -225,6 +225,7 @@ Dataclass surface.  Every field listed here exists on
 |---|---|---|---|
 | `per_device_train_batch_size` | `int` | `8` | Per-rank logical Poisson batch size. |
 | `per_device_eval_batch_size` | `int \| None` | `None` | Eval batch size (fixed, not Poisson). When `None`, defaults to `microbatch_size` when configured, otherwise `per_device_train_batch_size`. |
+| `microbatch_size` | `int \| None` | `None` | Physical vmap chunk size. Defaults to the logical per-device train batch; smaller values reduce peak memory without changing privacy accounting. |
 | `eval_accumulation_steps` | `int \| None` | `None` | Move eval tensors to CPU every N batches. `None` offloads every batch, minimizing device prediction memory; larger windows reduce transfer calls but retain up to N batches on device. CUDA copies use a bounded asynchronous pinned staging queue; complete predictions remain in pageable CPU memory for final metrics. |
 | `eval_delay` | `float` | `0.0` | Skip eval for the first N steps / epochs. |
 | `auto_find_microbatch_size` | `bool` | `False` | On train OOM, halve the microbatch and retry; on eval/predict OOM, halve `per_device_eval_batch_size`. Logical batch and privacy unchanged. |
@@ -274,6 +275,9 @@ state and reconstruct the training iterate when loaded.
 | `disable_tqdm` | `bool \| None` | `None` | Auto-inferred from log level. |
 | `report_to` | `str \| list[str] \| None` | `None` | `"wandb"`, `"tensorboard"`, `"mlflow"`, …; `"all"` expands; `None`/`"none"`/`[]` disables. |
 | `run_name` / `project` | `str \| None` | `None` | W&B / TB / MLflow run name and project. |
+| `trackio_space_id` | `str \| None` | `None` | Trackio Space identifier. |
+| `trackio_bucket_id` | `str \| None` | `None` | Trackio storage bucket identifier. |
+| `trackio_static_space_id` | `str \| bool \| None` | `None` | Trackio static Space selection. |
 
 ### Saving
 
@@ -289,6 +293,17 @@ state and reconstruct the training iterate when loaded.
 | `output_dir` | `str \| None` | `None` | Defaults to `"trainer_output"`. |
 | `overwrite_output_dir` | `bool` | `False` | If `False`, warn when `output_dir` already contains checkpoints. |
 | `resume_from_checkpoint` | `str \| None` | `None` | Path to a checkpoint directory.  `True` passed to `train()` auto-finds latest. |
+| `enable_jit_checkpoint` | `bool` | `False` | Enable HF's SIGTERM-triggered just-in-time checkpoint callback; the saved checkpoint includes Opaque's DP runtime state. |
+
+### Hub publishing
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `push_to_hub` | `bool` | `False` | Push the final model and DP provenance card after training. |
+| `hub_model_id` | `str \| None` | `None` | Target Hub repository identifier. |
+| `hub_token` | `str \| None` | `None` | Authentication token for Hub operations. |
+| `hub_private_repo` | `bool \| None` | `None` | Create a private repository when the target does not exist. |
+| `hub_revision` | `str \| None` | `None` | Target Hub branch or revision. |
 
 ### Evaluation
 
@@ -322,6 +337,8 @@ state and reconstruct the training iterate when loaded.
 | `dataloader_persistent_workers` | `bool` | `False` |
 | `dataloader_pin_memory` | `bool` | `True` |
 | `dataloader_prefetch_factor` | `int \| None` | `None` |
+| `dataloader_multiprocessing_context` | `str \| None` | `None` |
+| `dataloader_in_order` | `bool` | `True` |
 | `dataloader_drop_last` | `bool` | `False` |
 | `remove_unused_columns` | `bool` | `True` |
 | `torch_empty_cache_steps` | `int \| None` | `None` |
@@ -478,6 +495,7 @@ SFT-specific fields on top of `TrainingArguments`.
 |---|---|---|---|
 | `learning_rate` | `float` | `2e-5` | TRL default (overrides the base `5e-5`). |
 | `model_init_kwargs` | `dict \| None` | `None` | Forwarded to `from_pretrained` when `model` is a string; ignored for a module. |
+| `trust_remote_code` | `bool` | `False` | Forwarded when loading a string model or tokenizer that ships custom Hub code. |
 | `dataset_text_field` | `str` | `"text"` | Column holding raw text on a language-modeling dataset. |
 | `max_length` | `int \| None` | `1024` | Tokenized sequence length cap; `None` disables truncation (keep-start). |
 | `completion_only_loss` | `bool \| None` | `None` | Score only completion tokens. `None` enables this for prompt-completion data, but not language-modeling or chat data. |
@@ -535,6 +553,7 @@ DPO-specific fields on top of `TrainingArguments`.
 |---|---|---|---|
 | `learning_rate` | `float` | `1e-6` | TRL default. |
 | `model_init_kwargs` | `dict \| None` | `None` | Forwarded to `from_pretrained` for a string `model` **and** a string `ref_model`. |
+| `trust_remote_code` | `bool` | `False` | Forwarded when loading string policy, reference-model, or tokenizer identifiers that ship custom Hub code. |
 | `loss_type` | `list[str] \| str` | `["sigmoid"]` | One or more head names (a list ⇒ MPO).  A bare string is coerced to a one-element list.  See the [head menu](../alignment/trainers.md#the-loss_type-menu). |
 | `loss_weights` | `list[float] \| None` | `None` | Per-loss MPO weights; `None` ⇒ all-ones.  Must match `len(loss_type)`. |
 | `beta` | `float` | `0.1` | Policy–reference KL strength (τ for IPO). |

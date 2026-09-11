@@ -92,6 +92,6 @@ Under DDP, side effects are rank-gated:
 
 - `uv run pytest packages/opaque-transformers/tests/opaque_transformers/test_config.py`
 - `CUDA_VISIBLE_DEVICES=0,1,2,3 uv run pytest packages/opaque-transformers/tests/distributed/test_ddp_trainer.py`
-- `uv run pytest packages/opaque-core/tests/distributed/`
+- `uv run pytest packages/opaque-engine/tests/distributed/`
 - `MASTER_ADDR=127.0.0.1 MASTER_PORT=<port> uv run pytest -k gloo packages/opaque-transformers/tests/distributed/`
 - `mpirun -n 2 uv run pytest -k mpi packages/opaque-transformers/tests/distributed/` (when MPI launcher/runtime is available)

@@ -43,7 +43,7 @@ Implemented preference heads in this guide follow the primary papers for
 [DiscoPOP](https://arxiv.org/abs/2406.08414), [SimPO](https://arxiv.org/abs/2405.14734),
 [ORPO](https://arxiv.org/abs/2403.07691), [WPO](https://arxiv.org/abs/2406.11827),
 [LD-DPO](https://arxiv.org/abs/2409.06411), [APO](https://arxiv.org/abs/2408.06266),
-[SquareChiPO](https://arxiv.org/abs/2505.21395), [NCA](https://arxiv.org/abs/2402.05369),
+[NCA](https://arxiv.org/abs/2402.05369),
 [BCO](https://arxiv.org/abs/2404.04656), and
 [SPPO](https://arxiv.org/abs/2405.00675). TR-DPO reference sync uses the
 EMA-updated reference policy variant exposed on the trainer surface.

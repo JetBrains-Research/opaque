@@ -149,22 +149,24 @@ uv run pytest packages/opaque-engine/tests/clipping/test_clipped_fun.py -v
 
 ### Test Markers and Filtering
 
-Three orthogonal markers are declared in the root `pyproject.toml`:
+Four orthogonal markers are declared in the root `pyproject.toml`:
 
 - `cuda` — requires CUDA; auto-skipped on non-CUDA hosts.
 - `mps` — requires Apple Metal (MPS); auto-skipped on non-MPS hosts.
 - `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
   `main`.
+- `distributed` — launches multiple CPU/Gloo ranks; selected by the dedicated
+  Linux distributed lane.
 
 The PR gate covers locked Linux amd64, macOS arm64, Linux arm64, and CUDA
 tests, plus a dedicated Linux Gloo distributed lane. Linux amd64 and CUDA also
 run minimum (Python 3.11) and latest (Python 3.13) dependency validation.
-Locked main-platform lanes include slow tests. Minimum dependencies lanes are
-advisory, but environment setup and dependency resolution remain required.
+Locked main-platform lanes include slow tests. Every selected test, dependency
+resolution, and workflow failure blocks its caller.
 
 ```bash
 # PR-equivalent lane (matches CPU CI)
-uv run pytest -m "not cuda and not mps and not slow"
+uv run pytest -m "not cuda and not mps and not slow and not distributed"
 
 # CUDA tests only (requires a GPU)
 uv run pytest -m cuda
@@ -180,8 +182,8 @@ Rust tests above five seconds use `#[ignore = "slow"]`. The PR gate runs the
 default Cargo test set; main and release additionally run
 `cargo test --lib -- --ignored`.
 
-Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from
-`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. Set
+Gated Hugging Face models use the `@requires_hf_auth` skip-if helper from the
+shared `tests/_support/opaque_test_support.py` module. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 

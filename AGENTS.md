@@ -99,7 +99,7 @@ downloadable workflow artifacts on the run page (14-day retention).
 ```bash
 uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
 uv sync --group examples --all-packages --extra all  # examples and all package extras
-uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
+uv run pytest -m "not cuda and not mps and not slow and not distributed"  # PR-equivalent suite
 uv run pytest -m "slow"                           # slow tests (run on push to main)
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
@@ -238,8 +238,8 @@ Four orthogonal markers, declared in the root `pyproject.toml`:
 Rust tests above five seconds use `#[ignore = "slow"]`. PR CI runs the default
 unit/doc-test set; main and release additionally run the ignored library tests.
 
-Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-transformers/tests/opaque_transformers/_helpers.py`. It is a
+Gated HuggingFace models use `@requires_hf_auth` imported from the shared
+`tests/_support/opaque_test_support.py` module. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
@@ -265,8 +265,8 @@ CI lane marker expressions:
   `-m "cuda and not slow"`.
 - Dependency selection uses the committed lock or uv's `lowest-direct` /
   `highest` strategies. Main platform lanes retain slow-test coverage.
-  Failures in the Minimum dependencies lane are currently advisory, while
-  setup and resolution failures remain blocking.
+  Every selected test, dependency resolution, and workflow failure blocks its
+  caller.
 
 ### Supported HF model families
 
