@@ -137,11 +137,9 @@ clip-noise-step over one Poisson sample.
 
 `compute_loss_func` on the constructor accepts a callable
 `(outputs, labels) -> scalar` for one-off losses without subclassing.
-The callable is invoked **per example under vmap** (one example's
-outputs, one example's labels), not once per batch — there's no
-`num_items_in_batch` argument.  Subclassing for full SFT / DPO / KTO
-trainers is supported but is a more advanced extension point; reach
-out if you need to wire one up.
+Training invokes it per example under `vmap`; default evaluation invokes it
+once per batch. There is no `num_items_in_batch` argument, and a custom loss
+takes precedence over `label_smoothing_factor`.
 
 ## PEFT and LoRA
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
 import torch
 from transformers.trainer_callback import DefaultFlowCallback, TrainerCallback
 
@@ -31,11 +32,15 @@ class _FusedAwareModel(torch.nn.Module):
         self.linear = torch.nn.Linear(4, 2)
         self.fused_requests: list[bool] = []
 
-    def forward(self, x, labels=None, loss_only=False):
+    def forward(self, x, labels=None, loss_only=False, **kwargs):
         self.fused_requests.append(loss_only)
         logits = self.linear(x)
         loss = (
-            torch.nn.functional.cross_entropy(logits, labels)
+            torch.nn.functional.cross_entropy(
+                logits,
+                labels,
+                label_smoothing=float(kwargs.get("label_smoothing", 0.0)),
+            )
             if labels is not None
             else None
         )
@@ -43,6 +48,40 @@ class _FusedAwareModel(torch.nn.Module):
             "loss": loss,
             "logits": None if loss_only else logits,
         }
+
+
+class _TokenClassifierModel(torch.nn.Module):
+    main_input_name = "x"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(4, 3)
+
+    def forward(self, x, labels=None):
+        logits = self.linear(x)
+        loss = (
+            torch.nn.functional.cross_entropy(logits.reshape(-1, 3), labels.reshape(-1))
+            if labels is not None
+            else None
+        )
+        return {"loss": loss, "logits": logits}
+
+
+class _CausalLMModel(_TokenClassifierModel):
+    def _get_name(self):
+        return "GPT2LMHeadModel"
+
+    def forward(self, x, labels=None):
+        logits = self.linear(x)
+        loss = (
+            torch.nn.functional.cross_entropy(
+                logits[..., :-1, :].reshape(-1, 3),
+                labels[..., 1:].reshape(-1),
+            )
+            if labels is not None
+            else None
+        )
+        return {"loss": loss, "logits": logits}
 
 
 class _StopOnInitCallback(TrainerCallback):
@@ -284,6 +323,157 @@ def test_prediction_step_requests_fused_loss_only_only_without_predictions(tmp_p
     assert predictions is not None
     assert labels is not None
     assert model.fused_requests == [True, False]
+
+
+def test_default_eval_uses_same_custom_objective_as_training(tmp_path):
+    model = _FusedAwareModel()
+    batch = {"x": torch.randn(3, 4), "labels": torch.tensor([0, 1, 0])}
+    dataset = [
+        {"x": x, "labels": label}
+        for x, label in zip(batch["x"], batch["labels"], strict=True)
+    ]
+
+    def custom_loss(output, labels):
+        return 3.0 * torch.nn.functional.cross_entropy(output["logits"], labels)
+
+    trainer = DPTrainer(
+        model=model,
+        args=_args(tmp_path, per_device_eval_batch_size=2),
+        eval_dataset=dataset,
+        compute_loss_func=custom_loss,
+    )
+
+    eval_loss = trainer.evaluate()["eval_loss"]
+    per_example_losses = []
+    for x, label in zip(batch["x"], batch["labels"], strict=True):
+        per_example_losses.append(
+            trainer.compute_per_example_loss(
+                lambda _params, **inputs: model(**inputs),
+                {},
+                {"x": x, "labels": label},
+            )
+        )
+
+    assert eval_loss == pytest.approx(torch.stack(per_example_losses).mean().item())
+    assert model.fused_requests == [False, False, False, False, False]
+
+
+def test_default_eval_applies_label_smoothing(tmp_path):
+    model = _FusedAwareModel()
+    trainer = DPTrainer(
+        model=model,
+        args=_args(tmp_path, label_smoothing_factor=0.2),
+    )
+    batch = {"x": torch.randn(3, 4), "labels": torch.tensor([0, 1, 0])}
+
+    loss, predictions, labels = trainer.prediction_step(
+        model,
+        dict(batch),
+        prediction_loss_only=False,
+    )
+
+    assert loss is not None
+    assert predictions is not None
+    assert labels is not None
+    expected = torch.nn.functional.cross_entropy(
+        predictions,
+        labels,
+        label_smoothing=0.2,
+    )
+    unsmoothed = torch.nn.functional.cross_entropy(predictions, labels)
+    assert torch.allclose(loss, expected)
+    assert not torch.allclose(loss, unsmoothed)
+
+
+def test_default_eval_does_not_shift_token_classification_labels(tmp_path):
+    model = _TokenClassifierModel()
+    trainer = DPTrainer(
+        model=model,
+        args=_args(tmp_path, label_smoothing_factor=0.2),
+    )
+    batch = {
+        "x": torch.randn(2, 4, 4),
+        "labels": torch.tensor([[0, 1, 2, 0], [2, 1, 0, 2]]),
+    }
+
+    loss, predictions, labels = trainer.prediction_step(
+        model,
+        dict(batch),
+        prediction_loss_only=False,
+    )
+
+    assert loss is not None
+    assert predictions is not None
+    assert labels is not None
+    expected = torch.nn.functional.cross_entropy(
+        predictions.reshape(-1, 3),
+        labels.reshape(-1),
+        label_smoothing=0.2,
+    )
+    assert torch.allclose(loss, expected)
+
+
+def test_default_eval_shifts_causal_language_model_labels(tmp_path):
+    model = _CausalLMModel()
+    trainer = DPTrainer(
+        model=model,
+        args=_args(tmp_path, label_smoothing_factor=0.2),
+    )
+    batch = {
+        "x": torch.randn(2, 4, 4),
+        "labels": torch.tensor([[0, 1, 2, 0], [2, 1, 0, 2]]),
+    }
+
+    loss, predictions, labels = trainer.prediction_step(
+        model,
+        dict(batch),
+        prediction_loss_only=False,
+    )
+
+    assert loss is not None
+    assert predictions is not None
+    assert labels is not None
+    expected = torch.nn.functional.cross_entropy(
+        predictions[..., :-1, :].reshape(-1, 3),
+        labels[..., 1:].reshape(-1),
+        label_smoothing=0.2,
+    )
+    assert torch.allclose(loss, expected)
+
+
+def test_custom_loss_takes_precedence_over_label_smoothing(tmp_path):
+    model = _FusedAwareModel()
+    trainer = DPTrainer(
+        model=model,
+        args=_args(tmp_path, label_smoothing_factor=0.2),
+        compute_loss_func=lambda output, labels: output["loss"],
+    )
+    batch = {"x": torch.randn(2, 4), "labels": torch.tensor([0, 1])}
+    expected = torch.nn.functional.cross_entropy(
+        model.linear(batch["x"]), batch["labels"]
+    )
+
+    loss, _, _ = trainer.prediction_step(
+        model,
+        dict(batch),
+        prediction_loss_only=True,
+    )
+    train_loss = trainer.compute_per_example_loss(
+        lambda _params, **inputs: model(**inputs),
+        {},
+        {"x": batch["x"][0], "labels": batch["labels"][0]},
+    )
+
+    assert loss is not None
+    assert torch.allclose(loss, expected)
+    assert torch.allclose(
+        train_loss,
+        torch.nn.functional.cross_entropy(
+            model.linear(batch["x"][0]),
+            batch["labels"][0],
+        ),
+    )
+    assert model.fused_requests == [False, False]
 
 
 def test_label_smoothing_recomputes_loss_from_logits_for_vector_case(tmp_path):
