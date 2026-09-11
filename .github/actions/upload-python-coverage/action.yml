@@ -24,7 +24,11 @@ runs:
           echo "tests-ran=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
-        uv run coverage xml -o "${{ inputs.coverage-file }}"
+        uv_run=(uv run)
+        if [[ "${PYTORCH_BACKEND:-default}" == "cpu" ]]; then
+          uv_run+=(--no-sync)
+        fi
+        "${uv_run[@]}" coverage xml -o "${{ inputs.coverage-file }}"
         echo "tests-ran=true" >> "$GITHUB_OUTPUT"
 
     - name: Upload coverage

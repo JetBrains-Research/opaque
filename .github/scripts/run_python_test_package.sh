@@ -13,8 +13,13 @@ set -euo pipefail
 # Guarded here too, so a workflow refactor cannot silently un-guard GPU lanes.
 bash "$(dirname "${BASH_SOURCE[0]}")/assert_cuda_available.sh"
 
+uv_run=(uv run)
+if [[ "${PYTORCH_BACKEND:-default}" == "cpu" ]]; then
+  uv_run+=(--no-sync)
+fi
+
 pytest_args=(
-  uv run pytest "$TEST_PATH"
+  "${uv_run[@]}" pytest "$TEST_PATH"
   -m "$PYTEST_MARKER"
 )
 if [[ -n "${PYTEST_XDIST:-}" ]]; then

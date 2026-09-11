@@ -94,6 +94,9 @@ jobs:
       PYTEST_XDIST: ${{ inputs.pytest-xdist }}
       REPORT_DURATIONS: ${{ inputs.report-durations }}
       TEST_RESULTS_FILE: .test-results-${{ inputs.environment-name }}-${{ matrix.suite.id }}
+      # The CPU setup fails the strict Dynamo coverage at the supported
+      # minimum version, so that lane retains its PyPI build.
+      PYTORCH_BACKEND: ${{ inputs.runner == 'ubuntu-latest' && inputs.dependency-selection != 'minimum' && 'cpu' || 'default' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
