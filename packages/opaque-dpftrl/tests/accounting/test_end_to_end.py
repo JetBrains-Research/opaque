@@ -47,7 +47,6 @@ class TestEndToEndCalibration:
         assert eps > 0
 
 
-@pytest.mark.slow
 @pytest.mark.parametrize(
     ("strategy", "amplification", "expected"),
     [
