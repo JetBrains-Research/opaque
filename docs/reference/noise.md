@@ -14,9 +14,7 @@ Opaque provides several noise mechanisms:
 
 ### Independent Noise (DP-SGD)
 
-- **`gaussian_noise()`** — Gaussian noise; pass `bound=B` (or
-  `bound=(low, high)`) for the bounded Gaussian mechanism (renormalized
-  density on the interval — no point masses at the boundaries).
+- **`gaussian_noise()`** — Gaussian noise.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -51,8 +49,6 @@ Use `sync()` from `opaque.distributed` to validate noise state consistency
 across ranks. It auto-dispatches based on type:
 
 - **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
-  The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
-  `GaussianNoiseState`, so `sync()` handles it automatically.
 - **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
@@ -60,8 +56,8 @@ across ranks. It auto-dispatches based on type:
 ## Paired second-moment release
 
 When `clipped_grad(..., second_moment=True)` produces a
-`SecondMomentClippingOutput`, both `gaussian_noise` (DP-SGD; bounded or not)
-and `mf_gaussian_noise(..., second_moment_strategy=...)` (DP-FTRL) consume it and
+`SecondMomentClippingOutput`, both `gaussian_noise` (DP-SGD) and
+`mf_gaussian_noise(..., second_moment_strategy=...)` (DP-FTRL) consume it and
 emit a `SecondMomentNoiseOutput` with paired noise on both streams.
 
 The runtime σ allocation is **sensitivity-proportional** and works
@@ -101,13 +97,7 @@ Mahalanobis allocation as `gaussian_noise`). Leaf→group keys are optree
 parameter trees are supported. Trainer/examples keep flat
 `named_parameters` by choice.
 
-## Gaussian (optionally bounded)
-
-`gaussian_noise` accepts an optional `bound` argument: `bound=B` for the
-symmetric interval `[-B, B]` or `bound=(low, high)` for an asymmetric
-one (with `low <= 0 <= high`). The per-coordinate sample is then drawn
-from a Gaussian renormalized over the interval (Chen and Hale, 2024).
-Bounds are absolute, in the same units as the gradient / clip norm.
+## Gaussian
 
 ::: opaque.dpsgd.noise.gaussian_noise
 

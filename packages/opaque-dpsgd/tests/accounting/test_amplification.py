@@ -319,7 +319,7 @@ class TestParallelPoissonConstructor:
             )
 
 
-# ── Bounded Gaussian amplification tests ─────────────────────────────
+# ── Parallel Poisson automatic truncation tests ──────────────────────
 
 
 class TestParallelPoissonAutoTruncation:

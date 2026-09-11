@@ -150,6 +150,14 @@ _MECHANISMS_DPFTRL: frozenset[str] = frozenset(
 )
 _MECHANISMS: frozenset[str] = frozenset({"gaussian", *_MECHANISMS_DPFTRL})
 
+_GAUSSIAN_COMPUTE_DTYPE_NAMES: dict[str, torch.dtype] = {
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+    "float32": torch.float32,
+    "float64": torch.float64,
+}
+_GAUSSIAN_COMPUTE_DTYPES = frozenset(_GAUSSIAN_COMPUTE_DTYPE_NAMES.values())
+
 # Concrete sampling modes (resolved set; ``"auto"`` is the default field
 # value and is replaced by one of these in ``__post_init__``).
 _SAMPLING_MODES: frozenset[str] = frozenset(
@@ -499,9 +507,8 @@ class TrainingArguments:
     # ---- Noise mechanism / fixed multiplier -------------------------------
     privacy_noise_mechanism: str = "gaussian"
     privacy_noise_multiplier: float | None = None
-    #: Extra kwargs forwarded into :func:`opaque.dpsgd.noise.gaussian_noise`
-    #: (e.g. ``bound`` for the bounded Gaussian mechanism).  JSON/HF-style
-    #: parity with ``sampling_kwargs`` / ``clipping_kwargs``.
+    #: Extra kwargs forwarded into the selected noise mechanism factory.
+    #: JSON/HF-style parity with ``sampling_kwargs`` / ``clipping_kwargs``.
     privacy_noise_mechanism_kwargs: dict[str, Any] | str = field(default_factory=dict)
 
     # ---- Subsampling (cap via ``sampling_kwargs``) -----------------------
@@ -1154,6 +1161,15 @@ class TrainingArguments:
                     f"expected one of {sorted(_MECHANISMS)}.",
                 )
             )
+        if "bound" in self.privacy_noise_mechanism_kwargs:
+            raise ConfigurationError(
+                *(
+                    "privacy_noise_mechanism_kwargs['bound'] is unsupported: Opaque "
+                    "does not provide a matching privacy accountant.",
+                )
+            )
+        if self.privacy_noise_mechanism == "gaussian":
+            _normalize_gaussian_compute_dtype(self.privacy_noise_mechanism_kwargs)
 
         if self.sampling_mode == "auto":
             self.sampling_mode = _SAMPLER_BY_MECHANISM[self.privacy_noise_mechanism]
@@ -1535,6 +1551,34 @@ class TrainingArguments:
 # =====================================================================
 # Helpers
 # =====================================================================
+
+
+def _normalize_gaussian_compute_dtype(kwargs: dict[str, Any]) -> None:
+    """Normalize Gaussian ``compute_dtype`` names accepted in dict-shaped config."""
+    if "compute_dtype" not in kwargs:
+        return
+
+    value = kwargs["compute_dtype"]
+    if isinstance(value, str):
+        name = value.removeprefix("torch.").lower()
+        try:
+            value = _GAUSSIAN_COMPUTE_DTYPE_NAMES[name]
+        except KeyError as exc:
+            raise ConfigurationError(
+                *(
+                    "privacy_noise_mechanism_kwargs['compute_dtype'] must be one of "
+                    f"{sorted(_GAUSSIAN_COMPUTE_DTYPE_NAMES)}; got {value!r}.",
+                )
+            ) from exc
+        kwargs["compute_dtype"] = value
+    if not isinstance(value, torch.dtype) or value not in _GAUSSIAN_COMPUTE_DTYPES:
+        raise ConfigurationError(
+            *(
+                "privacy_noise_mechanism_kwargs['compute_dtype'] must be one of "
+                "torch.float16, torch.bfloat16, torch.float32, or torch.float64; "
+                f"got {value!r}.",
+            )
+        )
 
 
 def _coerce_scalar(raw: Any) -> Any:

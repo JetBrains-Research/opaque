@@ -3,7 +3,7 @@
 The standard noise mechanism for differential privacy. Adds independent
 Gaussian noise $\mathcal{N}(0, \sigma^2)$ with unbounded support to
 sensitivity-1 queries. This is the default mechanism for DP-SGD and the
-building block on which the bounded variants improve.
+building block for per-group and paired-stream noise allocation.
 
 ## Idea
 
@@ -17,10 +17,9 @@ values mean more privacy (lower $\varepsilon$) but more gradient corruption.
 **Advantages**: Simple, well-understood, no extra parameters beyond the
 noise multiplier.
 
-**Limitation**: Unbounded support means the worst-case privacy loss is
-technically infinite; the $\delta$ parameter bounds the probability of
-extreme privacy loss. The bounded variant (`gaussian_noise(bound=...)`)
-eliminates this tail risk.
+**Limitation**: Unbounded support means private outputs can have extreme
+values; the $\delta$ parameter bounds the probability of extreme privacy
+loss.
 
 ## Mathematics
 
@@ -166,43 +165,9 @@ print(f"σ/Δ = {noise_multiplier:.4f}, achieved ε = {result.achieved:.4f}")
 - If $\varepsilon > 10$ after calibration, the privacy guarantee is weak.
   Consider more noise, fewer steps, or a larger dataset.
 
-## Bounded noise variant
-
-Pass `bound=B` (or `bound=(low, high)`) to `gaussian_noise()` to sample
-from a Gaussian renormalized over $[-B, B]$ (or $[\text{low}, \text{high}]$)
-per coordinate — the *bounded Gaussian mechanism* of
-[Chen and Hale (2024)](https://arxiv.org/abs/2211.17230).
-Bounds are absolute (same scale as the gradient / clip norm), not multiples
-of $\sigma$. Treat `bound=` as experimental: `dpsgd_acc.gaussian()` does not
-cover this variant.
-
-```python
-from opaque.dpsgd.noise import gaussian_noise
-from opaque.random import key
-import opaque.accounting as acc
-
-# Noise injection: bounded support, symmetric absolute bound
-noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=noise_multiplier, bound=3.0, key=key(42),
-)
-noisy_grads, noise_state = noise_fn(grads, noise_state)
-
-# Asymmetric bound:
-noise_fn, noise_state = gaussian_noise(
-    noise_multiplier=noise_multiplier, bound=(-1.0, 4.0), key=key(42),
-)
-
-# Accounting (unchanged from the unbounded mechanism)
-step = dpsgd_acc.poisson(dpsgd_acc.gaussian(noise_multiplier), sample_rate=0.01)
-training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
-```
-
 ## References
 
 - **Abadi et al. (2016)** — [Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133).
   Introduced DP-SGD with the Gaussian mechanism.
 - **Balle, Barthe, Gaboardi (2018)** — [Privacy Amplification by Subsampling: Tight Analyses via Couplings and Divergences](https://arxiv.org/abs/1807.01647).
   Poisson subsampling amplification analysis.
-- **Chen and Hale (2024)** — [The Bounded Gaussian Mechanism for Differential Privacy](https://arxiv.org/abs/2211.17230).
-  Introduces the bounded Gaussian mechanism.

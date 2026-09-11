@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.exceptions import ConfigurationError, InputTypeError
 from opaque.random import key
 from opaque.types import clipped
 
@@ -40,9 +42,15 @@ def test_bf16_observed_variance_matches_calibrated_stddev():
     assert abs(observed_std - 1.0) < 0.05, f"observed_std={observed_std}"
 
 
-def test_compute_dtype_overridable_to_fp64():
+@pytest.mark.parametrize(
+    "compute_dtype",
+    [torch.float16, torch.bfloat16, torch.float32, torch.float64],
+)
+def test_supported_compute_dtypes_run(compute_dtype):
     noise_fn, state = gaussian_noise(
-        noise_multiplier=1.0, key=key(0), compute_dtype=torch.float64
+        noise_multiplier=1.0,
+        key=key(0),
+        compute_dtype=compute_dtype,
     )
     grads = {"a": torch.zeros(64, dtype=torch.float64)}
     noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
@@ -55,6 +63,17 @@ def test_bf16_default_compute_dtype_beats_native_bf16():
     noised, _ = noise_fn(clipped(grads, max_norm=1.0), state)
     observed_std = noised.pytree["a"].float().std().item()
     assert abs(observed_std - 2.0) < 0.05
+
+
+@pytest.mark.parametrize("dtype", [torch.int64, torch.complex64])
+def test_non_floating_compute_dtype_is_rejected(dtype):
+    with pytest.raises(ConfigurationError, match="compute_dtype"):
+        gaussian_noise(noise_multiplier=1.0, key=key(0), compute_dtype=dtype)
+
+
+def test_compute_dtype_requires_torch_dtype():
+    with pytest.raises(InputTypeError, match="compute_dtype"):
+        gaussian_noise(noise_multiplier=1.0, key=key(0), compute_dtype="float32")  # type: ignore[arg-type]
 
 
 def test_zero_noise_multiplier_short_circuits():

@@ -687,23 +687,6 @@ def parse_args():
         ),
     )
     dp_group.add_argument(
-        "--noise-mechanism",
-        type=str,
-        choices=["gaussian", "bounded_gaussian"],
-        default="gaussian",
-        help="Noise mechanism: gaussian (standard, unbounded support) "
-        "or bounded_gaussian (Chen and Hale, 2024; renormalized density on a "
-        "per-coordinate interval).",
-    )
-    dp_group.add_argument(
-        "--noise-bound",
-        type=float,
-        default=1.0,
-        help="Symmetric absolute bound B for bounded_gaussian (per-coordinate "
-        "support [-B, B]; same units as the gradient / clip norm). Ignored "
-        "for standard gaussian.",
-    )
-    dp_group.add_argument(
         "--second-moment",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -1466,9 +1449,6 @@ def main():
         print(f"  Clip norm: per-group (effective={clip_norm.effective:.3f})")
     else:
         print(f"  Clip norm: {clip_norm}")
-    print(f"  Noise mechanism: {args.noise_mechanism}")
-    if args.noise_mechanism != "gaussian":
-        print(f"  Noise bound: ±{args.noise_bound}")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Clipping mode: {args.clipping_mode}")
     if args.clipping_mode == "auto":
@@ -1560,19 +1540,13 @@ def main():
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
-    # Noise injection — bind mechanism-specific parameters once.
-    # Chain: base mechanism → adaclip (optional) → amplification.
-    # Bounded Gaussian noise (Chen and Hale, 2024) confines per-coordinate
-    # support but accounting collapses to ordinary Gaussian at training
-    # scale (ℓ₂-ball clip, not a product of intervals), so we use
-    # dpsgd_acc.gaussian() for accounting either way.
+    # Noise injection chain: base mechanism → adaclip (optional) → amplification.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
-    if args.noise_multiplier == 0:
-        mechanism = lambda nm: acc.nonprivate()
-    elif args.noise_mechanism == "bounded_gaussian":
-        mechanism = dpsgd_acc.gaussian
-    else:
-        mechanism = dpsgd_acc.gaussian
+    mechanism = (
+        (lambda nm: acc.nonprivate())
+        if args.noise_multiplier == 0
+        else dpsgd_acc.gaussian
+    )
 
     if args.clipping_mode == "adaptive":
         _base_mechanism = mechanism
@@ -1629,9 +1603,6 @@ def main():
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         if use_horizon_sampler:
             print(f"  Accounting: {args.sampler} (whole horizon)")
-        print(f"  Noise mechanism: {args.noise_mechanism}")
-        if args.noise_mechanism == "bounded_gaussian":
-            print(f"  Noise bound: ±{args.noise_bound}")
         if use_second_moment:
             _log_private_second_moment()
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
@@ -1812,21 +1783,10 @@ def main():
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
     initial_bound = clip_norm / args.batch_size
-    if args.noise_mechanism == "bounded_gaussian":
-        # Pass ``bound`` unconditionally — at ``noise_multiplier=0`` the
-        # bounded path clamps the input to the interval (vs. the unbounded
-        # path which returns it unchanged), so the mechanism stays
-        # consistent for the user's chosen flag.
-        noise_fn, noise_state = gaussian_noise(
-            noise_multiplier=noise_multiplier,
-            bound=args.noise_bound,
-            key=gradient_noise_key,
-        )
-    else:
-        noise_fn, noise_state = gaussian_noise(
-            noise_multiplier=noise_multiplier,
-            key=gradient_noise_key,
-        )
+    noise_fn, noise_state = gaussian_noise(
+        noise_multiplier=noise_multiplier,
+        key=gradient_noise_key,
+    )
 
     # Training loop
     print("\n" + "=" * 80)

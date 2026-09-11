@@ -193,7 +193,7 @@ Dataclass surface.  Every field listed here exists on
 | `sampling_kwargs` | `dict[str, Any] \| str` | `{}` | Sampler kwargs.  `truncated_batch_size` caps Poisson draws. |
 | `privacy_noise_mechanism` | `str` | `"gaussian"` | One of `{"gaussian", "mf_band", "mf_blt", "mf_bisr", "mf_bsr", "mf_lambda_cgd", "mf_identity"}`. |
 | `privacy_noise_multiplier` | `float \| None` | `None` | Fixed σ. When unset (and `privacy_target_epsilon` is set), calibration searches. Horizon mechanisms report the conservative declared full-horizon ε throughout training. |
-| `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Forwarded into the noise mechanism factory (e.g. `bound` for bounded Gaussian). |
+| `privacy_noise_mechanism_kwargs` | `dict[str, Any] \| str` | `{}` | Gaussian accepts `compute_dtype` as a native `torch.dtype` or a string name (`float16`, `bfloat16`, `float32`, `float64`); MF mechanisms accept strategy-specific kwargs. |
 | `noise_calibration_kwargs` | `dict[str, Any] \| str` | `{}` | Calibration search bounds.  When empty, `__post_init__` injects `{"min": 0.11, "max": 10.0, "tolerance": 1e-3}`. |
 
 ### Patches and kernels

@@ -33,7 +33,7 @@ Install and depend on `opaque` only. The repository is implemented as
 | `opaque-base` | `opaque.serialization` | Pure-Python serialization registry + dispatcher; the seam every other wheel registers handlers against |
 | `opaque-engine` | `opaque.{types,pytree,random,distributed,functional,scheduling,profiling}` | Torch substrate: pytree wrappers (`ClippedPytree` / `NoisedPytree` / `PerGroup`), `RngKey`, fixed + AUTO-S clipping, schedules + warmup, DDP plumbing, profiler |
 | `opaque-optimizers` | `opaque.optimizers` | Torchopt-based functional optimizer chain (DP-aware AdamW-BC and friends) |
-| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
+| `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / per-group noise, Poisson samplers, adaptive clipping, DP-SGD-specific accounting factories |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, λ-CGD), private second moments, correlated-noise samplers, DP-FTRL-specific accounting factories |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |
@@ -147,9 +147,9 @@ for batch_x, batch_y in dataloader:
 
 - **Per-example gradient clipping** via `torch.func.vmap` + `torch.func.grad`,
   with fixed, adaptive (Andrew et al. 2021), and AUTO-S (Bu et al. 2023) variants.
-- **Noise injection**: Gaussian, truncated Gaussian, and correlated
-  matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD), including
-  private second-moment streams for adaptive optimizers.
+- **Noise injection**: Gaussian and correlated matrix-factorization noise
+  (band-MF, BLT, BSR, BiSR, DP-λCGD), including private second-moment streams
+  for adaptive optimizers.
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (ε-δ, f-DP advantage, error rates), and noise
   calibration via binary search.

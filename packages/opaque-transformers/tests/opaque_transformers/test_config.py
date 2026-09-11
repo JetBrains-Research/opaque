@@ -19,6 +19,7 @@ import math
 import multiprocessing
 
 import pytest
+import torch
 from transformers.debug_utils import DebugOption
 
 from opaque.api.transformers.trainer._training_arguments import _DP_OPTIMIZERS
@@ -697,6 +698,44 @@ class TestMechanismAndSamplerDefaults:
             "alpha": 1.0,
             "beta": 0.9,
         }
+
+
+class TestRemovedGaussianBoundKwarg:
+    """Removed Gaussian bound configuration is rejected at construction."""
+
+    def test_bound_mechanism_kwarg_is_rejected(self):
+        with pytest.raises(ConfigurationError, match=r"bound.*unsupported"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism_kwargs={"bound": 3.0},
+            )
+
+
+class TestGaussianComputeDtype:
+    """Gaussian ``compute_dtype`` accepts native and string-shaped config."""
+
+    @pytest.mark.parametrize(
+        ("options", "expected"),
+        [
+            ({"compute_dtype": torch.float16}, torch.float16),
+            ("compute_dtype=float32", torch.float32),
+            ('{"compute_dtype": "torch.float64"}', torch.float64),
+        ],
+    )
+    def test_normalizes_supported_dtype(self, options, expected):
+        args = TrainingArguments(
+            privacy_noise_multiplier=1.0,
+            privacy_noise_mechanism_kwargs=options,
+        )
+        assert args.privacy_noise_mechanism_kwargs == {"compute_dtype": expected}
+
+    @pytest.mark.parametrize("value", ["float8_e4m3fn", torch.int64, None])
+    def test_rejects_unsupported_dtype(self, value):
+        with pytest.raises(ConfigurationError, match="compute_dtype"):
+            TrainingArguments(
+                privacy_noise_multiplier=1.0,
+                privacy_noise_mechanism_kwargs={"compute_dtype": value},
+            )
 
 
 class TestNoiseCalibrationKwargs:

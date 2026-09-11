@@ -1736,7 +1736,7 @@ class TestDPTrainerCheckpointing:
         checkpoint = tmp_path / "checkpoint-2"
         runtime_path = checkpoint / ckpt.DP_STATE_NAME
         payload = ckpt.load_dp_runtime_state(str(runtime_path))
-        assert payload.version == 7
+        assert payload.version == ckpt.DP_STATE_BUNDLE_VERSION
         # Simulate a legacy snapshot taken after workers prefetched all draws.
         payload.sampler_state["consumed"] = 6
         torch.save(payload, runtime_path)

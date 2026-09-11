@@ -1661,16 +1661,12 @@ class DPTrainer:
                     if isinstance(a.privacy_noise_mechanism_kwargs, dict)
                     else ()
                 )
-                if _k in ("bound", "compute_dtype")
+                if _k == "compute_dtype"
             }
-            make_noise = (
-                functools.partial(gaussian_noise, **_gn_extra)
-                if _gn_extra
-                else gaussian_noise
-            )
-            noise_fn, noise_state = make_noise(
+            noise_fn, noise_state = gaussian_noise(
                 noise_multiplier=noise_multiplier,
                 key=gradient_noise_key,
+                **_gn_extra,
             )
         else:
             # DP-FTRL: pull the participation context (``n_steps`` /

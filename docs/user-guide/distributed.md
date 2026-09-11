@@ -301,10 +301,6 @@ following types are registered:
 | `SecondMomentMFNoiseState` | Validate both paired MF streams, in a fixed order |
 | `PerfState` | Aggregate step times (max), sample counts (sum), and peak memory (max) across ranks |
 
-The bounded Gaussian path (`gaussian_noise(..., bound=...)`) also returns
-`GaussianNoiseState`, so `sync()` handles it automatically — no extra
-helpers needed.
-
 ### Noise scaling depends on the key, not on the reduction
 
 Summing noised local queries scales `noise_stddev` by `sqrt(world_size)` — but

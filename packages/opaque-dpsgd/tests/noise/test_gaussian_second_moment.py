@@ -1,10 +1,4 @@
-"""Paired-stream (second-moment) support for ``gaussian_noise(bound=...)``.
-
-Mirrors unbounded ``gaussian_noise`` second-moment handling: when a
-:class:`SecondMomentClippingOutput` flows in, allocates the joint noise
-budget across the two streams via ``paired_noise_stddevs`` and samples
-bounded Gaussian noise on each.
-"""
+"""Paired-stream (second-moment) support for ``gaussian_noise``."""
 
 from __future__ import annotations
 
@@ -41,11 +35,7 @@ class TestPairedStreamShape:
     """``noise_fn(SecondMomentClippingOutput, state)`` returns paired noised output."""
 
     def test_returns_second_moment_noise_output(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         out, _ = noise_fn(
             _paired_input(
                 torch.zeros(10),
@@ -61,11 +51,7 @@ class TestPairedStreamShape:
 
     def test_streams_match_paired_noise_stddevs(self):
         """Output stddevs match ``paired_noise_stddevs`` on the same inputs."""
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         out, _ = noise_fn(
             _paired_input(
                 torch.zeros(10),
@@ -85,56 +71,12 @@ class TestPairedStreamShape:
         assert second_expected == pytest.approx(math.sqrt(2.0))
 
 
-class TestPairedStreamWithinBound:
-    """Bounded noise must stay within the absolute bound for both streams."""
-
-    def test_first_stream_within_bound(self):
-        bound = 4.0
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=bound,
-            key=key(123),
-        )
-        out, _ = noise_fn(
-            _paired_input(
-                torch.zeros(2000),
-                torch.zeros(2000),
-                max_norm=1.0,
-                squared_max_norm=1.0,
-            ),
-            state,
-        )
-        assert torch.all(out.noisy_grads.pytree.abs() <= bound + 1e-6)
-
-    def test_second_stream_within_bound(self):
-        bound = 4.0
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=bound,
-            key=key(123),
-        )
-        out, _ = noise_fn(
-            _paired_input(
-                torch.zeros(2000),
-                torch.zeros(2000),
-                max_norm=1.0,
-                squared_max_norm=1.0,
-            ),
-            state,
-        )
-        assert torch.all(out.noisy_squared_grads.pytree.abs() <= bound + 1e-6)
-
-
 class TestPairedStreamCoupling:
     """Squared-stream sensitivity enters S, so it shifts both σ's."""
 
     def test_squared_max_norm_shifts_both_streams(self):
         """The Mahalanobis budget couples both streams: changing Δ² shifts σ¹ and σ²."""
-        noise_fn_a, state_a = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn_a, state_a = gaussian_noise(noise_multiplier=1.0, key=key(0))
         out_a, _ = noise_fn_a(
             _paired_input(
                 torch.zeros(10),
@@ -144,11 +86,7 @@ class TestPairedStreamCoupling:
             ),
             state_a,
         )
-        noise_fn_b, state_b = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn_b, state_b = gaussian_noise(noise_multiplier=1.0, key=key(0))
         out_b, _ = noise_fn_b(
             _paired_input(
                 torch.zeros(10),
@@ -175,11 +113,7 @@ class TestPairedStreamPerGroup:
     def test_per_group_on_both_streams_returns_per_group_stddevs(self):
         from opaque.types import PerGroup
 
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         first_norm = PerGroup(
             groups={"a": "g1", "b": "g2"},
             values={"g1": 1.0, "g2": 2.0},
@@ -205,11 +139,7 @@ class TestPairedStreamPerGroup:
     def test_mismatched_kinds_rejected(self):
         from opaque.types import PerGroup
 
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         per_group_norm = PerGroup(
             groups={"weight": "g"},
             values={"g": 1.0},
@@ -226,16 +156,8 @@ class TestPairedStreamReproducibility:
     """Same key → same noise; different folds → different noise streams."""
 
     def test_seeded_runs_match(self):
-        noise_fn_a, state_a = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(42),
-        )
-        noise_fn_b, state_b = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(42),
-        )
+        noise_fn_a, state_a = gaussian_noise(noise_multiplier=1.0, key=key(42))
+        noise_fn_b, state_b = gaussian_noise(noise_multiplier=1.0, key=key(42))
         out_a, _ = noise_fn_a(
             _paired_input(
                 torch.zeros(20),
@@ -261,11 +183,7 @@ class TestPairedStreamReproducibility:
 
     def test_first_and_second_streams_have_different_noise(self):
         """Paired streams stay independent after namespaced string tags."""
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(42),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(42))
         out, _ = noise_fn(
             _paired_input(
                 torch.zeros(50),
@@ -283,11 +201,7 @@ class TestPairedStreamStateAdvances:
     """Step counter advances exactly once per paired call."""
 
     def test_state_advances(self):
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=1.0,
-            bound=5.0,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=1.0, key=key(0))
         for expected in (1, 2, 3):
             _, state = noise_fn(
                 _paired_input(
@@ -302,19 +216,10 @@ class TestPairedStreamStateAdvances:
 
 
 class TestZeroNoiseMultiplier:
-    """``noise_multiplier=0`` returns the per-stream input clamped to ``bound``.
-
-    Under the absolute-bound interpretation σ=0 means "no noise", and the
-    output is ``clamp(input, -bound, bound)`` on each stream — *not* zero.
-    """
+    """``noise_multiplier=0`` preserves both input streams."""
 
     def test_zero_noise_paired(self):
-        bound = 3.0
-        noise_fn, state = gaussian_noise(
-            noise_multiplier=0.0,
-            bound=bound,
-            key=key(0),
-        )
+        noise_fn, state = gaussian_noise(noise_multiplier=0.0, key=key(0))
         grads = torch.tensor([5.0, -5.0, 0.5, -0.5])
         squared = torch.tensor([10.0, 0.0, 1.0, 2.0])
         out, _ = noise_fn(
@@ -326,9 +231,5 @@ class TestZeroNoiseMultiplier:
             ),
             state,
         )
-        torch.testing.assert_close(
-            out.noisy_grads.pytree, torch.clamp(grads, -bound, bound)
-        )
-        torch.testing.assert_close(
-            out.noisy_squared_grads.pytree, torch.clamp(squared, -bound, bound)
-        )
+        torch.testing.assert_close(out.noisy_grads.pytree, grads)
+        torch.testing.assert_close(out.noisy_squared_grads.pytree, squared)

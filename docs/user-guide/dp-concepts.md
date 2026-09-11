@@ -282,10 +282,6 @@ Strategies to improve accuracy at fixed privacy budget:
   (smaller $q$) and more gradient signal per unit of noise. The total noise added
   per step is $\sigma \cdot C$ regardless of batch size, but it is averaged over
   more examples. Physical batch sizes of 1000+ are common in DP training.
-- **Use the bounded Gaussian mechanism.** `gaussian_noise(..., bound=...)`
-  confines the per-coordinate output to a finite interval, which can improve
-  optimizer behaviour with no privacy-accounting change at training scale.
-  See [Mechanisms](../mechanisms/index.md).
 - **Use correlated noise (DP-FTRL).** Matrix factorization mechanisms (BandMF,
   BLT) inject correlated noise that partially cancels across steps,
   reducing the effective noise on cumulative model updates.
@@ -333,12 +329,7 @@ impact on model quality.
 
 ### Independent noise (DP-SGD)
 
-Standard DP-SGD adds independent noise at each training step.
-`gaussian_noise(..., bound=...)` further confines the per-coordinate output
-to a finite interval (the *bounded Gaussian mechanism* of Chen and Hale,
-2024). At training scale, the per-coordinate ε-DP analysis does not apply
-(gradients live under an ℓ₂-ball constraint, not a product of intervals);
-accounting is the standard (ε, δ)-Gaussian.  See
+Standard DP-SGD adds independent Gaussian noise at each training step. See
 [Mechanisms](../mechanisms/index.md) for the mathematical details.
 
 ### Correlated noise (DP-FTRL)
