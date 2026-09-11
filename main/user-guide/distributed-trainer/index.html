@@ -3333,7 +3333,7 @@ that <code>DPTrainer</code> does not implement.</p>
 <ul>
 <li><code>uv run pytest packages/opaque-transformers/tests/opaque_transformers/test_config.py</code></li>
 <li><code>CUDA_VISIBLE_DEVICES=0,1,2,3 uv run pytest packages/opaque-transformers/tests/distributed/test_ddp_trainer.py</code></li>
-<li><code>uv run pytest packages/opaque-core/tests/distributed/</code></li>
+<li><code>uv run pytest packages/opaque-engine/tests/distributed/</code></li>
 <li><code>MASTER_ADDR=127.0.0.1 MASTER_PORT=&lt;port&gt; uv run pytest -k gloo packages/opaque-transformers/tests/distributed/</code></li>
 <li><code>mpirun -n 2 uv run pytest -k mpi packages/opaque-transformers/tests/distributed/</code> (when MPI launcher/runtime is available)</li>
 </ul>
