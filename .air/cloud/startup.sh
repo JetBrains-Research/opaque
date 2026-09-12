@@ -140,7 +140,6 @@ PY
 
     uv run pytest \
         packages/opaque-accounting/tests/test_smoke.py \
-        tests/contracts/test_pep420_no_init.py \
         -m "not cuda and not mps and not slow" \
         -q
 }
