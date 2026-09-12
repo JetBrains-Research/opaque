@@ -122,6 +122,9 @@ warm_workspace() {
 healthcheck() {
     cd "$REPO_ROOT"
 
+    uv --version
+    rustc --version
+
     uv run python - <<'PY'
 import opaque.accounting
 import opaque.auditing
