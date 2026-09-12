@@ -294,11 +294,16 @@ def _restore_family_state(state):
 @pytest.fixture(autouse=True)
 def _isolate_parity_family_state():
     """Keep pristine parity references from altering later package tests."""
+    from opaque.api.patches.transformers._family import _reset_patched_families
+
     previous_state = _snapshot_pristine_family_state()
     try:
         yield
     finally:
         _restore_family_state(previous_state)
+        # The restored globals may differ from what the idempotency cache recorded
+        # during the parity case. Force later tests to inspect and patch them anew.
+        _reset_patched_families()
 
 
 _FORWARD_PARITY_CASES = [
