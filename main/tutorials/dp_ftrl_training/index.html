@@ -4022,11 +4022,13 @@ length up front and committing to a strategy at calibration time.</p>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpftrl.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpftrl_acc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">mf_gaussian_noise</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 
@@ -4038,11 +4040,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
 import opaque.accounting as acc
 import opaque.dpftrl.accounting as dpftrl_acc
 from opaque.dpftrl.clipping import clipped_grad
 from opaque.dpftrl.noise import band_mf_strategy, mf_gaussian_noise
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.functional import make_functional
 from opaque.random import key
 
@@ -4156,23 +4160,33 @@ is a strong general-purpose default. See
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">64</span>
 <span class="n">n_steps</span> <span class="o">=</span> <span class="mi">500</span>
-<span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="n">n_samples</span>
 <span class="n">bands</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="c1"># Cyclic Poisson activates one of `bands` groups per step, so this</span>
+<span class="c1"># eligible-example rate gives `batch_size` expected records per batch.</span>
+<span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">*</span> <span class="n">bands</span> <span class="o">/</span> <span class="n">n_samples</span>
 
 <span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Strategy: band-MF, n_steps=</span><span class="si">{</span><span class="n">n_steps</span><span class="si">}</span><span class="s2">, bands=</span><span class="si">{</span><span class="n">bands</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Sensitivity: </span><span class="si">{</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+    <span class="s2">"Single-participation sensitivity: "</span>
+    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span><span class="w"> </span><span class="n">min_sep</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span><span class="w"> </span><span class="n">max_participations</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span>
+<span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">batch_size = 64
 n_steps = 500
-sample_rate = batch_size / n_samples
 bands = 16
+# Cyclic Poisson activates one of `bands` groups per step, so this
+# eligible-example rate gives `batch_size` expected records per batch.
+sample_rate = batch_size * bands / n_samples
 
 strategy = band_mf_strategy(bands=bands)
 
 print(f"Strategy: band-MF, n_steps={n_steps}, bands={bands}")
-print(f"Sensitivity: {strategy.sensitivity(n_steps=n_steps):.4f}")</div>
+print(
+    "Single-participation sensitivity: "
+    f"{strategy.sensitivity(n_steps=n_steps, min_sep=n_steps, max_participations=1):.4f}"
+)</div>
 </div>
 </div>
 </div>
@@ -4191,7 +4205,7 @@ print(f"Sensitivity: {strategy.sensitivity(n_steps=n_steps):.4f}")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Sensitivity: 1.0000
+<pre>Single-participation sensitivity: 1.0000
 </pre>
 </div>
 </div>
@@ -4273,7 +4287,7 @@ print(f"Calibrated noise multiplier: {noise_multiplier:.4f}")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Calibrated noise multiplier: 0.7757
+<pre>Calibrated noise multiplier: 4.1981
 </pre>
 </div>
 </div>
@@ -4428,7 +4442,7 @@ print(f"Noise multiplier: {noise_multiplier:.4f}")</div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>Clip norm: 1.0
 Per-record sensitivity: 0.0156
-Noise multiplier: 0.7757
+Noise multiplier: 4.1981
 </pre>
 </div>
 </div>
@@ -4470,10 +4484,17 @@ updates.</p>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span>
 <span class="n">losses</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">dataset</span> <span class="o">=</span> <span class="n">TensorDataset</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
+    <span class="n">dataset</span><span class="p">,</span>
+    <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span>
+    <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
+    <span class="n">n_steps</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span>
+    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 
-<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_steps</span><span class="p">):</span>
-    <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">,</span> <span class="p">(</span><span class="n">batch_size</span><span class="p">,))</span>
-    <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="o">=</span> <span class="n">X</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="p">(</span><span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loader</span><span class="p">):</span>
 
     <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
     <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
@@ -4497,10 +4518,17 @@ updates.</p>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-7">lr = 0.1
 losses = []
+dataset = TensorDataset(X, y)
+sampler = CyclicPoissonSampler(
+    dataset,
+    sample_rate=sample_rate,
+    bands=bands,
+    n_steps=n_steps,
+    key=key(1),
+)
+loader = DataLoader(dataset, batch_sampler=sampler)
 
-for step in range(n_steps):
-    idx = torch.randint(0, n_samples, (batch_size,))
-    xb, yb = X[idx], y[idx]
+for step, (xb, yb) in enumerate(loader):
 
     grads, clip_state = grad_fn(params, xb, yb, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -4532,23 +4560,29 @@ print(f"\nFinal privacy: (epsilon={final_eps:.2f}, delta={target_delta})")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step    1/500  loss=0.7778
-Step   50/500  loss=0.3578
-Step  100/500  loss=0.2498
-Step  150/500  loss=0.2811
-Step  200/500  loss=0.2097
-Step  250/500  loss=0.2078
-Step  300/500  loss=0.1625
-Step  350/500  loss=0.1945
-Step  400/500  loss=0.1853
-Step  450/500  loss=0.1874
+<pre>Step    1/500  loss=0.7660
+Step   50/500  loss=0.4617
+Step  100/500  loss=0.3182
+Step  150/500  loss=0.2299
+Step  200/500  loss=0.2611
+Step  250/500  loss=0.2317
 </pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Step  500/500  loss=0.1125
+<pre>Step  300/500  loss=0.1713
+Step  350/500  loss=0.1830
+Step  400/500  loss=0.1647
+Step  450/500  loss=0.1814
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Step  500/500  loss=0.1823
 
 Final privacy: (epsilon=3.00, delta=1e-05)
 </pre>
@@ -4617,7 +4651,7 @@ print(f"Test accuracy: {accuracy:.1%}")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Test accuracy: 99.4%
+<pre>Test accuracy: 99.2%
 </pre>
 </div>
 </div>

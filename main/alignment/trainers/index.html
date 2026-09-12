@@ -3578,7 +3578,7 @@ dataset, and a tokenizer.</p>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">args</span> <span class="o">=</span> <span class="n">SFTConfig</span><span class="p">(</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">"trainer_output/sft"</span><span class="p">,</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">dataset_text_field</span><span class="o">=</span><span class="s2">"text"</span><span class="p">,</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">loss_type</span><span class="o">=</span><span class="s2">"nll"</span><span class="p">,</span>                 <span class="c1"># or "dft"</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">loss_type</span><span class="o">=</span><span class="s2">"nll"</span><span class="p">,</span>                 <span class="c1"># or "dft" / "chunked_nll"</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">max_length</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">per_device_train_batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">max_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
@@ -3617,13 +3617,14 @@ or a chat-message column (<code>messages</code> / <code>conversations</code> / <
 <code>formatting_func(example) -&gt; str</code> to render arbitrary rows into the text field
 first. Already-tokenized datasets (with an <code>input_ids</code> column) pass through
 untouched.</p>
-<p><code>loss_type</code> selects the per-example head: <code>"nll"</code> (standard cross-entropy) or
-<code>"dft"</code> (Dynamic Fine-Tuning). Both use a DP-safe per-example token-count
-divisor — see <a href="../sft/#2-per-example-loss">SFT end-to-end</a>. A custom
+<p><code>loss_type</code> selects <code>"nll"</code> (standard cross-entropy), <code>"dft"</code> (Dynamic
+Fine-Tuning), or <code>"chunked_nll"</code> (fused logits-free cross-entropy). All use a
+DP-safe per-example token-count divisor — see
+<a href="../sft/#2-per-example-loss">SFT end-to-end</a>. A custom
 <code>compute_loss_func(outputs, labels) -&gt; scalar</code> is honoured <strong>only</strong> on the
 <code>"nll"</code> path (it runs inside vmap, so it must be a pure per-example op — no
-<code>num_items_in_batch</code>); <code>"dft"</code> computes its own token-weighted loss and rejects
-a custom func.</p>
+<code>num_items_in_batch</code>); <code>"dft"</code> and <code>"chunked_nll"</code> compute their own loss and
+reject a custom function.</p>
 <p>Set <code>completion_only_loss=True</code> to score only the completion tokens of
 prompt-completion data, or <code>assistant_only_loss=True</code> to score only assistant
 turns of chat data (the trainer installs the <code>{% generation %}</code>-marked training

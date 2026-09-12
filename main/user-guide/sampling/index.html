@@ -3837,7 +3837,7 @@ previous <code>bands - 1</code> batches. Initial per-example cooldowns are drawn
 stationary distribution so expected batch size is roughly stable from step 0.</p>
 <p>Use <code>p = p_0 / (1 - p_0 * (bands - 1))</code> when matching a target per-example rate
 <code>p_0 = expected_batch_size / dataset_size</code> (for <code>bands == 1</code>, <code>p = p_0</code>).
-Pair with <code>opaque.accounting.b_min_sep</code> for privacy accounting.</p>
+Pair with <code>opaque.dpftrl.accounting.b_min_sep</code> for privacy accounting.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BMinSepSampler</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
@@ -3848,7 +3848,7 @@ Pair with <code>opaque.accounting.b_min_sep</code> for privacy accounting.</p>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">dataset</span><span class="p">,</span>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">sampling_prob</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">iterations</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
 <a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="p">)</span>
 </code></pre></div>
@@ -3905,22 +3905,20 @@ it is strictly better. Pair each sampler only with its own accountant:
 <p>Each example is independently assigned to one of <code>num_bins</code> bins (Binomial
 bin sizes; some bins may be empty). The assignment is <strong>fixed once at init</strong>
 and <strong>reused across all epochs</strong> — this is required by the dominating-pair
-BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms,
-<strong>and with the plain Gaussian mechanism for DP-SGD</strong>: <code>acc.balls_in_bins</code>
-accepts both Gaussian and MF inners (see <a href="../../mechanisms/">Mechanisms — Cross-cutting
-amplification</a>).</p>
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, BLT, or identity MF
+mechanisms through <code>opaque.dpftrl.accounting.balls_in_bins</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BallsInBinsSampler</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">BallsInBinsSampler</span><span class="p">(</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">dataset</span><span class="p">,</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">dataset_size</span> <span class="o">//</span> <span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">num_epochs</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="p">)</span>
 <a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
-<p><code>acc.balls_in_bins(mechanism, num_bins, num_epochs)</code> returns the
+<p><code>dpftrl_acc.balls_in_bins(mechanism, num_bins=num_bins, n_steps=num_steps)</code> returns the
 <strong>total</strong> multi-epoch privacy cost — do not compose further with
 <code>* num_epochs</code>. In a training loop, book the cost once before training
 begins; the per-step accumulator does not compose for BnB.</p>

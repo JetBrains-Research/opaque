@@ -3920,10 +3920,11 @@ Mechanism constructors return <code>DpProcess</code> objects that compose with <
 and <code>|</code> (heterogeneous compose). Privacy metrics are queried directly on the
 resulting process.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">epsilon</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.dpsgd.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dpsgd_acc</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">dpsgd_acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">epsilon</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <p>The underlying implementation uses Google's PLD accounting via the
 <code>opaque-accounting</code> Rust crate (PyO3 bindings).</p>
@@ -3956,12 +3957,12 @@ published at the moment.</p>
 </tr>
 <tr>
 <td><code>opaque.dpftrl.accounting</code></td>
-<td>DP-FTRL mechanisms: <code>band_mf</code>, <code>blt</code>, <code>bisr</code>, <code>bsr</code>, <code>lambda_cgd</code>, <code>identity_mf</code>, <code>poisson</code> (cyclic when <code>bands &gt; 1</code>, plain when <code>bands == 1</code>, parameterized by <code>n_steps</code>), <code>b_min_sep</code>, <code>balls_in_bins</code></td>
+<td>DP-FTRL mechanisms: <code>mf_gaussian</code>, <code>poisson</code> (whole-process, parameterized by <code>n_steps</code>), <code>b_min_sep</code>, <code>balls_in_bins</code></td>
 <td><code>from opaque.dpftrl import accounting as dpftrl_acc</code></td>
 </tr>
 </tbody>
 </table>
-<p>The mechanism factories (<code>gaussian</code>, <code>poisson</code>, <code>band_mf</code>, …) live <strong>only</strong> on
+<p>The mechanism factories (<code>gaussian</code>, <code>poisson</code>, <code>mf_gaussian</code>, …) live <strong>only</strong> on
 the algorithm-scoped namespaces — use the namespace that matches your training
 run. Cross-cutting primitives (<code>Accountant</code>, <code>calibrate</code>, <code>epsilon_budget</code>,
 composition operators) live on <code>opaque.accounting</code>.</p>
@@ -4304,7 +4305,7 @@ first-moment mechanism</strong>:</p>
 </code></pre></div>
 <p>There is no separate <code>second_moment</code> transformation to wrap and no <code>ρ</code> knob:
 the runtime σ on each stream already absorbs the joint cost. Use the
-underlying mechanism factories (<code>dpsgd_acc.gaussian</code>, <code>dpftrl_acc.band_mf</code>,
+underlying mechanism factories (<code>dpsgd_acc.gaussian</code>, <code>dpftrl_acc.mf_gaussian</code>,
 …) directly.</p>
 <h3 id="eps_deltaepsilon-delta00-dpprocess"><code>eps_delta(epsilon, delta=0.0) -&gt; DpProcess</code><a class="headerlink" href="#eps_deltaepsilon-delta00-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
