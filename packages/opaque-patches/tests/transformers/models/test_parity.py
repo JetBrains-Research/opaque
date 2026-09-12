@@ -279,6 +279,28 @@ def _snapshot_pristine_family_state():
 
 _PRISTINE_FAMILY_STATE = _snapshot_pristine_family_state()
 
+
+def _restore_family_state(state):
+    for family, (module_attrs, class_forwards) in state.items():
+        model_mod = importlib.import_module(
+            f"transformers.models.{family}.modeling_{family}"
+        )
+        for name, value in module_attrs.items():
+            setattr(model_mod, name, value)
+        for cls, forward in class_forwards.items():
+            cls.forward = forward
+
+
+@pytest.fixture(autouse=True)
+def _isolate_parity_family_state():
+    """Keep pristine parity references from altering later package tests."""
+    previous_state = _snapshot_pristine_family_state()
+    try:
+        yield
+    finally:
+        _restore_family_state(previous_state)
+
+
 _FORWARD_PARITY_CASES = [
     pytest.param(
         family,
