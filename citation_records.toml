@@ -1,6 +1,7 @@
 [metadata]
 version = 1
 purpose = "Authoritative records and hypotheses for citations audited in issue 845."
+verified_on = 2026-09-12
 
 [[records]]
 id = "2405.15682"
