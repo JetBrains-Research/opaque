@@ -1,10 +1,10 @@
 """Balls-in-Bins amplification for DP-FTRL — **total** multi-epoch cost.
 
-In the Balls-in-Bins (BnB) sampling scheme, the dataset is randomly
-partitioned into ``num_bins`` equally-sized bins.  The bin assignment
-is fixed once at sampler init and reused across all ``n_steps //
-num_bins`` epochs, so each example stays in its bin — required for the
-dominating-pair analysis.
+In the Balls-in-Bins (BnB) sampling scheme, every example independently
+chooses one of ``num_bins`` bins uniformly. Bin sizes are random and may be
+empty. The assignment is fixed once at sampler init and reused across all
+``n_steps // num_bins`` epochs, so each example stays in its bin — required
+for the dominating-pair analysis.
 
 Lemma 3.2 of Choquette-Choo et al. (2024) is stated for elementwise
 non-negative encoders. This implementation uses the lemma directly on that
@@ -42,10 +42,12 @@ The returned process represents the **total** privacy cost across
 all ``n_steps`` rounds.  Do NOT compose further externally.
 
 References:
+    Citation: arXiv:2410.06266; Christopher A. Choquette-Choo et al.; Near Exact Privacy Amplification for Matrix Mechanisms
+    - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
+      for Matrix Mechanisms": https://arxiv.org/abs/2410.06266
+    Citation: arXiv:2412.16802; Lynn Chua et al.; Balls-and-Bins Sampling for DP-SGD
     - Chua et al. (2025), "Balls-and-Bins Sampling for DP-SGD":
       https://arxiv.org/abs/2412.16802
-    - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
-      for Matrix Mechanisms"
 """
 
 from __future__ import annotations
