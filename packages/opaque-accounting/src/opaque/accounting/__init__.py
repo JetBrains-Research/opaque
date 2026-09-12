@@ -6,23 +6,20 @@ mechanisms (``identity``, ``nonprivate``, ``eps_delta``).
 Algorithm-specific factories live in their respective packages
 (``opaque-dpsgd`` / ``opaque-dpftrl``):
 
-- :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``,
-  ``truncated_poisson``, ``parallel_poisson``.
-- :mod:`opaque.dpftrl.accounting` — ``band_mf``, ``blt``, ``bisr``,
-  ``bsr``, ``lambda_cgd``, ``identity_mf``, ``poisson``, ``b_min_sep``,
-  ``balls_in_bins``.
+- :mod:`opaque.dpsgd.accounting` — ``gaussian``, ``adaclip``, ``poisson``
+  (including its truncated form), ``parallel_poisson``, ``k_out_of_t``.
+- :mod:`opaque.dpftrl.accounting` — ``mf_gaussian``, ``poisson``,
+  ``b_min_sep``, ``balls_in_bins``.
 
 Implementation uses Google's PLD accounting via the ``opaque-accounting``
 Rust crate (PyO3 bindings).
 
-Example (requires ``opaque-dpsgd`` in the environment)::
+Example (requires ``opaque-dpsgd`` in the environment):
 
-    import opaque.accounting as acc
-    import opaque.dpsgd.accounting as dpsgd_acc
-
-    step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
-    training = step * 1000
-    epsilon = training.epsilon_at(1e-5)
+>>> import opaque.dpsgd.accounting as dpsgd_acc
+>>> step = dpsgd_acc.poisson(dpsgd_acc.gaussian(1.1), sample_rate=0.01)
+>>> training = step * 1000
+>>> epsilon = training.epsilon_at(1e-5)
 """
 
 from opaque.api.accounting.core import (

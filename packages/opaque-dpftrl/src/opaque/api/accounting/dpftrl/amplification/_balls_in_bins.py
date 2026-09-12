@@ -264,7 +264,7 @@ def balls_in_bins(
         from opaque.dpftrl.noise import blt_strategy, identity_strategy
 
         # Correlated MF
-        s = blt_strategy(n_steps=1000, min_sep=100, max_participations=10)
+        s = blt_strategy(max_buffers=10)
         training = ftrl_acc.balls_in_bins(
             ftrl_acc.mf_gaussian(1.0, s),
             num_bins=100, n_steps=1000,

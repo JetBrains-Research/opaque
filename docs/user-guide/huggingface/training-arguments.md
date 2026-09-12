@@ -308,8 +308,7 @@ What the converter does:
   `auto_find_batch_size → auto_find_microbatch_size`;
 - **loosely maps** `max_grad_norm → clipping_norm` (no warning — pass an
   explicit `clipping_norm=` to override);
-- **remaps** optimizers (`adamw_torch`/`adamw_hf → adamw`,
-  `adamw_torch_fused → adamw` + `optim_args={"fused": True}`,
+- **remaps** optimizers (`adamw_torch`/`adamw_hf`/`adamw_torch_fused → adamw`,
   `adafactor=True → optim="adafactor"`) and `use_liger_kernel →
   use_performance_kernels`;
 - **drops** irrelevant fields (with a `RuntimeWarning` when non-default), and

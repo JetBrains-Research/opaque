@@ -2264,7 +2264,7 @@ def main():
     print("\nPrivacy:")
     if truncated_batch_size is not None:
         print(
-            f"  Accounting: truncated_poisson (cap={truncated_batch_size}, n={global_train_size})"
+            f"  Accounting: poisson (truncated; cap={truncated_batch_size}, n={global_train_size})"
         )
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")

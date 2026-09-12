@@ -577,6 +577,7 @@ introduces no extra data-dependent query:
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 

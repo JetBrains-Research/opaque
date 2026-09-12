@@ -17,7 +17,7 @@ factories live next to its runtime:
 |--------|----------|------------|
 | `opaque.accounting` | Cross-cutting primitives — composition (`compose`, `repeat`, `cached`), `calibrate`, generic mechanisms (`identity`, `nonprivate`, `eps_delta`), `Accountant`, and the shared PLD / discretization stack. | `opaque-accounting` |
 | `opaque.dpsgd.accounting` | DP-SGD factories — `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t`. | `opaque-dpsgd` |
-| `opaque.dpftrl.accounting` | DP-FTRL factories — `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
+| `opaque.dpftrl.accounting` | DP-FTRL factories — `mf_gaussian`, `poisson` (whole-process, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins`. | `opaque-dpftrl` |
 
 Private second moments do **not** use a separate accounting wrapper: the joint gradient + squared-gradient release is handled in the runtime σ split (sensitivity-proportional Mahalanobis allocation), so calibration stays on the same underlying mechanism PLD as first-moment-only training. See [Noise API](../reference/noise.md#paired-second-moment-release).
 
@@ -27,7 +27,7 @@ container is on `opaque.accounting` directly (`from opaque.accounting import
 Accountant`); calibration helpers (`calibrate`, `epsilon_budget`, etc.) live
 there too.
 
-The mechanism factories themselves (`gaussian`, `poisson`, `band_mf`, …) are
+The mechanism factories themselves (`gaussian`, `poisson`, `mf_gaussian`, …) are
 **only** on the algorithm-specific namespaces. Use the namespace that matches
 your training run (`opaque.dpsgd.accounting` or `opaque.dpftrl.accounting`) —
 the per-step (DP-SGD) vs whole-process (DP-FTRL) distinction is part of the
@@ -339,7 +339,7 @@ eps = proc.epsilon_at(delta=1e-5)
 assert eps > 0 and eps < float("inf"), f"epsilon out of range: {eps}"
 ```
 
-### `dpftrl_acc.balls_in_bins(inner, num_bins, n_steps)`
+### `dpftrl_acc.balls_in_bins(inner, *, num_bins, n_steps)`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total**
 privacy cost across all `n_steps` rounds (must be a positive multiple of

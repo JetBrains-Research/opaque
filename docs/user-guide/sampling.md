@@ -191,7 +191,7 @@ stationary distribution so expected batch size is roughly stable from step 0.
 
 Use `p = p_0 / (1 - p_0 * (bands - 1))` when matching a target per-example rate
 `p_0 = expected_batch_size / dataset_size` (for `bands == 1`, `p = p_0`).
-Pair with `opaque.accounting.b_min_sep` for privacy accounting.
+Pair with `opaque.dpftrl.accounting.b_min_sep` for privacy accounting.
 
 ```python
 from opaque.dpftrl.sampling import BMinSepSampler
@@ -204,7 +204,7 @@ sampler = BMinSepSampler(
     dataset,
     bands=bands,
     sampling_prob=p,
-    iterations=num_steps,
+    n_steps=num_steps,
     key=key(42),
 )
 ```
@@ -275,10 +275,8 @@ uses the block reduction as a valid conservative upper bound.
 Each example is independently assigned to one of `num_bins` bins (Binomial
 bin sizes; some bins may be empty). The assignment is **fixed once at init**
 and **reused across all epochs** — this is required by the dominating-pair
-BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms,
-**and with the plain Gaussian mechanism for DP-SGD**: `acc.balls_in_bins`
-accepts both Gaussian and MF inners (see [Mechanisms — Cross-cutting
-amplification](../mechanisms/index.md)).
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, BLT, or identity MF
+mechanisms through `opaque.dpftrl.accounting.balls_in_bins`.
 
 ```python
 from opaque.dpftrl.sampling import BallsInBinsSampler
@@ -287,13 +285,13 @@ from opaque.random import key
 sampler = BallsInBinsSampler(
     dataset,
     num_bins=dataset_size // batch_size,
-    num_epochs=8,
+    n_steps=num_steps,
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
-`acc.balls_in_bins(mechanism, num_bins, num_epochs)` returns the
+`dpftrl_acc.balls_in_bins(mechanism, num_bins=num_bins, n_steps=num_steps)` returns the
 **total** multi-epoch privacy cost — do not compose further with
 `* num_epochs`. In a training loop, book the cost once before training
 begins; the per-step accumulator does not compose for BnB.

@@ -18,7 +18,7 @@ USAGE:
 
   # DP-FTRL with BLT (balls-in-bins sampling)
   python examples/train_dpsgd_trainer.py --preset smoke \
-      --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=16
+      --noise-mechanism mf_blt --noise-mechanism-kwargs max_buffers=10
 
   # Save DPTrainer checkpoints every eval interval
   python examples/train_dpsgd_trainer.py --preset smoke --save-steps 10
@@ -591,7 +591,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional upper bound on the per-step Poisson batch. Routes "
-            "through the truncated_poisson_gaussian_pld accountant; ε is "
+            "through the truncated form of the Poisson accountant; ε is "
             "higher than unbounded Poisson (Gan'25 pessimistic bound) but "
             "valid under a guaranteed bounded batch size."
         ),

@@ -319,7 +319,7 @@ for step in range(1000):
     step_key, noise_key = split(step_key, num=2)
 
     # Use for DP
-    noise_fn, state = gaussian_noise(1.1, key=noise_key)
+    noise_fn, state = gaussian_noise(noise_multiplier=1.1, key=noise_key)
     grads = compute_dp_grads(model, batch)
     noisy_grads, state = noise_fn(grads, state)
     optimizer.step(noisy_grads)
@@ -390,7 +390,9 @@ sampling_key, noise_master = split(master, num=2)
 rank_keys = split(noise_master, num=world_size)
 my_noise_key = rank_keys[rank]
 
-noise_fn = gaussian_noise(..., key=my_noise_key)
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier, key=my_noise_key,
+)
 ```
 
 ## Troubleshooting
@@ -411,7 +413,9 @@ for step in range(n):
 
 # Incorrect: Mixing with global seeds
 torch.manual_seed(42)  # Framework
-noise_fn = gaussian_noise(..., key=some_key)  # DP
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier, key=some_key,
+)  # DP
 # Different RNG sources can cause issues
 ```
 
@@ -422,14 +426,20 @@ Ensure rank-specific keys:
 ```python
 # Incorrect: All ranks share the same key
 k = key(42)
-noise_fn = gaussian_noise(..., key=k)  # All ranks get identical noise
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier, key=k,
+)  # All ranks get identical noise
 
 # Correct: Per-rank keys via fold_in
-noise_fn = gaussian_noise(..., key=fold_in(key(42), rank))
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier, key=fold_in(key(42), rank),
+)
 
 # Also correct: Per-rank keys via split
 rank_keys = split(key(42), num=world_size)
-noise_fn = gaussian_noise(..., key=rank_keys[rank])
+noise_fn, noise_state = gaussian_noise(
+    noise_multiplier=noise_multiplier, key=rank_keys[rank],
+)
 ```
 
 ### Need to resume from checkpoint?

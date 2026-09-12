@@ -9,6 +9,7 @@ resulting process.
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 
 step = dpsgd_acc.poisson(dpsgd_acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
@@ -35,9 +36,9 @@ The accounting API is split into three namespaces:
 |-----------|----------|--------|
 | `opaque.accounting` | Cross-cutting: calibration, composition, `Accountant`, `repeat`, `compose` | `import opaque.accounting as acc` |
 | `opaque.dpsgd.accounting` | DP-SGD mechanisms: `gaussian`, `adaclip`, `poisson` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson`, `k_out_of_t` | `from opaque.dpsgd import accounting as dpsgd_acc` |
-| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `band_mf`, `blt`, `bisr`, `bsr`, `lambda_cgd`, `identity_mf`, `poisson` (cyclic when `bands > 1`, plain when `bands == 1`, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
+| `opaque.dpftrl.accounting` | DP-FTRL mechanisms: `mf_gaussian`, `poisson` (whole-process, parameterized by `n_steps`), `b_min_sep`, `balls_in_bins` | `from opaque.dpftrl import accounting as dpftrl_acc` |
 
-The mechanism factories (`gaussian`, `poisson`, `band_mf`, …) live **only** on
+The mechanism factories (`gaussian`, `poisson`, `mf_gaussian`, …) live **only** on
 the algorithm-scoped namespaces — use the namespace that matches your training
 run. Cross-cutting primitives (`Accountant`, `calibrate`, `epsilon_budget`,
 composition operators) live on `opaque.accounting`.
@@ -353,7 +354,7 @@ proc = dpftrl_acc.poisson(
 
 There is no separate `second_moment` transformation to wrap and no `ρ` knob:
 the runtime σ on each stream already absorbs the joint cost. Use the
-underlying mechanism factories (`dpsgd_acc.gaussian`, `dpftrl_acc.band_mf`,
+underlying mechanism factories (`dpsgd_acc.gaussian`, `dpftrl_acc.mf_gaussian`,
 …) directly.
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
