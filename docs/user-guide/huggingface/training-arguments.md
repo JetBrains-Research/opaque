@@ -1,8 +1,8 @@
 # TrainingArguments
 
-`opaque.transformers.TrainingArguments` mirrors the subset of
-Hugging Face `TrainingArguments` Trainer honors, plus Trainer's
-own privacy / clipping / sampling / patching fields. Unsupported HF
+`opaque.transformers.TrainingArguments` mirrors the subset of Hugging Face's
+`transformers.TrainingArguments` that `opaque.transformers.Trainer` supports,
+plus Opaque's own privacy / clipping / sampling / patching fields. Unsupported HF
 knobs are intentionally omitted from the surface.
 
 This page covers the fields you'll touch most often, with the

@@ -68,7 +68,7 @@ def time_at_t_minus(seconds: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# DP-trainer integration: per-example losses, speed_metrics in eval output.
+# Trainer integration: per-example losses, speed_metrics in eval output.
 # ---------------------------------------------------------------------------
 
 

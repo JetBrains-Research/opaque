@@ -26,10 +26,10 @@ vendor runtime stacks and fail fast when unavailable.
 
 ## Launch pattern
 
-Use one process per rank:
+From the repository root, use one process per rank:
 
 ```bash
-torchrun --nproc-per-node=4 train_trainer.py
+torchrun --nproc-per-node=4 examples/train_dpsgd_trainer.py
 ```
 
 ```python

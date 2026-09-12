@@ -1,4 +1,4 @@
-"""Trainer state — standalone dataclass for :class:`Trainer`.
+"""Trainer state — standalone dataclass for :class:`opaque.transformers.Trainer`.
 
 Mirrors HF :class:`transformers.TrainerState`'s field *names* for the
 fields we use (so HF reporting callbacks duck-typing
@@ -37,11 +37,13 @@ __all__ = ["TrainerState"]
 
 @dataclasses.dataclass
 class TrainerState:
-    """Trainer state for Trainer (standalone; not a ``TrainerState`` subclass).
+    """State for :class:`opaque.transformers.Trainer`.
+
+    This standalone dataclass does not inherit from ``transformers.TrainerState``.
 
     HF callbacks (TensorBoard, WandB, EarlyStoppingCallback, …) read
     ``state.global_step``, ``state.epoch``, ``state.log_history`` etc.
-    via attribute access — not ``isinstance(state, TrainerState)`` —
+    via attribute access — not ``isinstance(state, transformers.TrainerState)`` —
     so duck-typing parity is preserved by keeping the field names.
     """
 
