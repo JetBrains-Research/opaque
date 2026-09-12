@@ -100,7 +100,7 @@ DP-SGD pairs with Poisson subsampling:
 from opaque.dpsgd.sampling import PoissonSampler
 
 sampler = PoissonSampler(
-    dataset, sample_rate=sample_rate, key=key_sampling,
+    dataset, sample_rate=sample_rate, n_steps=num_steps, key=key_sampling,
 )
 ```
 
@@ -132,15 +132,24 @@ gradients.
 
 ```python
 import torch
+import torchopt
+from torch.utils.data import DataLoader
 from opaque.functional import make_functional
 from opaque.serialization import state_dict
 
 fmodel, params = make_functional(model)
-for step, batch in enumerate(sampler):
+loader = DataLoader(dataset, batch_sampler=sampler)
+accountant = acc.Accountant()
+step_process = dpsgd_acc.poisson(
+    dpsgd_acc.gaussian(noise_multiplier), sample_rate,
+)
+
+for batch in loader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noised, noise_state = noise_fn(grads, noise_state)
-    updates, opt_state = optimizer.update(noised, opt_state, params)
+    updates, opt_state = optimizer.update(noised, opt_state, params=params)
     params = torchopt.apply_updates(params, updates)
+    accountant |= step_process
 
 # Checkpoint at the end (or any step):
 ckpt = {
@@ -148,6 +157,7 @@ ckpt = {
     "opt_state": opt_state,
     "clip_state": clip_state,
     "noise_state": noise_state,
+    "accountant": accountant,
 }
 torch.save(state_dict(ckpt), "step.pt")
 ```

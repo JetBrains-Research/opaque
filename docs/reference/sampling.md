@@ -152,7 +152,8 @@ Bin sizes are variable (Binomial distribution). Assignments are **fixed
 across epochs** (required for BnB dominating-pair accounting). Empty bins
 are emitted as empty batches so every accounted bin slot executes.
 
-Account with `dpftrl_acc.balls_in_bins(mechanism, num_bins, n_steps)` where
+Account with
+`dpftrl_acc.balls_in_bins(mechanism, num_bins=num_bins, n_steps=n_steps)` where
 `mechanism` is `dpftrl_acc.mf_gaussian(nm, strategy)` for `lambda_cgd_strategy`,
 `bisr_strategy`, `blt_strategy`, `bsr_strategy`, or `dpftrl_acc.mf_gaussian(..., identity_strategy())`.
 

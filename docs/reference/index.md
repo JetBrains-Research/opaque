@@ -48,7 +48,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Accounting](accounting.md)** — Privacy budget tracking
   - `gaussian()`, `adaclip()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
   - `poisson()` (plain or truncated via `truncated_batch_size` / `dataset_size`), `parallel_poisson()` — Poisson-family amplification
-  - `band_mf()`, `blt()`, `lambda_cgd()`, `bisr()`, `poisson()` (MF whole-process), `balls_in_bins()` — MF mechanisms (also via `opaque.dpftrl.accounting`)
+  - `mf_gaussian()`, `poisson()`, `b_min_sep()`, `balls_in_bins()` — DP-FTRL whole-process accounting
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` — Privacy metrics
   - `calibrate()` — Binary-search noise multiplier for target privacy
@@ -99,6 +99,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ```python
 import opaque.accounting as acc
+import opaque.dpsgd.accounting as dpsgd_acc
 from opaque.dpsgd.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
@@ -167,12 +168,10 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
-| `band_mf()`              | BandMF banded Toeplitz mechanism  | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `blt()`                  | BLT mechanism                     | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `lambda_cgd()`           | DP-λCGD mechanism                 | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `bisr()`                 | BISR mechanism                    | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
+| `mf_gaussian()`          | Strategy-driven MF Gaussian mechanism | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
 | `balls_in_bins()`        | Balls-in-Bins amplification       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `poisson()` (`opaque.dpftrl`) | MF Poisson amplification (BandMF / identity) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
+| `b_min_sep()`            | Warm-start b-min-separation amplification | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms) |
 
 ### Accounting (Composition & Metrics)
 

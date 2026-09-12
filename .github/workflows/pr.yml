@@ -282,10 +282,23 @@ jobs:
       - uses: ./.github/actions/setup-python
 
       - name: Install documentation dependencies
-        run: uv sync --group docs --all-packages
+        run: uv sync --group docs --group examples --all-packages
 
       - name: Build documentation
         run: uv run mkdocs build --strict
+
+      - name: Execute accounting tutorials
+        run: |
+          uv run python examples/quickstart.py
+          uv run python -m doctest packages/opaque-accounting/src/opaque/accounting/__init__.py
+          for notebook in \
+            accounting_and_calibration.ipynb \
+            dp_sgd_training.ipynb \
+            dp_ftrl_training.ipynb
+          do
+            cp "docs/tutorials/$notebook" "$RUNNER_TEMP/$notebook"
+            uv run jupyter execute "$RUNNER_TEMP/$notebook" --inplace
+          done
 
   # ---------------------------------------------------------------------------
   # Preview wheels. Builds every wheel at a version like

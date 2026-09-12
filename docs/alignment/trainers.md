@@ -59,7 +59,7 @@ dataset = load_dataset("roneneldan/TinyStories", split="train")
 args = SFTConfig(
     output_dir="trainer_output/sft",
     dataset_text_field="text",
-    loss_type="nll",                 # or "dft"
+    loss_type="nll",                 # or "dft" / "chunked_nll"
     max_length=1024,
     per_device_train_batch_size=8,
     max_steps=50,
@@ -106,13 +106,14 @@ or a chat-message column (`messages` / `conversations` / `chat`). Pass a
 first. Already-tokenized datasets (with an `input_ids` column) pass through
 untouched.
 
-`loss_type` selects the per-example head: `"nll"` (standard cross-entropy) or
-`"dft"` (Dynamic Fine-Tuning). Both use a DP-safe per-example token-count
-divisor — see [SFT end-to-end](sft.md#2-per-example-loss). A custom
+`loss_type` selects `"nll"` (standard cross-entropy), `"dft"` (Dynamic
+Fine-Tuning), or `"chunked_nll"` (fused logits-free cross-entropy). All use a
+DP-safe per-example token-count divisor — see
+[SFT end-to-end](sft.md#2-per-example-loss). A custom
 `compute_loss_func(outputs, labels) -> scalar` is honoured **only** on the
 `"nll"` path (it runs inside vmap, so it must be a pure per-example op — no
-`num_items_in_batch`); `"dft"` computes its own token-weighted loss and rejects
-a custom func.
+`num_items_in_batch`); `"dft"` and `"chunked_nll"` compute their own loss and
+reject a custom function.
 
 Set `completion_only_loss=True` to score only the completion tokens of
 prompt-completion data, or `assistant_only_loss=True` to score only assistant
