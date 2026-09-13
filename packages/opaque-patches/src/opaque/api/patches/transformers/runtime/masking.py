@@ -447,6 +447,61 @@ def vmap_create_sliding_window_causal_mask(
     return causal_mask
 
 
+def vmap_create_recurrent_attention_mask(
+    config,
+    inputs_embeds: torch.Tensor | None = None,
+    attention_mask: torch.Tensor | None = None,
+    past_key_values=None,
+    position_ids: torch.Tensor | None = None,
+    *,
+    input_embeds: torch.Tensor | None = None,
+    **kwargs,
+) -> torch.Tensor | None:
+    """vmap-compatible ``create_recurrent_attention_mask``.
+
+    Mamba / linear-attention layers (e.g. qwen3_next's GatedDeltaNet) build a 2D
+    padding mask trimmed to the current local sequence. The stock helper short-
+    circuits to ``None`` when the batch is un-padded via
+    ``torch.all(attention_mask == 1)`` — a data-dependent Python branch that
+    breaks ``vmap`` (the per-example mask is a batched tensor). Returning the
+    trimmed all-ones mask is numerically identical to returning ``None`` (the
+    consumer's masking multiply is a no-op), so under ``vmap`` we simply skip the
+    short-circuit and return the mask.
+
+    The two structural early returns (missing / non-2D mask, single-token decode)
+    use Python ints and stay intact. The all-ones optimization is preserved for
+    ordinary (non-batched) execution by inspecting the physical tensor, so the
+    non-vmap graph specialisation matches upstream.
+    """
+    input_embeds = inputs_embeds if inputs_embeds is not None else input_embeds
+    if attention_mask is None or attention_mask.ndim != 2:  # noqa: PLR2004 - 2D padding masks only
+        return None
+    # Single-token decode never contains padding.
+    if input_embeds.shape[1] == 1:
+        return None
+
+    # All-ones optimization: return None only when we can prove it without a
+    # data-dependent branch on a batched tensor. Under vmap the mask is a
+    # functorch-wrapped tensor; unwrap to the physical storage so the
+    # ``.all()`` collapses to a single Python bool that is uniform across the
+    # batch (vmap requires identical control flow for every example).
+    all_valid = False
+    if not torch.compiler.is_compiling():
+        try:
+            functorch = torch._C._functorch
+            physical_mask = attention_mask
+            while functorch.is_functorch_wrapped_tensor(physical_mask):
+                physical_mask = functorch.get_unwrapped(physical_mask)
+            all_valid = bool((physical_mask == 1).all())
+        except (AttributeError, RuntimeError):
+            all_valid = False
+    if all_valid:
+        return None
+
+    # ``.contiguous()`` keeps the stride stable across decode steps.
+    return attention_mask[:, -input_embeds.shape[1] :].contiguous()
+
+
 def _vmap_safe_ignore_causal_mask_sdpa(*args, **kwargs) -> bool:
     """vmap-safe ``_ignore_causal_mask_sdpa``.
 
@@ -492,6 +547,14 @@ def apply_masking_patches(*, vmap_masking: bool = True) -> None:
         if hasattr(masking_utils, "create_sliding_window_causal_mask"):
             masking_utils.create_sliding_window_causal_mask = (
                 vmap_create_sliding_window_causal_mask
+            )
+
+        # Hybrid linear-attention models (qwen3_next's GatedDeltaNet) build a
+        # recurrent 2D padding mask whose all-ones short-circuit is not
+        # vmap-safe. Rebind it to the vmap-compatible variant.
+        if hasattr(masking_utils, "create_recurrent_attention_mask"):
+            masking_utils.create_recurrent_attention_mask = (
+                vmap_create_recurrent_attention_mask
             )
 
         # Patch _ignore_causal_mask_sdpa for sliding-window models (Gemma2, Phi-3, Mistral).
