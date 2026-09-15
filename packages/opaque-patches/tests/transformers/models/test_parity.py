@@ -84,7 +84,11 @@ _PARITY_SKIP_FAMILIES = {
 }
 
 # These families require runtime compatibility shims even for an ordinary
-# forward, so no strict-upstream parity reference is available.
+# forward, so no strict-upstream parity reference is available. qwen3_next also
+# has no pristine-upstream forward reference: an eval/backward pass builds a
+# hybrid DynamicCache whose ``get_seq_length`` rejects the LinearAttention
+# layers, so the unpatched model cannot run. Its DP ``vmap(grad)`` path is
+# covered directly in ``test_qwen3_next.py``.
 _STRICT_FORWARD_PARITY_SKIP_FAMILIES = {
     "deepseek_v4",
     "gpt_oss",
@@ -95,8 +99,8 @@ _STRICT_FORWARD_PARITY_SKIP_FAMILIES = {
 # functions in the patches that change the backward Jacobian path even
 # when the forward is bit-identical.
 _GRAD_PARITY_SKIP_FAMILIES = {
-    "gpt2",  # kv_cache/batchify patches alter backward graph
-    "qwen3_next",  # masking_utils uses .item()-like ops under vmap
+    "qwen3_next",  # no upstream ref: hybrid cache get_seq_length rejects
+    # LinearAttention layers (DP vmap(grad) covered in test_qwen3_next.py)
     "deepseek_v4",  # runtime compatibility shims change sink gradients
     "gpt_oss",  # runtime compatibility shims change sink gradients
 }
@@ -158,12 +162,17 @@ def _base_config_kwargs(family: str) -> dict:
     """Return tiny config kwargs, filtered for family compatibility.
 
     GPT2 lacks ``num_key_value_heads`` and ``rope_theta``; the base
-    ``get_tiny_config_kwargs()`` includes those.
+    ``get_tiny_config_kwargs()`` includes those. GPT2 also defaults its
+    ``attn_pdrop`` / ``resid_pdrop`` / ``embd_pdrop`` to ``0.1``; the
+    compatibility patches disable model dropout for DP/vmap safety, so the
+    dropout config is normalized to zero here to give the patched and upstream
+    reference models identical deterministic semantics for parity testing.
     """
     kwargs = get_tiny_config_kwargs()
     if family == "gpt2":
         kwargs.pop("num_key_value_heads", None)
         kwargs.pop("rope_theta", None)
+        kwargs.update(attn_pdrop=0.0, resid_pdrop=0.0, embd_pdrop=0.0)
     return kwargs
 
 
