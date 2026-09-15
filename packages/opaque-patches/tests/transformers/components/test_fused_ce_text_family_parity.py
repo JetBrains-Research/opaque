@@ -137,7 +137,8 @@ def test_fused_ce_explicitly_preserves_logits_for_metrics():
     assert output.logits is not None
 
 
-def test_fused_ce_preserves_router_auxiliary_loss_contract():
+def test_router_auxiliary_loss_contract_kept_without_loss_only():
+    """Without ``loss_only`` a router-logits request defers to HF's forward."""
     sentinel = object()
     calls = []
 
@@ -154,7 +155,7 @@ def test_fused_ce_preserves_router_auxiliary_loss_contract():
         model,
         labels=labels,
         output_router_logits=True,
-        loss_only=True,
+        loss_only=False,
     )
 
     assert output is sentinel
